@@ -33,10 +33,10 @@ export function submitDesignApproval(jobId: string, status: 'approved' | 'reject
   })
 }
 
-export function submitDesignRerun(jobId: string, comment: string): Promise<JobDetail> {
+export function submitDesignRerun(jobId: string, comment: string, eventId?: number): Promise<JobDetail> {
   return request<JobDetail>(`/api/jobs/${jobId}/reruns/design`, {
     method: 'POST',
-    body: JSON.stringify({ comment }),
+    body: JSON.stringify({ comment, eventId }),
   })
 }
 
@@ -47,10 +47,17 @@ export function submitFinalApproval(jobId: string, status: 'approved' | 'rejecte
   })
 }
 
-export function submitImplementationRerun(jobId: string, comment: string): Promise<JobDetail> {
+export function submitImplementationRerun(jobId: string, comment: string, eventId?: number): Promise<JobDetail> {
   return request<JobDetail>(`/api/jobs/${jobId}/reruns/implementation`, {
     method: 'POST',
-    body: JSON.stringify({ comment }),
+    body: JSON.stringify({ comment, eventId }),
+  })
+}
+
+export function submitPRRerun(jobId: string, comment: string, eventId?: number): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${jobId}/reruns/pr`, {
+    method: 'POST',
+    body: JSON.stringify({ comment, eventId }),
   })
 }
 

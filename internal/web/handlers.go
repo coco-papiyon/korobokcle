@@ -30,13 +30,14 @@ type jobResponse struct {
 }
 
 type eventResponse struct {
-	ID        int64  `json:"id"`
-	JobID     string `json:"jobId"`
-	EventType string `json:"eventType"`
-	StateFrom string `json:"stateFrom"`
-	StateTo   string `json:"stateTo"`
-	Payload   string `json:"payload"`
-	CreatedAt string `json:"createdAt"`
+	ID               int64    `json:"id"`
+	JobID            string   `json:"jobId"`
+	EventType        string   `json:"eventType"`
+	StateFrom        string   `json:"stateFrom"`
+	StateTo          string   `json:"stateTo"`
+	Payload          string   `json:"payload"`
+	CreatedAt        string   `json:"createdAt"`
+	AvailableActions []string `json:"availableActions"`
 }
 
 type jobDetailResponse struct {
@@ -100,13 +101,14 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, event := range events {
 		out.Events = append(out.Events, eventResponse{
-			ID:        event.ID,
-			JobID:     event.JobID,
-			EventType: event.EventType,
-			StateFrom: event.StateFrom,
-			StateTo:   event.StateTo,
-			Payload:   event.Payload,
-			CreatedAt: event.CreatedAt.Format(timeFormat),
+			ID:               event.ID,
+			JobID:            event.JobID,
+			EventType:        event.EventType,
+			StateFrom:        event.StateFrom,
+			StateTo:          event.StateTo,
+			Payload:          event.Payload,
+			CreatedAt:        event.CreatedAt.Format(timeFormat),
+			AvailableActions: availableActionsForEvent(event),
 		})
 	}
 	if artifact, err := s.loadDesignArtifact(job.ID); err == nil {
@@ -127,6 +129,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 type approvalRequest struct {
 	Status  string `json:"status"`
 	Comment string `json:"comment"`
+	EventID *int64 `json:"eventId,omitempty"`
 }
 
 func (s *Server) handleDesignApproval(w http.ResponseWriter, r *http.Request) {
@@ -191,7 +194,7 @@ func (s *Server) handleDesignRerun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.orchestrator.RerunDesign(r.Context(), jobID, payload.Comment); err != nil {
+	if err := s.orchestrator.RerunDesignFromEvent(r.Context(), jobID, payload.EventID, payload.Comment); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, orchestrator.ErrInvalidStateTransition) {
 			status = http.StatusBadRequest
@@ -211,7 +214,27 @@ func (s *Server) handleImplementationRerun(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := s.orchestrator.RerunImplementation(r.Context(), jobID, payload.Comment); err != nil {
+	if err := s.orchestrator.RerunImplementationFromEvent(r.Context(), jobID, payload.EventID, payload.Comment); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, orchestrator.ErrInvalidStateTransition) {
+			status = http.StatusBadRequest
+		}
+		writeJSONError(w, status, err)
+		return
+	}
+
+	s.handleJobDetail(w, r)
+}
+
+func (s *Server) handlePRRerun(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	var payload approvalRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode rerun request: %w", err))
+		return
+	}
+
+	if err := s.orchestrator.RerunPRCreationFromEvent(r.Context(), jobID, payload.EventID, payload.Comment); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, orchestrator.ErrInvalidStateTransition) {
 			status = http.StatusBadRequest
@@ -274,6 +297,39 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, appConfigResponse{Provider: provider})
+}
+
+const (
+	actionRetryDesign         = "retry_design"
+	actionRetryImplementation = "retry_implementation"
+	actionRetryPR             = "retry_pr"
+)
+
+func availableActionsForEvent(event domain.Event) []string {
+	actions := make([]string, 0, 1)
+
+	switch {
+	case event.EventType == "design_ready" && event.StateFrom == string(domain.StateDesignRunning):
+		actions = append(actions, actionRetryDesign)
+	case event.EventType == "design_failed" || event.EventType == "design_rejected":
+		actions = append(actions, actionRetryDesign)
+	}
+
+	switch {
+	case event.EventType == "waiting_final_approval" && event.StateFrom == string(domain.StateImplementationReady):
+		actions = append(actions, actionRetryImplementation)
+	case event.EventType == "implementation_failed" || event.EventType == "test_failed" || event.EventType == "final_rejected":
+		actions = append(actions, actionRetryImplementation)
+	}
+
+	switch {
+	case event.EventType == "pr_created" && event.StateFrom == string(domain.StatePRCreating):
+		actions = append(actions, actionRetryPR)
+	case event.EventType == "pr_push_failed" || event.EventType == "pr_create_failed":
+		actions = append(actions, actionRetryPR)
+	}
+
+	return actions
 }
 
 func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {

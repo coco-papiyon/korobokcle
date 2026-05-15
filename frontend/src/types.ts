@@ -19,6 +19,7 @@ export type JobEvent = {
   stateTo: string
   payload: string
   createdAt: string
+  availableActions: string[]
 }
 
 export type JobDetail = {

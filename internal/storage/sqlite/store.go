@@ -161,6 +161,22 @@ func (s *Store) ListEvents(ctx context.Context, jobID string) ([]domain.Event, e
 	return events, rows.Err()
 }
 
+func (s *Store) GetEvent(ctx context.Context, eventID int64) (domain.Event, error) {
+	var event domain.Event
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, job_id, event_type, state_from, state_to, payload_json, created_at
+		FROM job_events
+		WHERE id = ?
+	`, eventID).Scan(&event.ID, &event.JobID, &event.EventType, &event.StateFrom, &event.StateTo, &event.Payload, &event.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Event{}, fmt.Errorf("event %d not found", eventID)
+	}
+	if err != nil {
+		return domain.Event{}, err
+	}
+	return event, nil
+}
+
 func (s *Store) migrate() error {
 	stmts := []string{
 		`CREATE TABLE IF NOT EXISTS jobs (
