@@ -121,6 +121,137 @@ func TestRerunImplementationRejectedFromOtherStates(t *testing.T) {
 	}
 }
 
+func TestRerunDesignFromEventAllowedFromFailedJob(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-5",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 5,
+		State:        domain.StateFailed,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := orch.store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "design_started",
+		StateFrom: string(domain.StateDetected),
+		StateTo:   string(domain.StateDesignRunning),
+		Payload:   "{}",
+		CreatedAt: nowUTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	events, err := orch.store.ListEvents(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+
+	if err := orch.RerunDesignFromEvent(context.Background(), job.ID, &events[0].ID, "retry"); err != nil {
+		t.Fatalf("RerunDesignFromEvent() error = %v", err)
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StateDetected {
+		t.Fatalf("expected detected, got %s", saved.State)
+	}
+}
+
+func TestRerunImplementationUsesLatestEventWhenFailed(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-6",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 6,
+		State:        domain.StateFailed,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := orch.store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "implementation_failed",
+		StateFrom: string(domain.StateImplementationRunning),
+		StateTo:   string(domain.StateFailed),
+		Payload:   "{}",
+		CreatedAt: nowUTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	if err := orch.RerunImplementation(context.Background(), job.ID, "retry"); err != nil {
+		t.Fatalf("RerunImplementation() error = %v", err)
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StateImplementationRunning {
+		t.Fatalf("expected implementation_running, got %s", saved.State)
+	}
+}
+
+func TestRerunPRCreationFromEventAllowedFromFailedJob(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-7",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 7,
+		State:        domain.StateFailed,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := orch.store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "pr_create_failed",
+		StateFrom: string(domain.StatePRCreating),
+		StateTo:   string(domain.StateFailed),
+		Payload:   "{}",
+		CreatedAt: nowUTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	events, err := orch.store.ListEvents(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+
+	if err := orch.RerunPRCreationFromEvent(context.Background(), job.ID, &events[0].ID, "retry"); err != nil {
+		t.Fatalf("RerunPRCreationFromEvent() error = %v", err)
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StatePRCreating {
+		t.Fatalf("expected pr_creating, got %s", saved.State)
+	}
+}
+
 func newTestOrchestrator(t *testing.T) *Orchestrator {
 	t.Helper()
 

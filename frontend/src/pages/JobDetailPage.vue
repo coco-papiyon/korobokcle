@@ -7,7 +7,14 @@ import DataTable from '@/components/DataTable.vue'
 import PanelCard from '@/components/PanelCard.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
-import { fetchJobDetail, submitDesignApproval, submitDesignRerun, submitFinalApproval, submitImplementationRerun } from '@/lib/api'
+import {
+  fetchJobDetail,
+  submitDesignApproval,
+  submitDesignRerun,
+  submitFinalApproval,
+  submitImplementationRerun,
+  submitPRRerun,
+} from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 
 const route = useRoute()
@@ -17,20 +24,14 @@ const approvalState = ref<'idle' | 'saving' | 'error'>('idle')
 const finalApprovalState = ref<'idle' | 'saving' | 'error'>('idle')
 const approvalError = ref<string | null>(null)
 const finalApprovalError = ref<string | null>(null)
-const designRerunComment = ref('')
-const implementationRerunComment = ref('')
 const designRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
+const prRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const designRerunError = ref<string | null>(null)
 const implementationRerunError = ref<string | null>(null)
+const prRerunError = ref<string | null>(null)
 
-type JobEventLike = {
-  id: number
-  stateTo: string
-}
-
-const designRerunStates = new Set(['waiting_design_approval', 'design_rejected'])
-const implementationRerunStates = new Set(['waiting_final_approval', 'final_rejected'])
+type RerunAction = 'retry_design' | 'retry_implementation' | 'retry_pr'
 
 const prCreateInfo = computed(() => {
   const raw = data.value?.prCreateArtifact?.content
@@ -47,27 +48,54 @@ const prCreateInfo = computed(() => {
 const canReviewDesign = computed(() => data.value?.job.state === 'waiting_design_approval')
 const canReviewImplementation = computed(() => data.value?.job.state === 'waiting_final_approval')
 
-function findLatestRerunTargetEventId(events: JobEventLike[] | undefined, state: string | undefined, allowedStates: Set<string>) {
-  if (!events || !state || !allowedStates.has(state)) {
-    return null
+function rerunState(action: RerunAction) {
+  if (action === 'retry_design') {
+    return designRerunState
   }
-
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index]
-    if (event.stateTo === state) {
-      return event.id
-    }
+  if (action === 'retry_implementation') {
+    return implementationRerunState
   }
-
-  return null
+  return prRerunState
 }
 
-const designRerunTargetEventId = computed(() =>
-  findLatestRerunTargetEventId(data.value?.events, data.value?.job.state, designRerunStates),
-)
-const implementationRerunTargetEventId = computed(() =>
-  findLatestRerunTargetEventId(data.value?.events, data.value?.job.state, implementationRerunStates),
-)
+function rerunError(action: RerunAction) {
+  if (action === 'retry_design') {
+    return designRerunError
+  }
+  if (action === 'retry_implementation') {
+    return implementationRerunError
+  }
+  return prRerunError
+}
+
+function rerunErrorLabel(action: RerunAction) {
+  if (action === 'retry_design') {
+    return 'Design rerun'
+  }
+  if (action === 'retry_implementation') {
+    return 'Implementation rerun'
+  }
+  return 'PR rerun'
+}
+
+async function submitRerun(action: RerunAction, eventId: number) {
+  rerunState(action).value = 'saving'
+  rerunError(action).value = null
+  try {
+    if (action === 'retry_design') {
+      data.value = await submitDesignRerun(jobID.value, '', eventId)
+    } else if (action === 'retry_implementation') {
+      data.value = await submitImplementationRerun(jobID.value, '', eventId)
+    } else {
+      data.value = await submitPRRerun(jobID.value, '', eventId)
+    }
+    rerunState(action).value = 'idle'
+    await reload()
+  } catch (err) {
+    rerunState(action).value = 'error'
+    rerunError(action).value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
 
 async function sendApproval(status: 'approved' | 'rejected') {
   approvalState.value = 'saving'
@@ -92,34 +120,6 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
   } catch (err) {
     finalApprovalState.value = 'error'
     finalApprovalError.value = err instanceof Error ? err.message : 'Unknown error'
-  }
-}
-
-async function rerunDesign() {
-  designRerunState.value = 'saving'
-  designRerunError.value = null
-  try {
-    data.value = await submitDesignRerun(jobID.value, designRerunComment.value)
-    designRerunComment.value = ''
-    designRerunState.value = 'idle'
-    await reload()
-  } catch (err) {
-    designRerunState.value = 'error'
-    designRerunError.value = err instanceof Error ? err.message : 'Unknown error'
-  }
-}
-
-async function rerunImplementation() {
-  implementationRerunState.value = 'saving'
-  implementationRerunError.value = null
-  try {
-    data.value = await submitImplementationRerun(jobID.value, implementationRerunComment.value)
-    implementationRerunComment.value = ''
-    implementationRerunState.value = 'idle'
-    await reload()
-  } catch (err) {
-    implementationRerunState.value = 'error'
-    implementationRerunError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
 </script>
@@ -169,6 +169,10 @@ async function rerunImplementation() {
             </div>
           </PanelCard>
         </section>
+
+        <p v-if="designRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_design') }}: {{ designRerunError }}</p>
+        <p v-if="implementationRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_implementation') }}: {{ implementationRerunError }}</p>
+        <p v-if="prRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_pr') }}: {{ prRerunError }}</p>
 
         <PanelCard
           v-if="data.designArtifact"
@@ -229,43 +233,34 @@ async function rerunImplementation() {
             <td>{{ event.stateFrom || '-' }} → {{ event.stateTo || '-' }}</td>
             <td><code>{{ event.payload }}</code></td>
             <td>
-              <div v-if="designRerunTargetEventId === event.id" class="stack-sm">
-                <textarea
-                  v-model="designRerunComment"
-                  class="field__control field__control-textarea"
+              <div v-if="event.availableActions.length > 0" class="button-row">
+                <button
+                  v-if="event.availableActions.includes('retry_design')"
+                  class="button button-secondary"
+                  type="button"
                   :disabled="designRerunState === 'saving'"
-                  placeholder="rerun comment"
-                />
-                <div class="button-row">
-                  <button
-                    class="button button-secondary"
-                    type="button"
-                    :disabled="designRerunState === 'saving'"
-                    @click="rerunDesign"
-                  >
-                    Rerun Design
-                  </button>
-                </div>
-                <p v-if="designRerunState === 'error'" class="notice notice-danger">{{ designRerunError }}</p>
-              </div>
-              <div v-else-if="implementationRerunTargetEventId === event.id" class="stack-sm">
-                <textarea
-                  v-model="implementationRerunComment"
-                  class="field__control field__control-textarea"
+                  @click="submitRerun('retry_design', event.id)"
+                >
+                  Rerun Design
+                </button>
+                <button
+                  v-if="event.availableActions.includes('retry_implementation')"
+                  class="button button-secondary"
+                  type="button"
                   :disabled="implementationRerunState === 'saving'"
-                  placeholder="implementation rerun comment"
-                />
-                <div class="button-row">
-                  <button
-                    class="button button-secondary"
-                    type="button"
-                    :disabled="implementationRerunState === 'saving'"
-                    @click="rerunImplementation"
-                  >
-                    Rerun Implementation
-                  </button>
-                </div>
-                <p v-if="implementationRerunState === 'error'" class="notice notice-danger">{{ implementationRerunError }}</p>
+                  @click="submitRerun('retry_implementation', event.id)"
+                >
+                  Rerun Implementation
+                </button>
+                <button
+                  v-if="event.availableActions.includes('retry_pr')"
+                  class="button button-secondary"
+                  type="button"
+                  :disabled="prRerunState === 'saving'"
+                  @click="submitRerun('retry_pr', event.id)"
+                >
+                  Retry PR
+                </button>
               </div>
               <span v-else>-</span>
             </td>

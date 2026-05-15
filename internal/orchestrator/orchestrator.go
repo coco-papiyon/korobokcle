@@ -146,23 +146,6 @@ func (o *Orchestrator) RejectDesign(ctx context.Context, jobID string, comment s
 	})
 }
 
-func (o *Orchestrator) RerunDesign(ctx context.Context, jobID string, comment string) error {
-	job, err := o.store.GetJob(ctx, jobID)
-	if err != nil {
-		return err
-	}
-
-	switch job.State {
-	case domain.StateWaitingDesignApproval, domain.StateDesignRejected:
-	default:
-		return fmt.Errorf("%w: design rerun is allowed only from waiting_design_approval or design_rejected", ErrInvalidStateTransition)
-	}
-
-	return o.UpdateJobState(ctx, jobID, domain.StateDetected, "design_rerun_requested", map[string]any{
-		"comment": comment,
-	})
-}
-
 func (o *Orchestrator) ApproveFinal(ctx context.Context, jobID string, comment string) error {
 	return o.UpdateJobState(ctx, jobID, domain.StatePRCreating, "final_approved", map[string]any{
 		"comment": comment,
@@ -175,21 +158,135 @@ func (o *Orchestrator) RejectFinal(ctx context.Context, jobID string, comment st
 	})
 }
 
-func (o *Orchestrator) RerunImplementation(ctx context.Context, jobID string, comment string) error {
-	job, err := o.store.GetJob(ctx, jobID)
+func (o *Orchestrator) RerunDesign(ctx context.Context, jobID string, comment string) error {
+	return o.RerunDesignFromEvent(ctx, jobID, nil, comment)
+}
+
+func (o *Orchestrator) RerunDesignFromEvent(ctx context.Context, jobID string, sourceEventID *int64, comment string) error {
+	phase, err := o.resolveRerunPhase(ctx, jobID, sourceEventID)
 	if err != nil {
 		return err
 	}
+	if phase != rerunPhaseDesign {
+		return fmt.Errorf("%w: design rerun is not available for this event", ErrInvalidStateTransition)
+	}
 
-	switch job.State {
-	case domain.StateWaitingFinalApproval, domain.StateFinalRejected:
-	default:
-		return fmt.Errorf("%w: implementation rerun is allowed only from waiting_final_approval or final_rejected", ErrInvalidStateTransition)
+	return o.UpdateJobState(ctx, jobID, domain.StateDetected, "design_rerun_requested", map[string]any{
+		"comment": comment,
+		"eventId": sourceEventID,
+	})
+}
+
+func (o *Orchestrator) RerunImplementation(ctx context.Context, jobID string, comment string) error {
+	return o.RerunImplementationFromEvent(ctx, jobID, nil, comment)
+}
+
+func (o *Orchestrator) RerunImplementationFromEvent(ctx context.Context, jobID string, sourceEventID *int64, comment string) error {
+	phase, err := o.resolveRerunPhase(ctx, jobID, sourceEventID)
+	if err != nil {
+		return err
+	}
+	if phase != rerunPhaseImplementation {
+		return fmt.Errorf("%w: implementation rerun is not available for this event", ErrInvalidStateTransition)
 	}
 
 	return o.UpdateJobState(ctx, jobID, domain.StateImplementationRunning, "implementation_rerun_requested", map[string]any{
 		"comment": comment,
+		"eventId": sourceEventID,
 	})
+}
+
+func (o *Orchestrator) RerunPRCreation(ctx context.Context, jobID string, comment string) error {
+	return o.RerunPRCreationFromEvent(ctx, jobID, nil, comment)
+}
+
+func (o *Orchestrator) RerunPRCreationFromEvent(ctx context.Context, jobID string, sourceEventID *int64, comment string) error {
+	phase, err := o.resolveRerunPhase(ctx, jobID, sourceEventID)
+	if err != nil {
+		return err
+	}
+	if phase != rerunPhasePR {
+		return fmt.Errorf("%w: pr rerun is not available for this event", ErrInvalidStateTransition)
+	}
+
+	return o.UpdateJobState(ctx, jobID, domain.StatePRCreating, "pr_rerun_requested", map[string]any{
+		"comment": comment,
+		"eventId": sourceEventID,
+	})
+}
+
+type rerunPhase string
+
+const (
+	rerunPhaseDesign         rerunPhase = "design"
+	rerunPhaseImplementation rerunPhase = "implementation"
+	rerunPhasePR             rerunPhase = "pr"
+)
+
+func (o *Orchestrator) resolveRerunPhase(ctx context.Context, jobID string, sourceEventID *int64) (rerunPhase, error) {
+	job, err := o.store.GetJob(ctx, jobID)
+	if err != nil {
+		return "", err
+	}
+	if sourceEventID != nil {
+		event, err := o.store.GetEvent(ctx, *sourceEventID)
+		if err != nil {
+			return "", err
+		}
+		if event.JobID != job.ID {
+			return "", fmt.Errorf("event %d does not belong to job %q", event.ID, jobID)
+		}
+		phase := rerunPhaseFromEvent(event)
+		if phase == "" {
+			return "", fmt.Errorf("%w: event %d is not rerunnable", ErrInvalidStateTransition, event.ID)
+		}
+		return phase, nil
+	}
+
+	phase := rerunPhaseFromJob(ctx, o, job)
+	if phase == "" {
+		return "", fmt.Errorf("%w: job state %q is not rerunnable", ErrInvalidStateTransition, job.State)
+	}
+	return phase, nil
+}
+
+func rerunPhaseFromJob(ctx context.Context, o *Orchestrator, job domain.Job) rerunPhase {
+	switch job.State {
+	case domain.StateWaitingDesignApproval, domain.StateDesignRejected, domain.StateDetected, domain.StateDesignRunning:
+		return rerunPhaseDesign
+	case domain.StateWaitingFinalApproval, domain.StateFinalRejected, domain.StateImplementationRunning, domain.StateTestRunning, domain.StateImplementationReady:
+		return rerunPhaseImplementation
+	case domain.StatePRCreating:
+		return rerunPhasePR
+	case domain.StateFailed:
+		events, err := o.store.ListEvents(ctx, job.ID)
+		if err != nil || len(events) == 0 {
+			return ""
+		}
+		return rerunPhaseFromEvent(events[len(events)-1])
+	default:
+		return ""
+	}
+}
+
+func rerunPhaseFromEvent(event domain.Event) rerunPhase {
+	switch event.EventType {
+	case string(domain.DomainEventIssueMatched), "design_started", "design_ready", "waiting_design_approval", "design_rejected", "design_failed", "design_rerun_requested":
+		return rerunPhaseDesign
+	case "design_approved", "implementation_started", "implementation_ready", "waiting_final_approval", "final_rejected", "implementation_failed", "test_failed", "implementation_rerun_requested":
+		return rerunPhaseImplementation
+	case "final_approved", "pr_creating_started", "pr_create_failed", "pr_created", "pr_rerun_requested":
+		return rerunPhasePR
+	}
+	switch event.StateFrom {
+	case string(domain.StateDesignRunning), string(domain.StateDetected):
+		return rerunPhaseDesign
+	case string(domain.StateImplementationRunning), string(domain.StateTestRunning), string(domain.StateWaitingFinalApproval), string(domain.StateImplementationReady):
+		return rerunPhaseImplementation
+	case string(domain.StatePRCreating):
+		return rerunPhasePR
+	}
+	return ""
 }
 
 func makeJobID(repository string, target domain.MonitoredTarget, number int) string {

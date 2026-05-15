@@ -61,6 +61,10 @@ func (p *GitBranchPusher) Push(ctx context.Context, req PRCreateRequest) error {
 		remote = "origin"
 	}
 
+	if err := preparePRBranch(ctx, req); err != nil {
+		return err
+	}
+
 	cmd := exec.CommandContext(ctx, "git", "push", remote, fmt.Sprintf("HEAD:refs/heads/%s", req.BranchName))
 	cmd.Dir = req.WorkDir
 
@@ -70,6 +74,39 @@ func (p *GitBranchPusher) Push(ctx context.Context, req PRCreateRequest) error {
 		return fmt.Errorf("git push failed: %w: %s", err, output)
 	}
 	return writeCommandLog(req.ArtifactDir, "git-push.log", output)
+}
+
+func preparePRBranch(ctx context.Context, req PRCreateRequest) error {
+	branchCmd := exec.CommandContext(ctx, "git", "checkout", "-B", req.BranchName)
+	branchCmd.Dir = req.WorkDir
+	branchOut, err := branchCmd.CombinedOutput()
+	branchOutput := strings.TrimSpace(string(branchOut))
+	if err != nil {
+		return fmt.Errorf("git checkout failed: %w: %s", err, branchOutput)
+	}
+	if err := writeCommandLog(req.ArtifactDir, "git-checkout.log", branchOutput); err != nil {
+		return err
+	}
+
+	addCmd := exec.CommandContext(ctx, "git", "add", "-A")
+	addCmd.Dir = req.WorkDir
+	addOut, err := addCmd.CombinedOutput()
+	addOutput := strings.TrimSpace(string(addOut))
+	if err != nil {
+		return fmt.Errorf("git add failed: %w: %s", err, addOutput)
+	}
+	if err := writeCommandLog(req.ArtifactDir, "git-add.log", addOutput); err != nil {
+		return err
+	}
+
+	commitCmd := exec.CommandContext(ctx, "git", "commit", "--allow-empty", "-m", req.Title)
+	commitCmd.Dir = req.WorkDir
+	commitOut, err := commitCmd.CombinedOutput()
+	commitOutput := strings.TrimSpace(string(commitOut))
+	if err != nil {
+		return fmt.Errorf("git commit failed: %w: %s", err, commitOutput)
+	}
+	return writeCommandLog(req.ArtifactDir, "git-commit.log", commitOutput)
 }
 
 func (c *GHPRCreator) Create(ctx context.Context, req PRCreateRequest) (string, error) {
