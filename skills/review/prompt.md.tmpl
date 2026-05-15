@@ -1,0 +1,54 @@
+# Pull Request Review Request
+
+Repository: {{ .Repository }}
+Pull Request: #{{ .PullNumber }}
+Title: {{ .Title }}
+Author: {{ .Author }}
+Branch: {{ .BranchName }}
+Watch Rule: {{ .WatchRuleID }}
+Source URL: {{ .SourceURL }}
+
+## Labels
+{{- if .Labels }}
+{{- range .Labels }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Assignees
+{{- if .Assignees }}
+{{- range .Assignees }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## PR Body
+```
+{{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
+```
+
+## Requested Output
+
+Write a practical review document in Markdown.
+
+Focus on:
+
+- What the PR changes
+- Any correctness or risk concerns
+- Missing tests or follow-up work
+- Whether the PR is ready to merge
+
+## Output Rules
+
+Your response will be written verbatim to `{{ .ArtifactDir }}/review.md`.
+
+- Output only the final review document in Markdown.
+- Do not include any preface, commentary, status report, or explanation about what you did.
+- Do not say that you updated, saved, or added `{{ .ArtifactDir }}/review.md`.
+- Do not wrap the whole answer in code fences.
+- Start directly with a title line or `## Summary`.
+- Human review will catch structural issues, so do not spend tokens on strict validation logic.

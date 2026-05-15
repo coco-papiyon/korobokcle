@@ -52,6 +52,9 @@ func Run(ctx context.Context, root string, options Options) error {
 	if err := startImplementationWorker(ctx, root, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start implementation worker: %w", err)
 	}
+	if err := startReviewWorker(ctx, root, configService, orch, infoLogger); err != nil {
+		return fmt.Errorf("start review worker: %w", err)
+	}
 	if err := startPRWorker(ctx, root, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start pr worker: %w", err)
 	}

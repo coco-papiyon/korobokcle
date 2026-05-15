@@ -22,6 +22,9 @@ func (p *MockProvider) Run(_ context.Context, req AIRequest) (AIResult, error) {
 	if req.SkillName == "implement" {
 		output = "## What Should Be Changed\n\n- Reviewed the approved design.\n\n## Suggested File Areas\n\n- Update the relevant source files.\n\n## Risks During Implementation\n\n- No repository code changes are applied by the mock provider.\n\n## Test Plan\n\n- Run the configured test profile.\n"
 	}
+	if req.SkillName == "review" {
+		output = "## Summary\n\n- Reviewed the pull request context.\n\n## Findings\n\n- No real review was performed by the mock provider.\n\n## Recommendations\n\n- Verify the changes manually.\n\n## Notes\n\n- This output is synthetic.\n"
+	}
 	return AIResult{
 		Stdout: "mock provider executed",
 		Output: output,
@@ -129,12 +132,12 @@ func loadProviderArgs(envName string, defaults []string) ([]string, error) {
 
 func expandProviderArgs(args []string, req AIRequest) []string {
 	replacements := map[string]string{
-		"{{prompt}}":      req.Prompt,
-		"{{work_dir}}":    req.WorkDir,
+		"{{prompt}}":       req.Prompt,
+		"{{work_dir}}":     req.WorkDir,
 		"{{artifact_dir}}": req.ArtifactDir,
-		"{{output_path}}": req.OutputPath,
-		"{{output_file}}": filepath.Base(req.OutputPath),
-		"{{skill_name}}":  req.SkillName,
+		"{{output_path}}":  req.OutputPath,
+		"{{output_file}}":  filepath.Base(req.OutputPath),
+		"{{skill_name}}":   req.SkillName,
 	}
 
 	expanded := make([]string, 0, len(args))

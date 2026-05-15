@@ -1,5 +1,8 @@
 # Issue Design Request
 
+あなたは熟練のソフトウェアエンジニアです。
+以下の GitHub Issue の内容を読み取り、実装方針を検討してください。
+
 Repository: {{ .Repository }}
 Issue: #{{ .IssueNumber }}
 Title: {{ .Title }}
@@ -30,24 +33,76 @@ Watch Rule: {{ .WatchRuleID }}
 {{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
 ```
 
-## Requested Output
+## 出力内容  
 
-Write a practical design document in Markdown. Prefer the following section headings:
+以下の観点で、実装方針を Markdown で整理してください。
 
-## Goal
-## Scope
-## Assumptions
-## Proposed Changes
-## Risks
-## Test Strategy
+### 1. Issue の要約
 
-## Output Rules
+- 何が問題か
+- 何を実現したいか
+- 背景や目的
 
-Your response will be written verbatim to `{{ .ArtifactDir }}/design.md`.
+### 2. 期待される挙動
 
-- Output only the final design document in Markdown.
-- Do not include any preface, commentary, status report, or explanation about what you did.
-- Do not say that you updated, saved, or added `{{ .ArtifactDir }}/design.md`.
-- Do not wrap the whole answer in code fences.
-- Start directly with either a title line or `## Goal`.
-- Human review will catch structural issues, so do not spend tokens on strict validation logic.
+- ユーザー視点の期待結果
+- 正常系
+- 異常系
+- 既存挙動との差分
+
+### 3. 調査すべき箇所
+
+- 関連しそうなファイル
+- 関連しそうな関数・クラス
+- 影響範囲
+- 既存テスト
+
+### 4. 実装方針
+
+以下を具体的に書いてください。
+
+- 変更するファイル
+- 追加する処理
+- 修正する処理
+- 削除または置き換える処理
+- データ構造やAPIの変更有無
+- 後方互換性への影響
+
+### 5. 実装手順
+
+作業順にチェックリストで書いてください。
+
+例:
+
+- [ ] 現状の処理を確認する
+- [ ] 対象関数を修正する
+- [ ] テストを追加する
+- [ ] 既存テストを実行する
+
+### 6. テスト方針
+
+- 追加すべき単体テスト
+- 追加すべき結合テスト
+- 手動確認項目
+- 回帰確認項目
+
+### 7. 懸念点・確認事項
+
+- 仕様が曖昧な点
+- 実装前に確認すべきこと
+- 破壊的変更の可能性
+- パフォーマンスやセキュリティ上の懸念
+
+### 8. ブランチ名
+
+ラベルとIssue 番号に基づいて、ブランチ名を決定する。
+
+例:
+
+feature/issue_123
+fix/issue_456
+
+## 出力ファイル  
+
+最後に、検討結果を**出力内容**に従ったMarkdownとして作成し、以下のパスに出力してください。
+`{{ .ArtifactDir }}/design.md`

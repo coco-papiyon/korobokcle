@@ -27,6 +27,7 @@ export type JobDetail = {
   events: JobEvent[]
   designArtifact?: Artifact
   implementationArtifact?: Artifact
+  reviewArtifact?: Artifact
   testReport?: Artifact
   prCreateArtifact?: Artifact
 }

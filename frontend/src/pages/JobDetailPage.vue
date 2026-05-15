@@ -14,6 +14,7 @@ import {
   submitFinalApproval,
   submitImplementationRerun,
   submitPRRerun,
+  submitReviewRerun,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 
@@ -27,11 +28,13 @@ const finalApprovalError = ref<string | null>(null)
 const designRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const prRerunState = ref<'idle' | 'saving' | 'error'>('idle')
+const reviewRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const designRerunError = ref<string | null>(null)
 const implementationRerunError = ref<string | null>(null)
 const prRerunError = ref<string | null>(null)
+const reviewRerunError = ref<string | null>(null)
 
-type RerunAction = 'retry_design' | 'retry_implementation' | 'retry_pr'
+type RerunAction = 'retry_design' | 'retry_implementation' | 'retry_pr' | 'retry_review'
 
 const prCreateInfo = computed(() => {
   const raw = data.value?.prCreateArtifact?.content
@@ -55,6 +58,9 @@ function rerunState(action: RerunAction) {
   if (action === 'retry_implementation') {
     return implementationRerunState
   }
+  if (action === 'retry_review') {
+    return reviewRerunState
+  }
   return prRerunState
 }
 
@@ -64,6 +70,9 @@ function rerunError(action: RerunAction) {
   }
   if (action === 'retry_implementation') {
     return implementationRerunError
+  }
+  if (action === 'retry_review') {
+    return reviewRerunError
   }
   return prRerunError
 }
@@ -75,7 +84,26 @@ function rerunErrorLabel(action: RerunAction) {
   if (action === 'retry_implementation') {
     return 'Implementation rerun'
   }
+  if (action === 'retry_review') {
+    return 'Review rerun'
+  }
   return 'PR rerun'
+}
+
+function formatPayloadPreview(payload: string) {
+  try {
+    const parsed = JSON.parse(payload) as unknown
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const copy = { ...(parsed as Record<string, unknown>) }
+      if ('body' in copy) {
+        delete copy.body
+      }
+      return JSON.stringify(copy)
+    }
+    return JSON.stringify(parsed)
+  } catch {
+    return payload
+  }
 }
 
 async function submitRerun(action: RerunAction, eventId: number) {
@@ -86,6 +114,8 @@ async function submitRerun(action: RerunAction, eventId: number) {
       data.value = await submitDesignRerun(jobID.value, '', eventId)
     } else if (action === 'retry_implementation') {
       data.value = await submitImplementationRerun(jobID.value, '', eventId)
+    } else if (action === 'retry_review') {
+      data.value = await submitReviewRerun(jobID.value, '', eventId)
     } else {
       data.value = await submitPRRerun(jobID.value, '', eventId)
     }
@@ -172,6 +202,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
 
         <p v-if="designRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_design') }}: {{ designRerunError }}</p>
         <p v-if="implementationRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_implementation') }}: {{ implementationRerunError }}</p>
+        <p v-if="reviewRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_review') }}: {{ reviewRerunError }}</p>
         <p v-if="prRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_pr') }}: {{ prRerunError }}</p>
 
         <PanelCard
@@ -193,6 +224,17 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           <div class="stack-sm">
             <p class="text-muted">{{ data.implementationArtifact.path }}</p>
             <pre class="artifact-view">{{ data.implementationArtifact.content }}</pre>
+          </div>
+        </PanelCard>
+
+        <PanelCard
+          v-if="data.reviewArtifact"
+          title="Review Artifact"
+          description="PR review フェーズの成果物です。"
+        >
+          <div class="stack-sm">
+            <p class="text-muted">{{ data.reviewArtifact.path }}</p>
+            <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>
           </div>
         </PanelCard>
 
@@ -230,8 +272,8 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           <tr v-for="event in data.events" :key="event.id">
             <td>{{ formatDateTime(event.createdAt) }}</td>
             <td>{{ event.eventType }}</td>
-            <td>{{ event.stateFrom || '-' }} → {{ event.stateTo || '-' }}</td>
-            <td><code>{{ event.payload }}</code></td>
+            <td>{{ event.stateTo || '-' }}</td>
+            <td><pre class="artifact-view">{{ formatPayloadPreview(event.payload) }}</pre></td>
             <td>
               <div v-if="event.availableActions.length > 0" class="button-row">
                 <button
@@ -251,6 +293,15 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   @click="submitRerun('retry_implementation', event.id)"
                 >
                   Rerun Implementation
+                </button>
+                <button
+                  v-if="event.availableActions.includes('retry_review')"
+                  class="button button-secondary"
+                  type="button"
+                  :disabled="reviewRerunState === 'saving'"
+                  @click="submitRerun('retry_review', event.id)"
+                >
+                  Rerun Review
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_pr')"
