@@ -29,3 +29,19 @@ type ImplementationContext struct {
 	DesignArtifactDir string   `json:"designArtifactDir"`
 	ArtifactDir       string   `json:"artifactDir"`
 }
+
+type ReviewContext struct {
+	JobID          string   `json:"jobId"`
+	Repository     string   `json:"repository"`
+	PullNumber     int      `json:"pullNumber"`
+	Title          string   `json:"title"`
+	Body           string   `json:"body"`
+	Author         string   `json:"author"`
+	Labels         []string `json:"labels"`
+	Assignees      []string `json:"assignees"`
+	WatchRuleID    string   `json:"watchRuleId"`
+	BranchName     string   `json:"branchName"`
+	ArtifactDir    string   `json:"artifactDir"`
+	SourceURL      string   `json:"sourceUrl"`
+	RepositoryHint string   `json:"repositoryHint"`
+}

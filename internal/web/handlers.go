@@ -45,6 +45,7 @@ type jobDetailResponse struct {
 	Events                 []eventResponse   `json:"events"`
 	DesignArtifact         *artifactResponse `json:"designArtifact,omitempty"`
 	ImplementationArtifact *artifactResponse `json:"implementationArtifact,omitempty"`
+	ReviewArtifact         *artifactResponse `json:"reviewArtifact,omitempty"`
 	TestReport             *artifactResponse `json:"testReport,omitempty"`
 	PRCreateArtifact       *artifactResponse `json:"prCreateArtifact,omitempty"`
 }
@@ -116,6 +117,9 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if artifact, err := s.loadImplementationArtifact(job.ID); err == nil {
 		out.ImplementationArtifact = artifact
+	}
+	if artifact, err := s.loadReviewArtifact(job.ID); err == nil {
+		out.ReviewArtifact = artifact
 	}
 	if artifact, err := s.loadTestReport(job.ID); err == nil {
 		out.TestReport = artifact
@@ -246,6 +250,26 @@ func (s *Server) handlePRRerun(w http.ResponseWriter, r *http.Request) {
 	s.handleJobDetail(w, r)
 }
 
+func (s *Server) handleReviewRerun(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	var payload approvalRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode rerun request: %w", err))
+		return
+	}
+
+	if err := s.orchestrator.RerunReviewFromEvent(r.Context(), jobID, payload.EventID, payload.Comment); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, orchestrator.ErrInvalidStateTransition) {
+			status = http.StatusBadRequest
+		}
+		writeJSONError(w, status, err)
+		return
+	}
+
+	s.handleJobDetail(w, r)
+}
+
 func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 	watchRules := s.config.WatchRules()
 	rules := make([]watchRuleResponse, 0, len(watchRules.Rules))
@@ -303,6 +327,7 @@ const (
 	actionRetryDesign         = "retry_design"
 	actionRetryImplementation = "retry_implementation"
 	actionRetryPR             = "retry_pr"
+	actionRetryReview         = "retry_review"
 )
 
 func availableActionsForEvent(event domain.Event) []string {
@@ -327,6 +352,11 @@ func availableActionsForEvent(event domain.Event) []string {
 		actions = append(actions, actionRetryPR)
 	case event.EventType == "pr_push_failed" || event.EventType == "pr_create_failed":
 		actions = append(actions, actionRetryPR)
+	}
+
+	switch {
+	case event.EventType == "review_failed":
+		actions = append(actions, actionRetryReview)
 	}
 
 	return actions
@@ -468,6 +498,18 @@ func (s *Server) loadDesignArtifact(jobID string) (*artifactResponse, error) {
 
 func (s *Server) loadImplementationArtifact(jobID string) (*artifactResponse, error) {
 	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", jobID, "summary.md")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	return &artifactResponse{
+		Path:    path,
+		Content: string(raw),
+	}, nil
+}
+
+func (s *Server) loadReviewArtifact(jobID string) (*artifactResponse, error) {
+	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "reviews", jobID, "review.md")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

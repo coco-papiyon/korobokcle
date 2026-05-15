@@ -158,6 +158,25 @@ func (o *Orchestrator) RejectFinal(ctx context.Context, jobID string, comment st
 	})
 }
 
+func (o *Orchestrator) RerunReview(ctx context.Context, jobID string, comment string) error {
+	return o.RerunReviewFromEvent(ctx, jobID, nil, comment)
+}
+
+func (o *Orchestrator) RerunReviewFromEvent(ctx context.Context, jobID string, sourceEventID *int64, comment string) error {
+	phase, err := o.resolveRerunPhase(ctx, jobID, sourceEventID)
+	if err != nil {
+		return err
+	}
+	if phase != rerunPhaseReview {
+		return fmt.Errorf("%w: review rerun is not available for this event", ErrInvalidStateTransition)
+	}
+
+	return o.UpdateJobState(ctx, jobID, domain.StateCollectingContext, "review_rerun_requested", map[string]any{
+		"comment": comment,
+		"eventId": sourceEventID,
+	})
+}
+
 func (o *Orchestrator) RerunDesign(ctx context.Context, jobID string, comment string) error {
 	return o.RerunDesignFromEvent(ctx, jobID, nil, comment)
 }
@@ -221,6 +240,7 @@ const (
 	rerunPhaseDesign         rerunPhase = "design"
 	rerunPhaseImplementation rerunPhase = "implementation"
 	rerunPhasePR             rerunPhase = "pr"
+	rerunPhaseReview         rerunPhase = "review"
 )
 
 func (o *Orchestrator) resolveRerunPhase(ctx context.Context, jobID string, sourceEventID *int64) (rerunPhase, error) {
@@ -258,6 +278,8 @@ func rerunPhaseFromJob(ctx context.Context, o *Orchestrator, job domain.Job) rer
 		return rerunPhaseImplementation
 	case domain.StatePRCreating:
 		return rerunPhasePR
+	case domain.StateCollectingContext, domain.StateReviewRunning, domain.StateReviewReady:
+		return rerunPhaseReview
 	case domain.StateFailed:
 		events, err := o.store.ListEvents(ctx, job.ID)
 		if err != nil || len(events) == 0 {
@@ -277,6 +299,8 @@ func rerunPhaseFromEvent(event domain.Event) rerunPhase {
 		return rerunPhaseImplementation
 	case "final_approved", "pr_creating_started", "pr_create_failed", "pr_created", "pr_rerun_requested":
 		return rerunPhasePR
+	case "review_started", "review_ready", "review_failed", "review_rerun_requested":
+		return rerunPhaseReview
 	}
 	switch event.StateFrom {
 	case string(domain.StateDesignRunning), string(domain.StateDetected):
@@ -285,6 +309,8 @@ func rerunPhaseFromEvent(event domain.Event) rerunPhase {
 		return rerunPhaseImplementation
 	case string(domain.StatePRCreating):
 		return rerunPhasePR
+	case string(domain.StateCollectingContext), string(domain.StateReviewRunning):
+		return rerunPhaseReview
 	}
 	return ""
 }

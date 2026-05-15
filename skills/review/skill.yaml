@@ -1,0 +1,9 @@
+name: review
+provider: mock
+inputs:
+  - pull_request
+  - repository_context
+outputs:
+  - review_doc
+artifacts:
+  output_file: review.md

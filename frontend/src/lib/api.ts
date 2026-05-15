@@ -61,6 +61,13 @@ export function submitPRRerun(jobId: string, comment: string, eventId?: number):
   })
 }
 
+export function submitReviewRerun(jobId: string, comment: string, eventId?: number): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${jobId}/reruns/review`, {
+    method: 'POST',
+    body: JSON.stringify({ comment, eventId }),
+  })
+}
+
 export function fetchWatchRules(): Promise<WatchRule[]> {
   return request<WatchRule[]>('/api/watch-rules')
 }

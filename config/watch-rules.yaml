@@ -1,6 +1,6 @@
 rules:
     - id: rule-1
-      name: New Rule 1
+      name: issue
       repositories:
         - https://github.com/coco-papiyon/korobokcle
       target: issue
@@ -9,6 +9,19 @@ rules:
       authors: []
       assignees:
         - coco-papiyon
+      excludeDraftPR: true
+      skillSet: default
+      testProfile: go-default
+      enabled: true
+    - id: rule-2
+      name: PR
+      repositories:
+        - https://github.com/coco-papiyon/korobokcle
+      target: pull_request
+      labels: []
+      titlePattern: ""
+      authors: []
+      assignees: []
       excludeDraftPR: true
       skillSet: default
       testProfile: go-default
