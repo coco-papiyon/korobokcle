@@ -1,0 +1,9 @@
+name: implement
+provider: mock
+inputs:
+  - issue
+  - approved_design
+outputs:
+  - implementation_summary
+artifacts:
+  output_file: summary.md

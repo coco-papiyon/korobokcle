@@ -1,0 +1,53 @@
+# Issue Design Request
+
+Repository: {{ .Repository }}
+Issue: #{{ .IssueNumber }}
+Title: {{ .Title }}
+Author: {{ .Author }}
+Branch: {{ .BranchName }}
+Watch Rule: {{ .WatchRuleID }}
+
+## Labels
+{{- if .Labels }}
+{{- range .Labels }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Assignees
+{{- if .Assignees }}
+{{- range .Assignees }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Issue Body
+```
+{{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
+```
+
+## Requested Output
+
+Write a practical design document in Markdown. Prefer the following section headings:
+
+## Goal
+## Scope
+## Assumptions
+## Proposed Changes
+## Risks
+## Test Strategy
+
+## Output Rules
+
+Your response will be written verbatim to `{{ .ArtifactDir }}/design.md`.
+
+- Output only the final design document in Markdown.
+- Do not include any preface, commentary, status report, or explanation about what you did.
+- Do not say that you updated, saved, or added `{{ .ArtifactDir }}/design.md`.
+- Do not wrap the whole answer in code fences.
+- Start directly with either a title line or `## Goal`.
+- Human review will catch structural issues, so do not spend tokens on strict validation logic.

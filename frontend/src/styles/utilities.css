@@ -1,0 +1,33 @@
+.app-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6) var(--space-10);
+}
+
+.stack-xs > * + * {
+  margin-top: var(--space-2);
+}
+
+.stack-sm > * + * {
+  margin-top: var(--space-3);
+}
+
+.stack-lg > * + * {
+  margin-top: var(--space-6);
+}
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.text-muted {
+  color: var(--ink-muted);
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: var(--space-6) var(--space-4) var(--space-8);
+  }
+}

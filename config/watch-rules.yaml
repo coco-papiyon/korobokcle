@@ -1,0 +1,15 @@
+rules:
+    - id: rule-1
+      name: New Rule 1
+      repositories:
+        - https://github.com/coco-papiyon/korobokcle
+      target: issue
+      labels: []
+      titlePattern: ""
+      authors: []
+      assignees:
+        - coco-papiyon
+      excludeDraftPR: true
+      skillSet: default
+      testProfile: go-default
+      enabled: true

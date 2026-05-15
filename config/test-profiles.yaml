@@ -1,0 +1,4 @@
+profiles:
+  - name: go-default
+    commands:
+      - go test ./...

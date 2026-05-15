@@ -1,0 +1,43 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--ink-primary);
+  font-family: "BIZ UDPGothic", "Yu Gothic UI", "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at top right, var(--bg-radial), transparent 30%),
+    radial-gradient(circle at bottom left, rgba(255, 255, 255, 0.6), transparent 28%),
+    linear-gradient(180deg, #fbf6ef 0%, var(--bg-canvas) 100%);
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+code {
+  padding: 0.15rem 0.4rem;
+  border-radius: 8px;
+  background: #f4e7d8;
+  color: var(--accent-deep);
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}

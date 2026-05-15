@@ -1,0 +1,41 @@
+# Implementation Request
+
+Repository: {{ .Repository }}
+Issue: #{{ .IssueNumber }}
+Title: {{ .Title }}
+Author: {{ .Author }}
+Branch: {{ .BranchName }}
+Watch Rule: {{ .WatchRuleID }}
+
+## Labels
+{{- if .Labels }}
+{{- range .Labels }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Assignees
+{{- if .Assignees }}
+{{- range .Assignees }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Issue Body
+{{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
+
+## Approved Design
+{{ .DesignArtifact }}
+
+## Requested Output
+
+Write an implementation summary with:
+
+1. What should be changed
+2. Suggested file areas
+3. Risks during implementation
+4. Test plan
