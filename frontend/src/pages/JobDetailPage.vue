@@ -24,7 +24,10 @@ const { data, isLoading, error, reload } = useAsyncData(() => fetchJobDetail(job
 let refreshTimer: number | null = null
 
 function isPollingState(state?: string) {
-  return state !== undefined && state.includes('running')
+  if (!state) {
+    return false
+  }
+  return state.includes('running') || state === 'pr_creating'
 }
 
 function stopPolling() {
