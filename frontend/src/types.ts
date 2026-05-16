@@ -19,6 +19,7 @@ export type JobEvent = {
   stateTo: string
   payload: string
   createdAt: string
+  sourceEventType?: string
   availableActions: string[]
 }
 

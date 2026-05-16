@@ -156,8 +156,8 @@ function rerunErrorLabel(action: RerunAction) {
   return 'PR rerun'
 }
 
-function actionButtonLabel(action: RerunAction, eventType: string) {
-  if (action === 'retry_implementation' && eventType === 'test_failed') {
+function actionButtonLabel(action: RerunAction, eventType: string, sourceEventType?: string) {
+  if (action === 'retry_implementation' && (eventType === 'test_failed' || sourceEventType === 'test_failed')) {
     return 'Fix Implementation'
   }
   if (action === 'retry_design') {
@@ -483,7 +483,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="designRerunState === 'saving'"
                   @click="submitRerun('retry_design', event.id)"
                 >
-                  {{ actionButtonLabel('retry_design', event.eventType) }}
+                  {{ actionButtonLabel('retry_design', event.eventType, event.sourceEventType) }}
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_implementation')"
@@ -492,7 +492,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="implementationRerunState === 'saving'"
                   @click="submitRerun('retry_implementation', event.id)"
                 >
-                  {{ actionButtonLabel('retry_implementation', event.eventType) }}
+                  {{ actionButtonLabel('retry_implementation', event.eventType, event.sourceEventType) }}
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_review')"
@@ -501,7 +501,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="reviewRerunState === 'saving'"
                   @click="submitRerun('retry_review', event.id)"
                 >
-                  {{ actionButtonLabel('retry_review', event.eventType) }}
+                  {{ actionButtonLabel('retry_review', event.eventType, event.sourceEventType) }}
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_pr')"
@@ -510,7 +510,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="prRerunState === 'saving'"
                   @click="submitRerun('retry_pr', event.id)"
                 >
-                  {{ actionButtonLabel('retry_pr', event.eventType) }}
+                  {{ actionButtonLabel('retry_pr', event.eventType, event.sourceEventType) }}
                 </button>
               </div>
               <span v-else>-</span>

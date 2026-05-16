@@ -38,6 +38,7 @@ type eventResponse struct {
 	StateTo          string   `json:"stateTo"`
 	Payload          string   `json:"payload"`
 	CreatedAt        string   `json:"createdAt"`
+	SourceEventType  string   `json:"sourceEventType,omitempty"`
 	AvailableActions []string `json:"availableActions"`
 }
 
@@ -121,6 +122,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		Events: make([]eventResponse, 0, len(events)),
 	}
 	for _, event := range events {
+		sourceEventType := sourceEventTypeForEvent(events, event)
 		if out.IssueBody == "" && event.EventType == string(domain.DomainEventIssueMatched) {
 			out.IssueBody = extractIssueBody(event.Payload)
 		}
@@ -132,6 +134,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 			StateTo:          event.StateTo,
 			Payload:          event.Payload,
 			CreatedAt:        event.CreatedAt.Format(timeFormat),
+			SourceEventType:  sourceEventType,
 			AvailableActions: availableActionsForEvent(event),
 		})
 	}
@@ -405,6 +408,38 @@ func availableActionsForEvent(event domain.Event) []string {
 	}
 
 	return actions
+}
+
+func sourceEventTypeForEvent(events []domain.Event, event domain.Event) string {
+	if event.EventType != "implementation_failed" && event.EventType != "test_failed" && event.EventType != "pr_create_failed" && event.EventType != "review_failed" {
+		return ""
+	}
+
+	for i := len(events) - 1; i >= 0; i-- {
+		candidate := events[i]
+		if candidate.ID >= event.ID {
+			continue
+		}
+		if candidate.EventType == "implementation_rerun_requested" || candidate.EventType == "design_rerun_requested" || candidate.EventType == "pr_rerun_requested" || candidate.EventType == "review_rerun_requested" {
+			var payload struct {
+				EventID *int64 `json:"eventId"`
+			}
+			if err := json.Unmarshal([]byte(candidate.Payload), &payload); err != nil {
+				return ""
+			}
+			if payload.EventID == nil {
+				return ""
+			}
+			for j := i - 1; j >= 0; j-- {
+				source := events[j]
+				if source.ID == *payload.EventID {
+					return source.EventType
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
