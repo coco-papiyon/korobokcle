@@ -23,17 +23,12 @@ const { data: appConfig } = useAsyncData(fetchAppConfig, {
   >
     <section class="hero-grid">
       <PanelCard title="Jobs" description="承認待ち、進行中、失敗ジョブを一箇所で追跡します。" />
-      <PanelCard title="AI Provider" description="現在の実行 provider と設定変更の導線です。">
-            <div class="status-inline">
-              <StateBadge :state="`provider:${appConfig?.provider ?? 'mock'}`" />
-              <StateBadge :state="`model:${appConfig?.model ?? 'default'}`" />
-              <RouterLink class="button button-secondary" to="/settings">Open Settings</RouterLink>
-            </div>
-            <p class="text-muted">
-              現在値: <strong>{{ appConfig?.provider ?? 'mock' }}</strong>
-              <span> / Model: <strong>{{ appConfig?.model || 'default' }}</strong></span>
-            </p>
-          </PanelCard>
+      <PanelCard title="AI Provider" description="現在の実行 provider を表示します。">
+        <div class="status-inline">
+          <StateBadge :state="`provider:${appConfig?.provider ?? 'mock'}`" />
+          <StateBadge :state="`model:${appConfig?.model ?? 'default'}`" />
+        </div>
+      </PanelCard>
     </section>
 
     <AsyncState :is-loading="isLoading" :error="error">

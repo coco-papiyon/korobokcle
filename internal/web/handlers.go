@@ -95,6 +95,17 @@ type appConfigResponse struct {
 	Providers    []providerSpecResponse `json:"providers"`
 }
 
+type notificationChannelResponse struct {
+	Name    string   `json:"name"`
+	Type    string   `json:"type"`
+	Events  []string `json:"events"`
+	Enabled bool     `json:"enabled"`
+}
+
+type notificationConfigResponse struct {
+	Channels []notificationChannelResponse `json:"channels"`
+}
+
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 	jobs, err := s.orchestrator.ListJobs(r.Context())
 	if err != nil {
@@ -204,12 +215,20 @@ func (s *Server) handleFinalApproval(w http.ResponseWriter, r *http.Request) {
 	switch strings.TrimSpace(payload.Status) {
 	case "approved":
 		if err := s.orchestrator.ApproveFinal(r.Context(), jobID, payload.Comment); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err)
+			status := http.StatusInternalServerError
+			if errors.Is(err, orchestrator.ErrInvalidStateTransition) {
+				status = http.StatusBadRequest
+			}
+			writeJSONError(w, status, err)
 			return
 		}
 	case "rejected":
 		if err := s.orchestrator.RejectFinal(r.Context(), jobID, payload.Comment); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, err)
+			status := http.StatusInternalServerError
+			if errors.Is(err, orchestrator.ErrInvalidStateTransition) {
+				status = http.StatusBadRequest
+			}
+			writeJSONError(w, status, err)
 			return
 		}
 	default:
@@ -375,6 +394,46 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, toAppConfigResponse(appConfig))
+}
+
+func (s *Server) handleNotificationConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, toNotificationConfigResponse(s.config.Notifications()))
+}
+
+func (s *Server) handleSaveNotificationConfig(w http.ResponseWriter, r *http.Request) {
+	var payload notificationConfigResponse
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode notification config: %w", err))
+		return
+	}
+
+	file := config.Notifications{
+		Channels: make([]config.NotificationChannel, 0, len(payload.Channels)),
+	}
+	for index, channel := range payload.Channels {
+		name := strings.TrimSpace(channel.Name)
+		if name == "" {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("channel[%d].name is required", index))
+			return
+		}
+		channelType := strings.TrimSpace(channel.Type)
+		if channelType == "" {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("channel[%d].type is required", index))
+			return
+		}
+		file.Channels = append(file.Channels, config.NotificationChannel{
+			Name:    name,
+			Type:    channelType,
+			Events:  compactStrings(channel.Events),
+			Enabled: channel.Enabled,
+		})
+	}
+
+	if err := s.config.UpdateNotifications(file); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toNotificationConfigResponse(file))
 }
 
 const (
@@ -594,6 +653,19 @@ func toAppConfigResponse(app config.App) appConfigResponse {
 		PollInterval: int(effectivePollInterval(app.PollInterval) / time.Second),
 		Providers:    toProviderSpecResponses(app.Providers),
 	}
+}
+
+func toNotificationConfigResponse(notifications config.Notifications) notificationConfigResponse {
+	channels := make([]notificationChannelResponse, 0, len(notifications.Channels))
+	for _, channel := range notifications.Channels {
+		channels = append(channels, notificationChannelResponse{
+			Name:    channel.Name,
+			Type:    channel.Type,
+			Events:  sliceOrEmpty(channel.Events),
+			Enabled: channel.Enabled,
+		})
+	}
+	return notificationConfigResponse{Channels: channels}
 }
 
 func effectivePollInterval(value time.Duration) time.Duration {

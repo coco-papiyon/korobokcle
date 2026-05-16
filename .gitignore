@@ -1,5 +1,6 @@
 .gocache/
 gocache-local/
+gocache-notify/
 .gocache-local/
 
 data/

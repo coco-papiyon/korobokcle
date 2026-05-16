@@ -238,3 +238,69 @@ func TestHandleSaveAppConfigRejectsInvalidPollInterval(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
 	}
 }
+
+func TestHandleNotificationConfigReturnsChannels(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/notification-config", nil)
+
+	server.handleNotificationConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	var got struct {
+		Channels []struct {
+			Name   string   `json:"name"`
+			Events []string `json:"events"`
+		} `json:"channels"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got.Channels) == 0 {
+		t.Fatalf("expected notification channels")
+	}
+}
+
+func TestHandleSaveNotificationConfigUpdatesEvents(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"channels":[{"name":"windows-toast","type":"windows_toast","enabled":true,"events":["design_ready","pr_created"]}]}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/notification-config", bytes.NewReader(body))
+
+	server.handleSaveNotificationConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	notifications := svc.Notifications()
+	if len(notifications.Channels) != 1 {
+		t.Fatalf("expected 1 channel, got %d", len(notifications.Channels))
+	}
+	if got := notifications.Channels[0].Events; len(got) != 2 || got[0] != "design_ready" || got[1] != "pr_created" {
+		t.Fatalf("unexpected saved events: %v", got)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, "config", "notifications.yaml"))
+	if err != nil {
+		t.Fatalf("read saved notification config: %v", err)
+	}
+	if !bytes.Contains(raw, []byte("- pr_created")) {
+		t.Fatalf("expected saved config to include pr_created, got %s", string(raw))
+	}
+}

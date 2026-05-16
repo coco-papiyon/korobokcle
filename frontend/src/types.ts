@@ -82,3 +82,14 @@ export type ProviderSpec = {
   name: string
   models: string[]
 }
+
+export type NotificationChannel = {
+  name: string
+  type: string
+  events: string[]
+  enabled: boolean
+}
+
+export type NotificationConfig = {
+  channels: NotificationChannel[]
+}

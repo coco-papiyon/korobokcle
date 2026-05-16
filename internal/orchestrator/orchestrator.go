@@ -160,12 +160,18 @@ func (o *Orchestrator) RejectDesign(ctx context.Context, jobID string, comment s
 }
 
 func (o *Orchestrator) ApproveFinal(ctx context.Context, jobID string, comment string) error {
+	if err := o.ensureFinalApprovalAllowed(ctx, jobID); err != nil {
+		return err
+	}
 	return o.UpdateJobState(ctx, jobID, domain.StatePRCreating, "final_approved", map[string]any{
 		"comment": comment,
 	})
 }
 
 func (o *Orchestrator) RejectFinal(ctx context.Context, jobID string, comment string) error {
+	if err := o.ensureFinalApprovalAllowed(ctx, jobID); err != nil {
+		return err
+	}
 	return o.UpdateJobState(ctx, jobID, domain.StateFinalRejected, "final_rejected", map[string]any{
 		"comment": comment,
 	})
@@ -338,6 +344,28 @@ func makeBranchName(target domain.MonitoredTarget, number int) string {
 		return fmt.Sprintf("korobokcle/pr-review-%d", number)
 	}
 	return fmt.Sprintf("korobokcle/issue-%d", number)
+}
+
+func (o *Orchestrator) ensureFinalApprovalAllowed(ctx context.Context, jobID string) error {
+	job, err := o.store.GetJob(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if job.State == domain.StateWaitingFinalApproval {
+		return nil
+	}
+	if job.State != domain.StateFailed {
+		return fmt.Errorf("%w: final approval is not available for job state %q", ErrInvalidStateTransition, job.State)
+	}
+
+	events, err := o.store.ListEvents(ctx, job.ID)
+	if err != nil {
+		return err
+	}
+	if len(events) == 0 || events[len(events)-1].EventType != "test_failed" {
+		return fmt.Errorf("%w: final approval is only available after test_failed", ErrInvalidStateTransition)
+	}
+	return nil
 }
 
 func (o *Orchestrator) notifyJobEvent(ctx context.Context, job domain.Job, event domain.Event) {

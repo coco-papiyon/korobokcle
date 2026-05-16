@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,9 +12,17 @@ import (
 
 const implementationPatchArtifact = "implementation.patch"
 
+var errImplementationNoPatchNeeded = errors.New("implementation output indicates no patch is needed")
+
 func applyImplementationPatch(ctx context.Context, root string, artifactDir string, output string) error {
 	patch, err := extractImplementationPatch(output)
 	if err != nil {
+		if errors.Is(err, errImplementationNoPatchNeeded) {
+			if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+				return err
+			}
+			return os.WriteFile(filepath.Join(artifactDir, implementationPatchArtifact), []byte(""), 0o644)
+		}
 		return err
 	}
 
@@ -47,6 +56,10 @@ func extractImplementationPatch(output string) (string, error) {
 
 	if idx := strings.Index(trimmed, "diff --git "); idx >= 0 {
 		return ensureTrailingNewline(strings.TrimSpace(trimmed[idx:])), nil
+	}
+
+	if implementationOutputIndicatesNoPatch(trimmed) {
+		return "", errImplementationNoPatchNeeded
 	}
 
 	return "", fmt.Errorf("implementation output must contain a unified diff patch")
@@ -115,4 +128,23 @@ func ensureTrailingNewline(content string) string {
 		return content
 	}
 	return content + "\n"
+}
+
+func implementationOutputIndicatesNoPatch(output string) bool {
+	lowered := strings.ToLower(strings.TrimSpace(output))
+	markers := []string{
+		"変更不要",
+		"修正不要",
+		"差分なし",
+		"no changes required",
+		"no code changes needed",
+		"no patch required",
+		"already correct",
+	}
+	for _, marker := range markers {
+		if strings.Contains(lowered, strings.ToLower(marker)) {
+			return true
+		}
+	}
+	return false
 }

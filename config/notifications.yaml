@@ -1,13 +1,13 @@
 channels:
-  - name: windows-toast
-    type: windows_toast
-    events:
-      - design_ready
-      - waiting_design_approval
-      - implementation_ready
-      - waiting_final_approval
-      - review_ready
-      - review_completed
-      - pr_created
-      - failed
-    enabled: true
+    - name: windows-toast
+      type: windows_toast
+      events:
+        - waiting_design_approval
+        - implementation_ready
+        - waiting_final_approval
+        - review_ready
+        - review_completed
+        - pr_created
+        - failed
+        - design_ready
+      enabled: true

@@ -67,6 +67,26 @@ func TestApplyImplementationPatch(t *testing.T) {
 	}
 }
 
+func TestApplyImplementationPatchAllowsNoOpOutput(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	artifactDir := filepath.Join(root, "artifacts", "changes", "job-1")
+	output := "## 実装内容の要約\n\n- 確認した結果、変更不要です。\n\n## Patch\n\nNo patch required.\n"
+
+	if err := applyImplementationPatch(context.Background(), root, artifactDir, output); err != nil {
+		t.Fatalf("applyImplementationPatch() error = %v", err)
+	}
+
+	patchArtifact, err := os.ReadFile(filepath.Join(artifactDir, implementationPatchArtifact))
+	if err != nil {
+		t.Fatalf("ReadFile(patch artifact) error = %v", err)
+	}
+	if string(patchArtifact) != "" {
+		t.Fatalf("expected empty patch artifact for no-op output, got %q", string(patchArtifact))
+	}
+}
+
 func runGitCommand(dir string, args ...string) error {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir

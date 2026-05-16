@@ -98,6 +98,17 @@ func (s *Service) UpdateApp(app App) error {
 	return nil
 }
 
+func (s *Service) UpdateNotifications(file Notifications) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := saveYAML(filepath.Join(s.root, notificationsPath), file); err != nil {
+		return err
+	}
+	s.files.Notifications = cloneNotifications(file)
+	return nil
+}
+
 func cloneFiles(files Files) Files {
 	files.App = cloneApp(files.App)
 	files.WatchRules = cloneWatchRulesFile(files.WatchRules)

@@ -306,6 +306,112 @@ func TestUpdateJobStateIgnoresNotificationFailure(t *testing.T) {
 	}
 }
 
+func TestApproveFinalAllowedFromWaitingFinalApproval(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-final-1",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 10,
+		State:        domain.StateWaitingFinalApproval,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	if err := orch.ApproveFinal(context.Background(), job.ID, "ship it"); err != nil {
+		t.Fatalf("ApproveFinal() error = %v", err)
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StatePRCreating {
+		t.Fatalf("expected pr_creating, got %s", saved.State)
+	}
+}
+
+func TestApproveFinalAllowedAfterTestFailed(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-final-2",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 11,
+		State:        domain.StateFailed,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := orch.store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "test_failed",
+		StateFrom: string(domain.StateTestRunning),
+		StateTo:   string(domain.StateFailed),
+		Payload:   "{}",
+		CreatedAt: nowUTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	if err := orch.ApproveFinal(context.Background(), job.ID, "ship with known test failure"); err != nil {
+		t.Fatalf("ApproveFinal() error = %v", err)
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StatePRCreating {
+		t.Fatalf("expected pr_creating, got %s", saved.State)
+	}
+}
+
+func TestApproveFinalRejectedFromOtherFailedStates(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-final-3",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 12,
+		State:        domain.StateFailed,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := orch.store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "implementation_failed",
+		StateFrom: string(domain.StateImplementationRunning),
+		StateTo:   string(domain.StateFailed),
+		Payload:   "{}",
+		CreatedAt: nowUTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	err := orch.ApproveFinal(context.Background(), job.ID, "should fail")
+	if !errors.Is(err, ErrInvalidStateTransition) {
+		t.Fatalf("expected ErrInvalidStateTransition, got %v", err)
+	}
+}
+
 func newTestOrchestrator(t *testing.T) *Orchestrator {
 	t.Helper()
 	return newTestOrchestratorWithNotifier(t, notification.NewNopNotifier())

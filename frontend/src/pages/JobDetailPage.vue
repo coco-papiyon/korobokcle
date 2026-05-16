@@ -88,8 +88,25 @@ const prCreateInfo = computed(() => {
   }
 })
 
+const latestEvent = computed(() => {
+  const events = data.value?.events ?? []
+  return events.length > 0 ? events[events.length - 1] : null
+})
+
 const canReviewDesign = computed(() => data.value?.job.state === 'waiting_design_approval')
-const canReviewImplementation = computed(() => data.value?.job.state === 'waiting_final_approval')
+const canReviewImplementation = computed(() => {
+  const state = data.value?.job.state
+  if (state === 'waiting_final_approval') {
+    return true
+  }
+  return state === 'failed' && latestEvent.value?.eventType === 'test_failed'
+})
+const finalApprovalWarning = computed(() => {
+  if (data.value?.job.state === 'failed' && latestEvent.value?.eventType === 'test_failed') {
+    return 'Tests failed, but you can still approve and continue to PR creation.'
+  }
+  return ''
+})
 const testReportMarkdown = computed(() => formatTestReportMarkdown(data.value?.testReport?.content))
 const groupedLogs = computed(() => {
   const logs = data.value?.logs ?? []
@@ -353,6 +370,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
               </template>
               <p v-if="approvalState === 'error'" class="notice notice-danger">{{ approvalError }}</p>
               <template v-if="canReviewImplementation">
+                <p v-if="finalApprovalWarning" class="notice notice-danger">{{ finalApprovalWarning }}</p>
                 <div class="button-row">
                   <button class="button button-secondary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('rejected')">
                     Reject Final

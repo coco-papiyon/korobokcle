@@ -1,0 +1,137 @@
+name: Design Request
+description: AI に設計を依頼するための Issue テンプレート
+title: "[Design] "
+labels:
+  - design
+body:
+  - type: markdown
+    attributes:
+      value: |
+        この Issue は `korobokcle` の設計フロー向けテンプレートです。
+
+        期待すること:
+        - 何を解決したいか
+        - なぜ必要か
+        - どこまでを対象にするか
+        - 完了条件は何か
+
+        曖昧なままでも起票できますが、具体的に書くほど設計品質は安定します。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 解決したい課題
+      description: 現状の問題、困っていること、改善したいことを書いてください。
+      placeholder: |
+        例:
+        watch rule ごとに provider / model を切り替えられるが、
+        UI 上では現在値と継承元が分かりにくく設定ミスが起きやすい。
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 期待する結果
+      description: どうなればこの Issue が成功といえるかを書いてください。
+      placeholder: |
+        例:
+        ルール編集画面で provider / model の適用元と有効値が分かり、
+        誤設定なく保存できること。
+    validations:
+      required: true
+
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景・理由
+      description: この変更が必要な理由、運用上の背景、関連する制約など。
+      placeholder: |
+        例:
+        今後 provider を複数運用する前提があり、
+        既定値継承の見えにくさが実運用の障害になっている。
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: 対象範囲
+      description: 変更対象や対象外を明確にしてください。
+      placeholder: |
+        対象:
+        - frontend の watch rule 編集 UI
+        - 必要なら API のレスポンス拡張
+
+        対象外:
+        - provider 実行ロジックの刷新
+        - DB スキーマの全面変更
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: 要件・制約
+      description: 必須要件、非機能要件、互換性要件、使ってはいけない手法など。
+      placeholder: |
+        例:
+        - 既存設定ファイルとの互換性を維持する
+        - Web UI は日本語表示を維持する
+        - 既存 API 利用者を壊さない
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 完了条件
+      description: 設計・実装・レビュー時に確認したい受け入れ条件を書いてください。
+      placeholder: |
+        例:
+        - 継承中か明示指定かを UI で判別できる
+        - 保存後に意図した provider / model が API で確認できる
+        - 既存 watch rule の読み込みが壊れない
+    validations:
+      required: true
+
+  - type: textarea
+    id: references
+    attributes:
+      label: 参考情報
+      description: 関連 Issue、PR、設計メモ、画面キャプチャ、外部仕様など。
+      placeholder: |
+        例:
+        - docs/design.md
+        - Related: #123
+        - UI mock: ...
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 主な対象領域
+      description: 主にどの領域の設計依頼か選んでください。
+      options:
+        - frontend
+        - backend
+        - github integration
+        - workflow / orchestration
+        - storage / database
+        - docs
+        - other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 優先度
+      description: 設計着手の優先度目安です。
+      options:
+        - high
+        - medium
+        - low
+    validations:
+      required: true

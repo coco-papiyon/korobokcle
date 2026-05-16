@@ -1,4 +1,4 @@
-import type { AppConfig, Job, JobDetail, WatchRule } from '@/types'
+import type { AppConfig, Job, JobDetail, NotificationConfig, WatchRule } from '@/types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -85,6 +85,17 @@ export function fetchAppConfig(): Promise<AppConfig> {
 
 export function saveAppConfig(config: Pick<AppConfig, 'provider' | 'model' | 'pollInterval'>): Promise<AppConfig> {
   return request<AppConfig>('/api/app-config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  })
+}
+
+export function fetchNotificationConfig(): Promise<NotificationConfig> {
+  return request<NotificationConfig>('/api/notification-config')
+}
+
+export function saveNotificationConfig(config: NotificationConfig): Promise<NotificationConfig> {
+  return request<NotificationConfig>('/api/notification-config', {
     method: 'PUT',
     body: JSON.stringify(config),
   })
