@@ -243,7 +243,7 @@ func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest,
 }
 
 func buildPRBody(job domain.Job, summary string) string {
-	return fmt.Sprintf("## Summary\n\n%s\n\n## Source\n\n- Repository: `%s`\n- Issue: #%d\n- Job: `%s`\n", strings.TrimSpace(summary), job.Repository, job.GitHubNumber, job.ID)
+	return fmt.Sprintf("## Summary\n\n%s\n\n## Source\n\n- Repository: `%s`\n- Issue: #%d\n- Job: `%s`\n", trimImplementationSummary(summary), job.Repository, job.GitHubNumber, job.ID)
 }
 
 func writePRCreateArtifact(artifactDir string, url string, req PRCreateRequest) error {
