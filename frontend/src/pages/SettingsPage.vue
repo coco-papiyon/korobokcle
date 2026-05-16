@@ -17,7 +17,7 @@ const saveError = ref<string | null>(null)
 const providerCatalog = ref<ProviderSpec[]>([])
 
 const availableModelOptions = computed(() => {
-  return modelOptionsForProvider(providerCatalog.value, provider.value, model.value)
+  return modelOptionsForProvider(providerCatalog.value, provider.value, model.value, 'Default')
 })
 
 watch(
@@ -59,15 +59,15 @@ async function persistConfig() {
   <AppShell title="Settings" description="AI provider などアプリ全体の挙動を設定します。">
     <AsyncState :is-loading="isLoading" :error="error">
       <section class="hero-grid">
-        <PanelCard title="AI Provider" description="設計・実装フローで利用する CLI ベースの AI provider を選択します。" />
-        <PanelCard title="Model" description="provider ごとに利用するモデルを選択します。未指定の場合はツールの既定値を使います。" />
+        <PanelCard title="Application Settings" description="起動後に変更可能なアプリ設定を編集します。" />
+        <PanelCard title="Current Defaults" description="provider / model / pollInterval の現在値を確認できます。" />
       </section>
 
       <section class="panel stack-md">
         <div class="rule-editor__header">
           <div>
             <h2>Application Settings</h2>
-            <p class="text-muted">現在は AI provider と model を切り替えできます。</p>
+            <p class="text-muted">provider、model、pollInterval を画面から変更できます。</p>
           </div>
           <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistConfig">
             {{ saveState === 'saving' ? 'Saving...' : 'Save Settings' }}

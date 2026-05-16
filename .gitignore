@@ -1,7 +1,10 @@
 .gocache/
 gocache-local/
+.gocache-local/
 
 data/
 artifacts/
 frontend/node_modules/
 frontend/dist/
+frontend/.npm-cache/
+frontend/.vite-dist-temp/

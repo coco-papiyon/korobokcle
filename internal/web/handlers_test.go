@@ -152,7 +152,7 @@ func TestHandleSaveAppConfigUpdatesPollInterval(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"mock","model":"","pollInterval":90}`)
+	body := []byte(`{"pollInterval":90}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -165,6 +165,9 @@ func TestHandleSaveAppConfigUpdatesPollInterval(t *testing.T) {
 	if got := svc.App().PollInterval; got != 90*time.Second {
 		t.Fatalf("expected saved poll interval 90s, got %s", got)
 	}
+	if got := svc.App().Provider; got != "mock" {
+		t.Fatalf("expected provider to remain mock, got %q", got)
+	}
 
 	savedConfigPath := filepath.Join(root, "config", "app.yaml")
 	raw, err := os.ReadFile(savedConfigPath)
@@ -173,6 +176,47 @@ func TestHandleSaveAppConfigUpdatesPollInterval(t *testing.T) {
 	}
 	if !bytes.Contains(raw, []byte("pollInterval: 1m30s")) {
 		t.Fatalf("expected saved config to contain updated poll interval, got %s", string(raw))
+	}
+	if bytes.Contains(raw, []byte("provider:")) && !bytes.Contains(raw, []byte("provider: mock")) {
+		t.Fatalf("expected saved config provider to remain unchanged, got %s", string(raw))
+	}
+}
+
+func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"codex","model":"gpt-4.1","pollInterval":90}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	if got := svc.App().Provider; got != "codex" {
+		t.Fatalf("expected saved provider codex, got %q", got)
+	}
+	if got := svc.App().Model; got != "gpt-4.1" {
+		t.Fatalf("expected saved model gpt-4.1, got %q", got)
+	}
+
+	savedConfigPath := filepath.Join(root, "config", "app.yaml")
+	raw, err := os.ReadFile(savedConfigPath)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if !bytes.Contains(raw, []byte("provider: codex")) {
+		t.Fatalf("expected saved config to contain updated provider, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("model: gpt-4.1")) {
+		t.Fatalf("expected saved config to contain updated model, got %s", string(raw))
 	}
 }
 
@@ -184,7 +228,7 @@ func TestHandleSaveAppConfigRejectsInvalidPollInterval(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"mock","model":"","pollInterval":0}`)
+	body := []byte(`{"pollInterval":0}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 

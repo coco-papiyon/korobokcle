@@ -19,9 +19,14 @@ export function watchRuleProviderOptions(providers: ProviderSpec[]): SelectOptio
   ]
 }
 
-export function modelOptionsForProvider(providers: ProviderSpec[], providerName: string, currentModel = ''): SelectOption[] {
+export function modelOptionsForProvider(
+  providers: ProviderSpec[],
+  providerName: string,
+  currentModel = '',
+  defaultLabel = 'Default',
+): SelectOption[] {
   const provider = providers.find((item) => item.name === providerName)
-  const options: SelectOption[] = [{ value: '', label: 'Default' }]
+  const options: SelectOption[] = [{ value: '', label: defaultLabel }]
 
   for (const model of provider?.models ?? []) {
     const trimmed = model.trim()

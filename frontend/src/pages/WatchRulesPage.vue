@@ -32,9 +32,7 @@ const availableModelOptions = computed(() => {
   const config = appConfig.value as AppConfig | null | undefined
   const providerCatalog = config?.providers ?? []
   const selectedProvider = selectedRule.value?.provider?.trim() || config?.provider || ''
-  return modelOptionsForProvider(providerCatalog, selectedProvider, selectedRule.value?.model ?? '').map((option) =>
-    option.value === '' ? { ...option, label: 'Use setting' } : option,
-  )
+  return modelOptionsForProvider(providerCatalog, selectedProvider, selectedRule.value?.model ?? '', 'Use setting')
 })
 
 function toForm(rule: WatchRule): WatchRuleForm {

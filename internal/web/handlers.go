@@ -335,20 +335,31 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	appConfig := s.config.App()
 	provider := strings.ToLower(strings.TrimSpace(payload.Provider))
-	if _, err := s.providerSpecByName(provider); err != nil {
-		writeJSONError(w, http.StatusBadRequest, err)
-		return
+	if provider == "" {
+		provider = appConfig.Provider
+	}
+	if provider != appConfig.Provider || strings.TrimSpace(payload.Provider) != "" {
+		if _, err := s.providerSpecByName(provider); err != nil {
+			writeJSONError(w, http.StatusBadRequest, err)
+			return
+		}
+		appConfig.Provider = provider
 	}
 
-	appConfig := s.config.App()
-	appConfig.Provider = provider
-	model, err := s.validateModelForProvider(provider, payload.Model)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err)
-		return
+	modelInput := strings.TrimSpace(payload.Model)
+	if modelInput == "" {
+		modelInput = appConfig.Model
+	} else {
+		model, err := s.validateModelForProvider(provider, modelInput)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, err)
+			return
+		}
+		modelInput = model
 	}
-	appConfig.Model = model
+	appConfig.Model = modelInput
 	if payload.PollInterval < 1 {
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be a positive whole number of seconds"))
 		return
