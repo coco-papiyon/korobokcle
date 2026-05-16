@@ -26,26 +26,82 @@ Watch Rule: {{ .WatchRuleID }}
 {{- end }}
 
 ## Issue Body
+```
 {{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
+```
 
 ## Approved Design
+```
 {{ .DesignArtifact }}
+```
+
+{{- if .PreviousFailure }}
+## Previous Failure
+```
+{{ .PreviousFailure }}
+```
+{{- end }}
+
+{{- if .PreviousTestReport }}
+## Previous Test Report
+```
+{{ .PreviousTestReport }}
+```
+{{- end }}
 
 ## 出力内容
 
-以下を含む Markdown を作成してください。
+以下の観点で、実装結果を Markdown で整理してください。
 
-1. 実装内容の要約
-2. 変更した箇所
-3. 動作確認
-4. 懸念点・残課題
-5. ブランチ名
-6. Patch
+### 1. 実装内容の要約
 
-## Patch
+- 何を実装したか
+- 何が変わったか
+- 設計からの主な差分
+
+### 2. 変更した箇所
+
+- 変更したファイル
+- 追加した処理
+- 修正した処理
+- 削除または置き換えた処理
+
+### 3. 動作確認
+
+- 実行したテスト
+- 手動確認した内容
+- 確認できた挙動
+
+### 4. 懸念点・残課題
+
+- 未解決の課題
+- 気になる点
+- 今後の対応候補
+
+### 5. ブランチ名
+
+ラベルと Issue 番号に基づいて、ブランチ名を記載してください。
+
+例:
+
+feature/issue_123
+fix/issue_456
+
+### 6. Patch
 
 実装した変更を unified diff 形式で示してください。
 
 - パッチは `git apply` できる形式にしてください。
 - パッチは必ず `## Patch` 見出しの下に、`diff` を指定したコードフェンスで出力してください。
 - パッチ以外の内容はコードフェンスに入れないでください。
+
+## Patch
+
+```diff
+diff --git a/example.txt b/example.txt
+--- a/example.txt
++++ b/example.txt
+@@ -1 +1 @@
+-old
++new
+```

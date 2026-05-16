@@ -17,7 +17,9 @@ func startWatcher(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 	poller := gh.NewPoller(client, func() []config.WatchRule {
 		return cfg.WatchRules().Rules
 	}, debugLogger)
-	watcher := gh.NewWatcher(poller, cfg.App().PollInterval, logger, debugLogger)
+	watcher := gh.NewWatcher(poller, func() time.Duration {
+		return cfg.App().PollInterval
+	}, logger, debugLogger)
 	events := make(chan domain.DomainEvent, 16)
 
 	go func() {

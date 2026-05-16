@@ -73,6 +73,7 @@ export type WatchRuleForm = WatchRule & {
 export type AppConfig = {
   provider: string
   model: string
+  pollInterval: number
   providers: ProviderSpec[]
 }
 

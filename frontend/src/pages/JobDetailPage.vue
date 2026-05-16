@@ -156,6 +156,22 @@ function rerunErrorLabel(action: RerunAction) {
   return 'PR rerun'
 }
 
+function actionButtonLabel(action: RerunAction, eventType: string) {
+  if (action === 'retry_implementation' && eventType === 'test_failed') {
+    return 'Fix Implementation'
+  }
+  if (action === 'retry_design') {
+    return 'Rerun Design'
+  }
+  if (action === 'retry_implementation') {
+    return 'Rerun Implementation'
+  }
+  if (action === 'retry_review') {
+    return 'Rerun Review'
+  }
+  return 'Retry PR'
+}
+
 function formatPayloadPreview(payload: string) {
   try {
     const parsed = JSON.parse(payload) as unknown
@@ -467,7 +483,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="designRerunState === 'saving'"
                   @click="submitRerun('retry_design', event.id)"
                 >
-                  Rerun Design
+                  {{ actionButtonLabel('retry_design', event.eventType) }}
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_implementation')"
@@ -476,7 +492,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="implementationRerunState === 'saving'"
                   @click="submitRerun('retry_implementation', event.id)"
                 >
-                  Rerun Implementation
+                  {{ actionButtonLabel('retry_implementation', event.eventType) }}
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_review')"
@@ -485,7 +501,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="reviewRerunState === 'saving'"
                   @click="submitRerun('retry_review', event.id)"
                 >
-                  Rerun Review
+                  {{ actionButtonLabel('retry_review', event.eventType) }}
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_pr')"
@@ -494,7 +510,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="prRerunState === 'saving'"
                   @click="submitRerun('retry_pr', event.id)"
                 >
-                  Retry PR
+                  {{ actionButtonLabel('retry_pr', event.eventType) }}
                 </button>
               </div>
               <span v-else>-</span>

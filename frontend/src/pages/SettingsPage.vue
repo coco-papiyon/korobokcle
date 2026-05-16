@@ -11,6 +11,7 @@ import type { ProviderSpec } from '@/types'
 const { data, isLoading, error, reload } = useAsyncData(fetchAppConfig)
 const provider = ref('mock')
 const model = ref('')
+const pollInterval = ref(120)
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const saveError = ref<string | null>(null)
 const providerCatalog = ref<ProviderSpec[]>([])
@@ -24,18 +25,27 @@ watch(
   (config) => {
     provider.value = config?.provider ?? 'mock'
     model.value = config?.model ?? ''
+    pollInterval.value = config?.pollInterval ?? 120
     providerCatalog.value = config?.providers ?? []
   },
   { immediate: true },
 )
 
 async function persistConfig() {
+  const interval = Number(pollInterval.value)
+  if (!Number.isInteger(interval) || interval < 1 || interval > 86400) {
+    saveState.value = 'error'
+    saveError.value = 'Poll interval must be a whole number between 1 and 86400 seconds.'
+    return
+  }
+
   saveState.value = 'saving'
   saveError.value = null
   try {
-    const saved = await saveAppConfig({ provider: provider.value, model: model.value })
+    const saved = await saveAppConfig({ provider: provider.value, model: model.value, pollInterval: interval })
     provider.value = saved.provider
     model.value = saved.model
+    pollInterval.value = saved.pollInterval
     saveState.value = 'saved'
     await reload()
   } catch (err) {
@@ -80,6 +90,19 @@ async function persistConfig() {
               {{ option.label }}
             </option>
           </select>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Poll Interval (seconds)</span>
+          <input
+            v-model.number="pollInterval"
+            class="field__control"
+            type="number"
+            min="1"
+            max="86400"
+            step="1"
+          />
+          <p class="text-muted">Whole seconds only. The watcher uses the updated value on the next poll cycle.</p>
         </label>
 
         <div v-if="saveState === 'saved'" class="notice notice-success">app.yaml を更新しました。</div>

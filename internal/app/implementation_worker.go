@@ -3,9 +3,12 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
@@ -135,6 +138,13 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 		ArtifactDir:       filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID),
 	}
 
+	previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)
+	if err != nil {
+		return skill.ImplementationContext{}, err
+	}
+	ctxData.PreviousFailure = previousFailure
+	ctxData.PreviousTestReport = previousTestReport
+
 	for _, event := range events {
 		if event.EventType != string(domain.DomainEventIssueMatched) {
 			continue
@@ -157,6 +167,46 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 	}
 
 	return ctxData, nil
+}
+
+func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events []domain.Event) (string, string, error) {
+	var previousFailure string
+	var previousTestReport string
+
+	for i := len(events) - 1; i >= 0; i-- {
+		event := events[i]
+		switch event.EventType {
+		case "test_failed", "implementation_failed":
+			var payload struct {
+				Error      string `json:"error"`
+				ReportPath string `json:"reportPath"`
+			}
+			if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+				return "", "", err
+			}
+			previousFailure = strings.TrimSpace(payload.Error)
+			if previousFailure == "" {
+				previousFailure = event.EventType
+			}
+			if strings.TrimSpace(payload.ReportPath) != "" {
+				if raw, err := os.ReadFile(payload.ReportPath); err == nil {
+					previousTestReport = string(raw)
+				}
+			}
+			break
+		}
+	}
+
+	if previousTestReport == "" {
+		reportPath := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID, "test-report.json")
+		if raw, err := os.ReadFile(reportPath); err == nil {
+			previousTestReport = string(raw)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", "", fmt.Errorf("read previous test report: %w", err)
+		}
+	}
+
+	return previousFailure, previousTestReport, nil
 }
 
 func runTestsForJob(ctx context.Context, cfg *config.Service, testRunner *executor.TestRunner, job domain.Job, artifactDir string) (executor.TestReport, error) {

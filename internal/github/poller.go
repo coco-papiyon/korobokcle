@@ -90,24 +90,25 @@ func (p *Poller) Poll(ctx context.Context) ([]domain.DomainEvent, error) {
 }
 
 type Watcher struct {
-	poller   *Poller
-	interval time.Duration
-	logger   *log.Logger
-	debug    *log.Logger
+	poller          *Poller
+	intervalProvider func() time.Duration
+	logger          *log.Logger
+	debug           *log.Logger
 }
 
-func NewWatcher(poller *Poller, interval time.Duration, logger *log.Logger, debug *log.Logger) *Watcher {
-	return &Watcher{poller: poller, interval: interval, logger: logger, debug: debug}
+func NewWatcher(poller *Poller, intervalProvider func() time.Duration, logger *log.Logger, debug *log.Logger) *Watcher {
+	return &Watcher{poller: poller, intervalProvider: intervalProvider, logger: logger, debug: debug}
 }
 
 func (w *Watcher) Start(ctx context.Context, out chan<- domain.DomainEvent) error {
-	w.debugf("watcher started interval=%s", w.interval)
+	w.debugf("watcher started interval=%s", w.interval())
 	if err := w.pollOnce(ctx, out); err != nil {
 		return err
 	}
 
-	ticker := time.NewTicker(w.interval)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	lastPollAt := time.Now()
 
 	for {
 		select {
@@ -115,10 +116,15 @@ func (w *Watcher) Start(ctx context.Context, out chan<- domain.DomainEvent) erro
 			w.debugf("watcher stopped by context")
 			return nil
 		case <-ticker.C:
-			w.debugf("watcher ticker fired")
+			interval := w.interval()
+			if time.Since(lastPollAt) < interval {
+				continue
+			}
+			w.debugf("watcher ticker fired interval=%s", interval)
 			if err := w.pollOnce(ctx, out); err != nil {
 				return err
 			}
+			lastPollAt = time.Now()
 		}
 	}
 }
@@ -155,6 +161,17 @@ func (w *Watcher) debugf(format string, args ...any) {
 	if w.debug != nil {
 		w.debug.Printf(format, args...)
 	}
+}
+
+func (w *Watcher) interval() time.Duration {
+	if w.intervalProvider == nil {
+		return config.DefaultPollInterval
+	}
+	value := w.intervalProvider()
+	if value <= 0 {
+		return config.DefaultPollInterval
+	}
+	return value
 }
 
 func formatSince(value time.Time) string {

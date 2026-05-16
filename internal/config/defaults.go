@@ -2,11 +2,13 @@ package config
 
 import "time"
 
+const DefaultPollInterval = 2 * time.Minute
+
 func DefaultFiles() Files {
 	return Files{
 		App: App{
 			HTTPPort:     8080,
-			PollInterval: 2 * time.Minute,
+			PollInterval: DefaultPollInterval,
 			DataDir:      "data",
 			ArtifactsDir: "artifacts",
 			WorkspaceDir: ".",

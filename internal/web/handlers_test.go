@@ -1,9 +1,16 @@
 package web
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
 
@@ -102,5 +109,88 @@ func TestAvailableActionsForEvent(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.PollInterval = 45 * time.Second
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/app-config", nil)
+
+	server.handleAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	var got struct {
+		Provider     string `json:"provider"`
+		Model        string `json:"model"`
+		PollInterval int    `json:"pollInterval"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if got.PollInterval != 45 {
+		t.Fatalf("expected poll interval 45, got %d", got.PollInterval)
+	}
+}
+
+func TestHandleSaveAppConfigUpdatesPollInterval(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"mock","model":"","pollInterval":90}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	if got := svc.App().PollInterval; got != 90*time.Second {
+		t.Fatalf("expected saved poll interval 90s, got %s", got)
+	}
+
+	savedConfigPath := filepath.Join(root, "config", "app.yaml")
+	raw, err := os.ReadFile(savedConfigPath)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if !bytes.Contains(raw, []byte("pollInterval: 1m30s")) {
+		t.Fatalf("expected saved config to contain updated poll interval, got %s", string(raw))
+	}
+}
+
+func TestHandleSaveAppConfigRejectsInvalidPollInterval(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"mock","model":"","pollInterval":0}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
 	}
 }
