@@ -1,7 +1,7 @@
 # Implementation Request
 
 あなたは熟練のソフトウェアエンジニアです。
-以下の GitHub Issue と設計内容を読み取り、実装結果の要約を作成してください。
+以下の Issue Body と Approved Design を読み取り、ソースコードを修正し、実装結果を作成してください。
 
 Repository: {{ .Repository }}
 Issue: #{{ .IssueNumber }}
@@ -37,6 +37,29 @@ Watch Rule: {{ .WatchRuleID }}
 ```
 {{ .DesignArtifact }}
 ```
+
+## 実行情報
+
+- 試行回数: {{ .Attempt }}
+{{- if .PreviousFailure }}
+- 直近の失敗: {{ .PreviousFailure }}
+{{- end }}
+{{- if .PreviousTestReport }}
+
+## 直近のテスト結果
+
+```
+{{ .PreviousTestReport }}
+```
+{{- end }}
+{{- if .CurrentDiff }}
+
+## 現在の差分
+
+```
+{{ .CurrentDiff }}
+```
+{{- end }}
 
 ## 出力内容
 
