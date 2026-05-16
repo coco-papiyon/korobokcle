@@ -43,14 +43,23 @@ type eventResponse struct {
 type jobDetailResponse struct {
 	Job                    jobResponse       `json:"job"`
 	Events                 []eventResponse   `json:"events"`
+	IssueBody              string            `json:"issueBody,omitempty"`
 	DesignArtifact         *artifactResponse `json:"designArtifact,omitempty"`
 	ImplementationArtifact *artifactResponse `json:"implementationArtifact,omitempty"`
 	ReviewArtifact         *artifactResponse `json:"reviewArtifact,omitempty"`
 	TestReport             *artifactResponse `json:"testReport,omitempty"`
 	PRCreateArtifact       *artifactResponse `json:"prCreateArtifact,omitempty"`
+	Logs                   []logResponse     `json:"logs,omitempty"`
 }
 
 type artifactResponse struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+type logResponse struct {
+	Name    string `json:"name"`
+	Phase   string `json:"phase"`
 	Path    string `json:"path"`
 	Content string `json:"content"`
 }
@@ -65,13 +74,22 @@ type watchRuleResponse struct {
 	Authors        []string `json:"authors"`
 	Assignees      []string `json:"assignees"`
 	ExcludeDraftPR bool     `json:"excludeDraftPR"`
+	Provider       string   `json:"provider"`
+	Model          string   `json:"model"`
 	SkillSet       string   `json:"skillSet"`
 	TestProfile    string   `json:"testProfile"`
 	Enabled        bool     `json:"enabled"`
 }
 
+type providerSpecResponse struct {
+	Name   string   `json:"name"`
+	Models []string `json:"models"`
+}
+
 type appConfigResponse struct {
-	Provider string `json:"provider"`
+	Provider  string                 `json:"provider"`
+	Model     string                 `json:"model"`
+	Providers []providerSpecResponse `json:"providers"`
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +119,9 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		Events: make([]eventResponse, 0, len(events)),
 	}
 	for _, event := range events {
+		if out.IssueBody == "" && event.EventType == string(domain.DomainEventIssueMatched) {
+			out.IssueBody = extractIssueBody(event.Payload)
+		}
 		out.Events = append(out.Events, eventResponse{
 			ID:               event.ID,
 			JobID:            event.JobID,
@@ -127,6 +148,10 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	if artifact, err := s.loadPRCreateArtifact(job.ID); err == nil {
 		out.PRCreateArtifact = artifact
 	}
+	out.Logs = append(out.Logs, s.loadLogResponses("design", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "designs", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("implementation", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("pr", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", job.ID), []string{"git-push.log", "gh-pr-create.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("review", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "reviews", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -284,6 +309,8 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 			Authors:        sliceOrEmpty(rule.Authors),
 			Assignees:      sliceOrEmpty(rule.Assignees),
 			ExcludeDraftPR: rule.ExcludeDraftPR,
+			Provider:       rule.Provider,
+			Model:          rule.Model,
 			SkillSet:       rule.SkillSet,
 			TestProfile:    rule.TestProfile,
 			Enabled:        rule.Enabled,
@@ -293,9 +320,7 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAppConfig(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, appConfigResponse{
-		Provider: s.config.App().Provider,
-	})
+	writeJSON(w, http.StatusOK, toAppConfigResponse(s.config.App()))
 }
 
 func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
@@ -306,21 +331,25 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	provider := strings.ToLower(strings.TrimSpace(payload.Provider))
-	switch provider {
-	case "mock", "copilot", "codex":
-	default:
-		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("provider must be mock, copilot, or codex"))
+	if _, err := s.providerSpecByName(provider); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	appConfig := s.config.App()
 	appConfig.Provider = provider
+	model, err := s.validateModelForProvider(provider, payload.Model)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	appConfig.Model = model
 	if err := s.config.UpdateApp(appConfig); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, appConfigResponse{Provider: provider})
+	writeJSON(w, http.StatusOK, toAppConfigResponse(appConfig))
 }
 
 const (
@@ -334,14 +363,23 @@ func availableActionsForEvent(event domain.Event) []string {
 	actions := make([]string, 0, 1)
 
 	switch event.StateTo {
-	case string(domain.StateDesignRunning):
-		actions = append(actions, actionRetryDesign)
-	case string(domain.StateImplementationRunning), string(domain.StateTestRunning):
-		actions = append(actions, actionRetryImplementation)
-	case string(domain.StatePRCreating):
-		actions = append(actions, actionRetryPR)
-	case string(domain.StateReviewRunning):
-		actions = append(actions, actionRetryReview)
+	case string(domain.StateDesignReady):
+		switch event.EventType {
+		case "design_ready":
+			actions = append(actions, actionRetryDesign)
+		}
+	case string(domain.StateImplementationReady):
+		switch event.EventType {
+		case "implementation_ready":
+			actions = append(actions, actionRetryImplementation)
+		}
+	case string(domain.StateReviewReady), string(domain.StateCompleted):
+		switch event.EventType {
+		case "review_ready", "review_completed":
+			actions = append(actions, actionRetryReview)
+		case "pr_created":
+			actions = append(actions, actionRetryPR)
+		}
 	}
 
 	switch event.EventType {
@@ -381,6 +419,16 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].target must be issue or pull_request", index))
 			return
 		}
+		provider, err := s.parseOptionalProvider(rule.Provider)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].provider: %w", index, err))
+			return
+		}
+		model, err := s.validateRuleModel(provider, rule.Model)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].model: %w", index, err))
+			return
+		}
 		file.Rules = append(file.Rules, config.WatchRule{
 			ID:             strings.TrimSpace(rule.ID),
 			Name:           strings.TrimSpace(rule.Name),
@@ -391,6 +439,8 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			Authors:        compactStrings(rule.Authors),
 			Assignees:      compactStrings(rule.Assignees),
 			ExcludeDraftPR: rule.ExcludeDraftPR,
+			Provider:       provider,
+			Model:          model,
 			SkillSet:       strings.TrimSpace(rule.SkillSet),
 			TestProfile:    strings.TrimSpace(rule.TestProfile),
 			Enabled:        rule.Enabled,
@@ -480,6 +530,103 @@ func sliceOrEmpty(values []string) []string {
 	return values
 }
 
+func toAppConfigResponse(app config.App) appConfigResponse {
+	return appConfigResponse{
+		Provider:  app.Provider,
+		Model:     app.Model,
+		Providers: toProviderSpecResponses(app.Providers),
+	}
+}
+
+func toProviderSpecResponses(providers []config.ProviderSpec) []providerSpecResponse {
+	out := make([]providerSpecResponse, 0, len(providers))
+	for _, provider := range providers {
+		out = append(out, providerSpecResponse{
+			Name:   provider.Name,
+			Models: sliceOrEmpty(provider.Models),
+		})
+	}
+	return out
+}
+
+func (s *Server) providerSpecByName(name string) (config.ProviderSpec, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(name))
+	if trimmed == "" {
+		return config.ProviderSpec{}, fmt.Errorf("provider is required")
+	}
+	if spec, ok := s.config.ProviderByName(trimmed); ok {
+		return spec, nil
+	}
+	return config.ProviderSpec{}, fmt.Errorf("provider must be one of %s", strings.Join(providerNames(s.config.Providers()), ", "))
+}
+
+func (s *Server) parseOptionalProvider(provider string) (string, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(provider))
+	if trimmed == "" {
+		return "", nil
+	}
+	if _, err := s.providerSpecByName(trimmed); err != nil {
+		return "", err
+	}
+	return trimmed, nil
+}
+
+func (s *Server) validateModelForProvider(provider string, model string) (string, error) {
+	trimmedModel := strings.TrimSpace(model)
+	if trimmedModel == "" {
+		return "", nil
+	}
+	spec, err := s.providerSpecByName(provider)
+	if err != nil {
+		return "", err
+	}
+	for _, candidate := range spec.Models {
+		if candidate == trimmedModel {
+			return trimmedModel, nil
+		}
+	}
+	return "", fmt.Errorf("model must be one of %s", strings.Join(modelNames(spec), ", "))
+}
+
+func (s *Server) validateRuleModel(provider string, model string) (string, error) {
+	effectiveProvider := strings.TrimSpace(provider)
+	if effectiveProvider == "" {
+		effectiveProvider = s.config.App().Provider
+	}
+	return s.validateModelForProvider(effectiveProvider, model)
+}
+
+func providerNames(providers []config.ProviderSpec) []string {
+	names := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		if trimmed := strings.TrimSpace(provider.Name); trimmed != "" {
+			names = append(names, trimmed)
+		}
+	}
+	return names
+}
+
+func modelNames(provider config.ProviderSpec) []string {
+	names := []string{}
+	for _, model := range provider.Models {
+		trimmed := strings.TrimSpace(model)
+		if trimmed == "" || containsString(names, trimmed) {
+			continue
+		}
+		names = append(names, trimmed)
+	}
+	return names
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) loadDesignArtifact(jobID string) (*artifactResponse, error) {
 	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "designs", jobID, "design.md")
 	raw, err := os.ReadFile(path)
@@ -538,4 +685,32 @@ func (s *Server) loadPRCreateArtifact(jobID string) (*artifactResponse, error) {
 		Path:    path,
 		Content: string(raw),
 	}, nil
+}
+
+func extractIssueBody(payload string) string {
+	var eventPayload struct {
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(payload), &eventPayload); err != nil {
+		return ""
+	}
+	return eventPayload.Body
+}
+
+func (s *Server) loadLogResponses(phase string, dir string, names []string) []logResponse {
+	logs := make([]logResponse, 0, len(names))
+	for _, name := range names {
+		path := filepath.Join(dir, name)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		logs = append(logs, logResponse{
+			Name:    name,
+			Phase:   phase,
+			Path:    path,
+			Content: string(raw),
+		})
+	}
+	return logs
 }
