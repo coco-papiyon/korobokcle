@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
+	"github.com/coco-papiyon/korobokcle/internal/notification"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
 	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
 	"github.com/coco-papiyon/korobokcle/internal/web"
@@ -44,7 +45,11 @@ func Run(ctx context.Context, root string, options Options) error {
 		return fmt.Errorf("seed store: %w", err)
 	}
 
-	orch := orchestrator.New(store)
+	notifier, notifierErr := notification.NewConfiguredNotifier(configService.Notifications())
+	if notifierErr != nil {
+		infoLogger.Printf("notification setup warning: %v", notifierErr)
+	}
+	orch := orchestrator.New(store, notifier)
 	startWatcher(ctx, configService, orch, infoLogger, debugLogger)
 	if err := startDesignWorker(ctx, root, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start design worker: %w", err)

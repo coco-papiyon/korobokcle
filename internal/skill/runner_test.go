@@ -76,3 +76,40 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 		t.Fatalf("expected mock provider stdout, got %q", string(raw))
 	}
 }
+
+func TestRunImplementationUsesRepositoryRootAsWorkDir(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "skills", "implement")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: implement\nartifacts:\n  output_file: summary.md\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
+		t.Fatalf("WriteFile(prompt) error = %v", err)
+	}
+
+	scriptPath := filepath.Join(root, "cwd-provider.cmd")
+	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %cd%\r\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(script) error = %v", err)
+	}
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `[]`)
+
+	runner := NewRunner(root, "")
+	artifactDir := filepath.Join(root, "artifacts", "changes", "job-1")
+	result, err := runner.RunImplementation(context.Background(), "implement", ImplementationContext{
+		Title:             "My Issue",
+		ArtifactDir:       artifactDir,
+		DesignArtifact:    "approved design",
+		DesignArtifactDir: filepath.Join(root, "artifacts", "designs", "job-1"),
+	}, ExecutionConfig{Provider: "codex"})
+	if err != nil {
+		t.Fatalf("RunImplementation() error = %v", err)
+	}
+
+	if got := strings.TrimSpace(result.Output); got != root {
+		t.Fatalf("expected work dir %q, got %q", root, got)
+	}
+}

@@ -37,7 +37,7 @@ func TestRunPendingReviewsCompletesJob(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
-	orch := orchestrator.New(store)
+	orch := orchestrator.New(store, nil)
 	cfg := config.NewService(root, config.Files{
 		App: config.App{
 			WorkspaceDir: root,

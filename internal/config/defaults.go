@@ -66,7 +66,7 @@ func DefaultFiles() Files {
 				{
 					Name:    "windows-toast",
 					Type:    "windows_toast",
-					Events:  []string{"design_ready", "waiting_design_approval", "implementation_ready", "review_ready", "review_completed", "failed"},
+					Events:  []string{"design_ready", "waiting_design_approval", "implementation_ready", "waiting_final_approval", "review_ready", "review_completed", "pr_created", "failed"},
 					Enabled: true,
 				},
 			},

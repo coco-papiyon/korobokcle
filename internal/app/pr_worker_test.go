@@ -26,7 +26,7 @@ func TestRunPendingPRCreationsCompletesJob(t *testing.T) {
 	}
 	defer store.Close()
 
-	orch := orchestrator.New(store)
+	orch := orchestrator.New(store, nil)
 	cfg := config.NewService(root, config.DefaultFiles())
 
 	job := domain.Job{

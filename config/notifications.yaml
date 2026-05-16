@@ -5,6 +5,9 @@ channels:
       - design_ready
       - waiting_design_approval
       - implementation_ready
+      - waiting_final_approval
       - review_ready
+      - review_completed
+      - pr_created
       - failed
     enabled: true

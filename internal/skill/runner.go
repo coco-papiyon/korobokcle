@@ -65,7 +65,7 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 		SkillName:   definition.Name,
 		Prompt:      prompt,
 		Model:       execution.Model,
-		WorkDir:     contextData.ArtifactDir,
+		WorkDir:     r.root,
 		ArtifactDir: contextData.ArtifactDir,
 		OutputPath:  outputPath,
 	})
@@ -123,7 +123,7 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 		SkillName:   definition.Name,
 		Prompt:      prompt,
 		Model:       execution.Model,
-		WorkDir:     contextData.ArtifactDir,
+		WorkDir:     r.root,
 		ArtifactDir: contextData.ArtifactDir,
 		OutputPath:  outputPath,
 	})
@@ -181,7 +181,7 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 		SkillName:   definition.Name,
 		Prompt:      prompt,
 		Model:       execution.Model,
-		WorkDir:     contextData.ArtifactDir,
+		WorkDir:     r.root,
 		ArtifactDir: contextData.ArtifactDir,
 		OutputPath:  outputPath,
 	})

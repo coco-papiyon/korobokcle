@@ -42,6 +42,12 @@ func (s *Service) TestProfiles() TestProfiles {
 	return cloneTestProfiles(s.files.TestProfiles)
 }
 
+func (s *Service) Notifications() Notifications {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneNotifications(s.files.Notifications)
+}
+
 func (s *Service) Providers() []ProviderSpec {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -95,6 +101,7 @@ func (s *Service) UpdateApp(app App) error {
 func cloneFiles(files Files) Files {
 	files.App = cloneApp(files.App)
 	files.WatchRules = cloneWatchRulesFile(files.WatchRules)
+	files.Notifications = cloneNotifications(files.Notifications)
 	files.TestProfiles = cloneTestProfiles(files.TestProfiles)
 	return files
 }
@@ -135,6 +142,21 @@ func cloneProviderSpecs(values []ProviderSpec) []ProviderSpec {
 func cloneProviderSpec(provider ProviderSpec) ProviderSpec {
 	cloned := provider
 	cloned.Models = append([]string(nil), provider.Models...)
+	return cloned
+}
+
+func cloneNotifications(file Notifications) Notifications {
+	cloned := Notifications{
+		Channels: make([]NotificationChannel, 0, len(file.Channels)),
+	}
+	for _, channel := range file.Channels {
+		cloned.Channels = append(cloned.Channels, NotificationChannel{
+			Name:    channel.Name,
+			Type:    channel.Type,
+			Events:  append([]string(nil), channel.Events...),
+			Enabled: channel.Enabled,
+		})
+	}
 	return cloned
 }
 

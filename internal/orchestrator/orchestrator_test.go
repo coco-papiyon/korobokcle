@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/notification"
 	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
 )
 
@@ -252,7 +253,65 @@ func TestRerunPRCreationFromEventAllowedFromFailedJob(t *testing.T) {
 	}
 }
 
+func TestUpdateJobStateSendsNotification(t *testing.T) {
+	t.Parallel()
+
+	recorder := &recordingNotifier{}
+	orch := newTestOrchestratorWithNotifier(t, recorder)
+	job := domain.Job{
+		ID:           "job-notify",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 8,
+		State:        domain.StateDesignRunning,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	if err := orch.UpdateJobState(context.Background(), job.ID, domain.StateDesignReady, "design_ready", map[string]any{"skill": "design"}); err != nil {
+		t.Fatalf("UpdateJobState() error = %v", err)
+	}
+	if len(recorder.notifications) != 1 {
+		t.Fatalf("expected 1 notification, got %d", len(recorder.notifications))
+	}
+	if recorder.notifications[0].Event != "design_ready" {
+		t.Fatalf("expected design_ready notification, got %q", recorder.notifications[0].Event)
+	}
+}
+
+func TestUpdateJobStateIgnoresNotificationFailure(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestratorWithNotifier(t, failingNotifier{})
+	job := domain.Job{
+		ID:           "job-notify-fail",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 9,
+		State:        domain.StateDesignRunning,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	if err := orch.UpdateJobState(context.Background(), job.ID, domain.StateDesignReady, "design_ready", nil); err != nil {
+		t.Fatalf("UpdateJobState() error = %v", err)
+	}
+}
+
 func newTestOrchestrator(t *testing.T) *Orchestrator {
+	t.Helper()
+	return newTestOrchestratorWithNotifier(t, notification.NewNopNotifier())
+}
+
+func newTestOrchestratorWithNotifier(t *testing.T, notifier notification.Notifier) *Orchestrator {
 	t.Helper()
 
 	store, err := sqlite.Open(filepath.Join(t.TempDir(), "korobokcle.db"))
@@ -260,9 +319,24 @@ func newTestOrchestrator(t *testing.T) *Orchestrator {
 		t.Fatalf("Open() error = %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	return New(store)
+	return New(store, notifier)
 }
 
 func nowUTC() time.Time {
 	return time.Now().UTC().Truncate(time.Second)
+}
+
+type recordingNotifier struct {
+	notifications []notification.Notification
+}
+
+func (n *recordingNotifier) Notify(_ context.Context, event notification.Notification) error {
+	n.notifications = append(n.notifications, event)
+	return nil
+}
+
+type failingNotifier struct{}
+
+func (failingNotifier) Notify(context.Context, notification.Notification) error {
+	return errors.New("boom")
 }

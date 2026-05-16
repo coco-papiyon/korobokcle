@@ -918,3 +918,31 @@ internal/
 8. SkillRunner と CopilotCLIProvider
 9. Issue 設計フロー
 10. 承認後の実装 + テスト + PR 作成
+
+## 23. 現状まだ未実装の項目
+
+2026-05-16 時点で、この設計に書かれているが、現行コードではまだ実装されていない項目を整理する。
+
+- ファイル承認フロー
+  - `artifacts/approvals/<job-id>/design-approval.json`
+  - `artifacts/approvals/<job-id>/final-approval.json`
+  - これらのファイルを監視して承認イベントへ変換する処理は未実装。
+- PR Review の `checks_running` フェーズ
+  - 状態定義はあるが、実際の worker は `collecting_context -> review_running -> review_ready -> completed` で進み、`checks_running` は使っていない。
+  - 設計で想定している機械チェック群も未実装。
+- `fix_running` を使う専用の修正フロー
+  - `test_failed` 後は `implement` を再実行する構成であり、`fix` スキルや `fix_running` 状態は未実装。
+- skill set ごとの implementation 切替
+  - design/review は skill set を見てスキル名を解決しているが、implementation は現状 `implement` 固定で実行している。
+- SQLite の追加テーブル
+  - 実装済みテーブルは `jobs` と `job_events` のみ。
+  - 設計にある `artifacts`、`notifications`、`skill_runs` テーブルは未実装。
+- `events.jsonl` によるイベント監査ログ
+  - イベントは SQLite に保存しているが、`artifacts/events/<job-id>/events.jsonl` への追記保存は未実装。
+- 通知送信の実行配線
+  - `internal/notification` と `config/notifications.yaml` は存在するが、ジョブイベントから notifier を呼び出す配線は未実装。
+  - そのため、Windows Toast を含む通知は現状自動送信されない。
+- GitHub Webhook 受信
+  - 監視は poller のみで、Webhook 受信エンドポイントは未実装。
+
+上記以外の項目でも、設計書にある将来拡張のうち、Slack / Teams 通知、ローカル認証、権限制御、任意コマンド許可リストなどは未着手である。

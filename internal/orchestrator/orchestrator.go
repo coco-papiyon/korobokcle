@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -12,17 +13,22 @@ import (
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/notification"
 	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
 )
 
 type Orchestrator struct {
-	store *sqlite.Store
+	store    *sqlite.Store
+	notifier notification.Notifier
 }
 
 var ErrInvalidStateTransition = errors.New("invalid state transition")
 
-func New(store *sqlite.Store) *Orchestrator {
-	return &Orchestrator{store: store}
+func New(store *sqlite.Store, notifier notification.Notifier) *Orchestrator {
+	if notifier == nil {
+		notifier = notification.NewNopNotifier()
+	}
+	return &Orchestrator{store: store, notifier: notifier}
 }
 
 func (o *Orchestrator) ListJobs(ctx context.Context) ([]domain.Job, error) {
@@ -90,15 +96,17 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, rule config.WatchRule, 
 		return err
 	}
 
-	if err := o.store.AppendEvent(ctx, domain.Event{
+	storedEvent := domain.Event{
 		JobID:     job.ID,
 		EventType: string(event.Type),
 		StateTo:   string(job.State),
 		Payload:   string(payload),
 		CreatedAt: time.Now().UTC(),
-	}); err != nil {
+	}
+	if err := o.store.AppendEvent(ctx, storedEvent); err != nil {
 		return err
 	}
+	o.notifyJobEvent(ctx, job, storedEvent)
 	return nil
 }
 
@@ -124,14 +132,19 @@ func (o *Orchestrator) UpdateJobState(ctx context.Context, jobID string, nextSta
 		rawPayload = string(raw)
 	}
 
-	return o.store.AppendEvent(ctx, domain.Event{
+	storedEvent := domain.Event{
 		JobID:     job.ID,
 		EventType: eventType,
 		StateFrom: string(previous),
 		StateTo:   string(nextState),
 		Payload:   rawPayload,
 		CreatedAt: time.Now().UTC(),
-	})
+	}
+	if err := o.store.AppendEvent(ctx, storedEvent); err != nil {
+		return err
+	}
+	o.notifyJobEvent(ctx, job, storedEvent)
+	return nil
 }
 
 func (o *Orchestrator) ApproveDesign(ctx context.Context, jobID string, comment string) error {
@@ -325,4 +338,92 @@ func makeBranchName(target domain.MonitoredTarget, number int) string {
 		return fmt.Sprintf("korobokcle/pr-review-%d", number)
 	}
 	return fmt.Sprintf("korobokcle/issue-%d", number)
+}
+
+func (o *Orchestrator) notifyJobEvent(ctx context.Context, job domain.Job, event domain.Event) {
+	if o.notifier == nil {
+		return
+	}
+
+	if err := o.notifier.Notify(ctx, notification.Notification{
+		Title:      notificationTitle(job, event),
+		Message:    notificationMessage(job, event),
+		Event:      event.EventType,
+		State:      event.StateTo,
+		Repository: job.Repository,
+		Number:     job.GitHubNumber,
+		JobID:      job.ID,
+	}); err != nil {
+		log.Printf("notification failed job=%s event=%s: %v", job.ID, event.EventType, err)
+	}
+}
+
+func notificationTitle(job domain.Job, event domain.Event) string {
+	switch event.EventType {
+	case string(domain.DomainEventIssueMatched):
+		return fmt.Sprintf("Issue matched: %s#%d", job.Repository, job.GitHubNumber)
+	case string(domain.DomainEventPRMatched):
+		return fmt.Sprintf("PR matched: %s#%d", job.Repository, job.GitHubNumber)
+	case "design_ready":
+		return fmt.Sprintf("Design ready: %s#%d", job.Repository, job.GitHubNumber)
+	case "waiting_design_approval":
+		return fmt.Sprintf("Design approval required: %s#%d", job.Repository, job.GitHubNumber)
+	case "implementation_ready":
+		return fmt.Sprintf("Implementation ready: %s#%d", job.Repository, job.GitHubNumber)
+	case "waiting_final_approval":
+		return fmt.Sprintf("Final approval required: %s#%d", job.Repository, job.GitHubNumber)
+	case "review_ready":
+		return fmt.Sprintf("Review ready: %s#%d", job.Repository, job.GitHubNumber)
+	case "review_completed":
+		return fmt.Sprintf("Review completed: %s#%d", job.Repository, job.GitHubNumber)
+	case "pr_created":
+		return fmt.Sprintf("PR created: %s#%d", job.Repository, job.GitHubNumber)
+	}
+	if event.StateTo == string(domain.StateFailed) || strings.HasSuffix(event.EventType, "_failed") {
+		return fmt.Sprintf("Job failed: %s#%d", job.Repository, job.GitHubNumber)
+	}
+	return fmt.Sprintf("%s: %s#%d", strings.ReplaceAll(event.EventType, "_", " "), job.Repository, job.GitHubNumber)
+}
+
+func notificationMessage(job domain.Job, event domain.Event) string {
+	parts := []string{strings.TrimSpace(job.Title)}
+	if detail := notificationDetail(event); detail != "" {
+		parts = append(parts, detail)
+	}
+	parts = append(parts, fmt.Sprintf("job=%s", job.ID))
+	return strings.Join(parts, " | ")
+}
+
+func notificationDetail(event domain.Event) string {
+	if strings.TrimSpace(event.Payload) == "" || strings.TrimSpace(event.Payload) == "{}" {
+		return fmt.Sprintf("event=%s", event.EventType)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+		return fmt.Sprintf("event=%s", event.EventType)
+	}
+
+	if value := strings.TrimSpace(stringValue(payload["error"])); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(stringValue(payload["url"])); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(stringValue(payload["skill"])); value != "" {
+		return fmt.Sprintf("skill=%s", value)
+	}
+	return fmt.Sprintf("event=%s", event.EventType)
+}
+
+func stringValue(value any) string {
+	if value == nil {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return v
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
