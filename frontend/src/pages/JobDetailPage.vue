@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
@@ -23,16 +23,40 @@ const jobID = computed(() => String(route.params.id))
 const { data, isLoading, error, reload } = useAsyncData(() => fetchJobDetail(jobID.value))
 let refreshTimer: number | null = null
 
-onMounted(() => {
+function isPollingState(state?: string) {
+  return state !== undefined && state.includes('running')
+}
+
+function stopPolling() {
+  if (refreshTimer !== null) {
+    window.clearInterval(refreshTimer)
+    refreshTimer = null
+  }
+}
+
+function startPolling() {
+  if (refreshTimer !== null) {
+    return
+  }
   refreshTimer = window.setInterval(() => {
     void reload()
   }, 5000)
-})
+}
+
+watch(
+  () => data.value?.job.state,
+  (state) => {
+    if (isPollingState(state)) {
+      startPolling()
+      return
+    }
+    stopPolling()
+  },
+  { immediate: true },
+)
 
 onUnmounted(() => {
-  if (refreshTimer !== null) {
-    window.clearInterval(refreshTimer)
-  }
+  stopPolling()
 })
 const approvalState = ref<'idle' | 'saving' | 'error'>('idle')
 const finalApprovalState = ref<'idle' | 'saving' | 'error'>('idle')
@@ -63,6 +87,7 @@ const prCreateInfo = computed(() => {
 
 const canReviewDesign = computed(() => data.value?.job.state === 'waiting_design_approval')
 const canReviewImplementation = computed(() => data.value?.job.state === 'waiting_final_approval')
+const testReportMarkdown = computed(() => formatTestReportMarkdown(data.value?.testReport?.content))
 
 function rerunState(action: RerunAction) {
   if (action === 'retry_design') {
@@ -116,6 +141,71 @@ function formatPayloadPreview(payload: string) {
     return JSON.stringify(parsed)
   } catch {
     return payload
+  }
+}
+
+function formatTestReportMarkdown(raw?: string) {
+  if (!raw) {
+    return ''
+  }
+  try {
+    const report = JSON.parse(raw) as {
+      profile?: string
+      success?: boolean
+      startedAt?: string
+      finishedAt?: string
+      results?: Array<{
+        command?: string
+        exitCode?: number
+        durationMs?: number
+        stdout?: string
+        stderr?: string
+        success?: boolean
+      }>
+    }
+
+    const lines: string[] = []
+    lines.push('# Test Report')
+    lines.push('')
+    lines.push(`- Profile: ${report.profile ?? '-'}`)
+    lines.push(`- Success: ${report.success ? 'true' : 'false'}`)
+    lines.push(`- Started At: ${report.startedAt ?? '-'}`)
+    lines.push(`- Finished At: ${report.finishedAt ?? '-'}`)
+    lines.push('')
+    lines.push('## Results')
+    lines.push('')
+
+    const results = report.results ?? []
+    if (results.length === 0) {
+      lines.push('- No commands were executed.')
+      return lines.join('\n')
+    }
+
+    results.forEach((result, index) => {
+      lines.push(`### Command ${index + 1}`)
+      lines.push('')
+      lines.push(`- Command: ${result.command ?? '-'}`)
+      lines.push(`- Exit Code: ${result.exitCode ?? '-'}`)
+      lines.push(`- Duration: ${result.durationMs ?? '-'} ms`)
+      lines.push(`- Success: ${result.success ? 'true' : 'false'}`)
+      lines.push('')
+      lines.push('#### Stdout')
+      lines.push('')
+      lines.push('```text')
+      lines.push(result.stdout?.trimEnd() || '')
+      lines.push('```')
+      lines.push('')
+      lines.push('#### Stderr')
+      lines.push('')
+      lines.push('```text')
+      lines.push(result.stderr?.trimEnd() || '')
+      lines.push('```')
+      lines.push('')
+    })
+
+    return lines.join('\n').trimEnd()
+  } catch {
+    return raw
   }
 }
 
@@ -258,7 +348,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
         >
           <div class="stack-sm">
             <p class="text-muted">{{ data.testReport.path }}</p>
-            <pre class="artifact-view">{{ data.testReport.content }}</pre>
+            <pre class="artifact-view">{{ testReportMarkdown }}</pre>
           </div>
         </PanelCard>
 

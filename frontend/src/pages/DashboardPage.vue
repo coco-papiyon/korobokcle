@@ -8,8 +8,12 @@ import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchAppConfig, fetchJobs } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 
-const { data, isLoading, error } = useAsyncData(fetchJobs)
-const { data: appConfig } = useAsyncData(fetchAppConfig)
+const { data, isLoading, error } = useAsyncData(fetchJobs, {
+  pollIntervalMs: 5000,
+})
+const { data: appConfig } = useAsyncData(fetchAppConfig, {
+  pollIntervalMs: 5000,
+})
 </script>
 
 <template>
