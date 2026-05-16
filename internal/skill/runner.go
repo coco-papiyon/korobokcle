@@ -67,9 +67,6 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 		return AIResult{}, err
 	}
 
-	if err := os.WriteFile(outputPath, []byte(result.Output), 0o644); err != nil {
-		return AIResult{}, err
-	}
 	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "ai-stdout.log"), []byte(result.Stdout), 0o644); err != nil {
 		return AIResult{}, err
 	}

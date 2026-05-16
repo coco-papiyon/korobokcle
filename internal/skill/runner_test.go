@@ -33,13 +33,13 @@ func TestRunDesignWritesArtifacts(t *testing.T) {
 		t.Fatalf("RunDesign() error = %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(artifactDir, "design.md"))
+	raw, err := os.ReadFile(filepath.Join(artifactDir, "ai-stdout.log"))
 	if err != nil {
-		t.Fatalf("ReadFile(design.md) error = %v", err)
+		t.Fatalf("ReadFile(ai-stdout.log) error = %v", err)
 	}
 	content := string(raw)
-	if !strings.Contains(content, "## Goal") || !strings.Contains(content, "## Proposed Changes") {
-		t.Fatalf("design.md did not contain required design sections: %q", content)
+	if !strings.Contains(content, "mock provider executed") {
+		t.Fatalf("expected mock provider stdout, got %q", content)
 	}
 }
 
@@ -68,20 +68,11 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 		t.Fatalf("RunDesign() error = %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(artifactDir, "design.md"))
+	raw, err := os.ReadFile(filepath.Join(artifactDir, "ai-stdout.log"))
 	if err != nil {
-		t.Fatalf("ReadFile(design.md) error = %v", err)
+		t.Fatalf("ReadFile(ai-stdout.log) error = %v", err)
 	}
-	if !strings.Contains(string(raw), "mock provider") {
-		t.Fatalf("expected mock provider output, got %q", string(raw))
-	}
-}
-
-func TestDesignOutputCanIncludePreface(t *testing.T) {
-	t.Parallel()
-
-	raw := "設計書を書き直しました。\n\n## Goal\nA\n\n## Scope\nB\n\n## Assumptions\nC\n\n## Proposed Changes\nD\n\n## Risks\nE\n\n## Test Strategy\nF\n"
-	if !strings.HasPrefix(raw, "設計書を書き直しました") {
-		t.Fatalf("expected test input to include preface")
+	if !strings.Contains(string(raw), "mock provider executed") {
+		t.Fatalf("expected mock provider stdout, got %q", string(raw))
 	}
 }
