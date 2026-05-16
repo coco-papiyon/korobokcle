@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 
@@ -87,9 +88,10 @@ type providerSpecResponse struct {
 }
 
 type appConfigResponse struct {
-	Provider  string                 `json:"provider"`
-	Model     string                 `json:"model"`
-	Providers []providerSpecResponse `json:"providers"`
+	Provider     string                 `json:"provider"`
+	Model        string                 `json:"model"`
+	PollInterval int                    `json:"pollInterval"`
+	Providers    []providerSpecResponse `json:"providers"`
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
@@ -344,6 +346,15 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	appConfig.Model = model
+	if payload.PollInterval < 1 {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be a positive whole number of seconds"))
+		return
+	}
+	if payload.PollInterval > 24*60*60 {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be no more than 86400 seconds"))
+		return
+	}
+	appConfig.PollInterval = time.Duration(payload.PollInterval) * time.Second
 	if err := s.config.UpdateApp(appConfig); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
@@ -532,10 +543,18 @@ func sliceOrEmpty(values []string) []string {
 
 func toAppConfigResponse(app config.App) appConfigResponse {
 	return appConfigResponse{
-		Provider:  app.Provider,
-		Model:     app.Model,
-		Providers: toProviderSpecResponses(app.Providers),
+		Provider:     app.Provider,
+		Model:        app.Model,
+		PollInterval: int(effectivePollInterval(app.PollInterval) / time.Second),
+		Providers:    toProviderSpecResponses(app.Providers),
 	}
+}
+
+func effectivePollInterval(value time.Duration) time.Duration {
+	if value <= 0 {
+		return config.DefaultPollInterval
+	}
+	return value
 }
 
 func toProviderSpecResponses(providers []config.ProviderSpec) []providerSpecResponse {
