@@ -1,8 +1,5 @@
 # Implementation Request
 
-あなたは熟練のソフトウェアエンジニアです。
-以下の Issue Body と Approved Design を読み取り、ソースコードを修正し、実装結果を作成してください。
-
 Repository: {{ .Repository }}
 Issue: #{{ .IssueNumber }}
 Title: {{ .Title }}
@@ -29,87 +26,26 @@ Watch Rule: {{ .WatchRuleID }}
 {{- end }}
 
 ## Issue Body
-```
 {{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
-```
 
 ## Approved Design
-```
 {{ .DesignArtifact }}
-```
-
-## 実行情報
-
-- 試行回数: {{ .Attempt }}
-{{- if .PreviousFailure }}
-- 直近の失敗: {{ .PreviousFailure }}
-{{- end }}
-{{- if .PreviousTestReport }}
-
-## 直近のテスト結果
-
-```
-{{ .PreviousTestReport }}
-```
-{{- end }}
-{{- if .CurrentDiff }}
-
-## 現在の差分
-
-```
-{{ .CurrentDiff }}
-```
-{{- end }}
 
 ## 出力内容
 
-以下の観点で、実装結果を Markdown で整理してください。
+以下を含む Markdown を作成してください。
 
-### 1. 実装内容の要約
+1. 実装内容の要約
+2. 変更した箇所
+3. 動作確認
+4. 懸念点・残課題
+5. ブランチ名
+6. Patch
 
-- 何を実装したか
-- 何が変わったか
-- 設計からの主な差分
+## Patch
 
-### 2. 変更した箇所
+実装した変更を unified diff 形式で示してください。
 
-- 変更したファイル
-- 追加した処理
-- 修正した処理
-- 削除または置き換えた処理
-
-### 3. 動作確認
-
-- 実行したテスト
-- 手動確認した内容
-- 確認できた挙動
-
-### 4. 懸念点・残課題
-
-- 未解決の課題
-- 気になる点
-- 今後の対応候補
-
-### 5. ブランチ名
-
-ラベルと Issue 番号に基づいて、ブランチ名を記載してください。
-
-例:
-
-feature/issue_123
-fix/issue_456
-
-## 出力ルール
-
-Markdown で出力してください。
-
-- 出力は最終的な実装結果の本文のみとしてください。
-- 前置き、作業報告、状態報告、解説は不要です。
-- `{{ .ArtifactDir }}/summary.md` に書き込む前提で、保存した旨は書かないでください。
-- 全体をコードフェンスで囲まないでください。
-- 見出しは日本語で書いてください。
-
-## 出力ファイル
-
-最後に、検討結果を**出力内容**に従った Markdown として作成し、以下のパスに出力してください。
-`{{ .ArtifactDir }}/summary.md`
+- パッチは `git apply` できる形式にしてください。
+- パッチは必ず `## Patch` 見出しの下に、`diff` を指定したコードフェンスで出力してください。
+- パッチ以外の内容はコードフェンスに入れないでください。

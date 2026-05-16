@@ -27,7 +27,7 @@ function isPollingState(state?: string) {
   if (!state) {
     return false
   }
-  return state.includes('running') || state === 'pr_creating'
+  return state === 'detected' || state.includes('running') || state === 'pr_creating'
 }
 
 function stopPolling() {

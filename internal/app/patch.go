@@ -1,7 +1,6 @@
 package app
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -116,50 +115,4 @@ func ensureTrailingNewline(content string) string {
 		return content
 	}
 	return content + "\n"
-}
-
-func captureWorkingDiff(ctx context.Context, root string) (string, error) {
-	diffCmd := exec.CommandContext(ctx, "git", "diff", "--no-ext-diff", "--")
-	diffCmd.Dir = root
-
-	var diffOut bytes.Buffer
-	diffCmd.Stdout = &diffOut
-	diffCmd.Stderr = &diffOut
-	if err := diffCmd.Run(); err != nil {
-		return "", fmt.Errorf("git diff failed: %w: %s", err, strings.TrimSpace(diffOut.String()))
-	}
-
-	statusCmd := exec.CommandContext(ctx, "git", "status", "--short", "--untracked-files=all")
-	statusCmd.Dir = root
-
-	var statusOut bytes.Buffer
-	statusCmd.Stdout = &statusOut
-	statusCmd.Stderr = &statusOut
-	if err := statusCmd.Run(); err != nil {
-		return "", fmt.Errorf("git status failed: %w: %s", err, strings.TrimSpace(statusOut.String()))
-	}
-
-	diff := strings.TrimSpace(diffOut.String())
-	status := strings.TrimSpace(statusOut.String())
-	if diff == "" && status == "" {
-		return "", nil
-	}
-
-	snapshot := strings.TrimSpace(strings.Join([]string{
-		"## Git Diff",
-		"```diff",
-		diff,
-		"```",
-		"",
-		"## Git Status",
-		"```text",
-		status,
-		"```",
-	}, "\n"))
-
-	const maxDiffChars = 20000
-	if len(snapshot) <= maxDiffChars {
-		return snapshot, nil
-	}
-	return snapshot[:maxDiffChars] + "\n...[truncated]...", nil
 }

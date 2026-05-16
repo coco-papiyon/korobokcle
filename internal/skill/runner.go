@@ -3,7 +3,6 @@ package skill
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,7 +61,6 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 	}
 
 	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
-	_ = os.Remove(outputPath)
 	result, err := provider.Run(ctx, AIRequest{
 		SkillName:   definition.Name,
 		Prompt:      prompt,
@@ -75,6 +73,9 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 		return AIResult{}, err
 	}
 
+	if err := os.WriteFile(outputPath, []byte(result.Output), 0o644); err != nil {
+		return AIResult{}, err
+	}
 	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "ai-stdout.log"), []byte(result.Stdout), 0o644); err != nil {
 		return AIResult{}, err
 	}
@@ -129,7 +130,8 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 	if err != nil {
 		return AIResult{}, err
 	}
-	if err := writeOutputIfMissing(outputPath, result.Output); err != nil {
+
+	if err := os.WriteFile(outputPath, []byte(result.Output), 0o644); err != nil {
 		return AIResult{}, err
 	}
 	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "ai-stdout.log"), []byte(result.Stdout), 0o644); err != nil {
@@ -211,16 +213,4 @@ func (r *Runner) providerForDefinition(definition Definition, execution Executio
 		return nil, fmt.Errorf("skill provider is not configured")
 	}
 	return ProviderFor(providerName)
-}
-
-func writeOutputIfMissing(path string, content string) error {
-	if strings.TrimSpace(content) == "" {
-		return nil
-	}
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	return os.WriteFile(path, []byte(content), 0o644)
 }
