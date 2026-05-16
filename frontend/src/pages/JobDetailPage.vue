@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
@@ -21,6 +21,19 @@ import { formatDateTime } from '@/lib/format'
 const route = useRoute()
 const jobID = computed(() => String(route.params.id))
 const { data, isLoading, error, reload } = useAsyncData(() => fetchJobDetail(jobID.value))
+let refreshTimer: number | null = null
+
+onMounted(() => {
+  refreshTimer = window.setInterval(() => {
+    void reload()
+  }, 5000)
+})
+
+onUnmounted(() => {
+  if (refreshTimer !== null) {
+    window.clearInterval(refreshTimer)
+  }
+})
 const approvalState = ref<'idle' | 'saving' | 'error'>('idle')
 const finalApprovalState = ref<'idle' | 'saving' | 'error'>('idle')
 const approvalError = ref<string | null>(null)

@@ -1,4 +1,6 @@
 .gocache/
+gocache-local/
+
 data/
 artifacts/
 frontend/node_modules/

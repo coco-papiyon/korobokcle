@@ -85,6 +85,12 @@ func runPendingReviews(ctx context.Context, cfg *config.Service, orch *orchestra
 		}); err != nil {
 			return err
 		}
+		if err := orch.UpdateJobState(ctx, job.ID, domain.StateCompleted, "review_completed", map[string]any{
+			"artifactDir": contextData.ArtifactDir,
+			"skill":       skillName,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return nil

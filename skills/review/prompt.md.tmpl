@@ -1,5 +1,8 @@
 # Pull Request Review Request
 
+あなたは熟練のソフトウェアエンジニアです。
+以下の Pull Request の内容をレビューしてください。
+
 Repository: {{ .Repository }}
 Pull Request: #{{ .PullNumber }}
 Title: {{ .Title }}
@@ -31,24 +34,107 @@ Source URL: {{ .SourceURL }}
 {{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
 ```
 
-## Requested Output
+## レビュー観点
 
-Write a practical review document in Markdown.
+以下の観点で確認してください。
 
-Focus on:
+### 1. 変更内容の要約
 
-- What the PR changes
-- Any correctness or risk concerns
-- Missing tests or follow-up work
-- Whether the PR is ready to merge
+- このPRで何が変わったか
+- 目的に対して妥当な変更か
 
-## Output Rules
+### 2. correctness
 
-Your response will be written verbatim to `{{ .ArtifactDir }}/review.md`.
+- バグが入りそうな箇所
+- 条件分岐漏れ
+- null / undefined / empty の扱い
+- エラー処理
+- 境界値
+- 例外ケース
 
-- Output only the final review document in Markdown.
-- Do not include any preface, commentary, status report, or explanation about what you did.
-- Do not say that you updated, saved, or added `{{ .ArtifactDir }}/review.md`.
-- Do not wrap the whole answer in code fences.
-- Start directly with a title line or `## Summary`.
-- Human review will catch structural issues, so do not spend tokens on strict validation logic.
+### 3. design
+
+- Issueの要件を満たしているか
+- 責務分離
+- 既存設計との整合性
+- 過度な複雑化がないか
+- 将来の拡張性
+- 命名の妥当性
+
+### 4. security
+
+- 入力値検証
+- 認可・認証
+- 情報漏洩
+- インジェクション
+- シークレットの混入
+
+### 5. performance
+
+- 不要なループ
+- N+1
+- 無駄なI/O
+- キャッシュの必要性
+- 大量データ時の挙動
+
+### 6. test
+
+- 追加すべきテスト
+- 足りないテストケース
+- 既存テストへの影響
+- 手動確認すべき内容
+
+### 7. maintainability
+
+- 読みやすさ
+- コメントの必要性
+- 重複コード
+- 型定義
+- ログ出力
+
+## 出力形式
+
+Markdownで出力してください。
+
+### Summary
+
+PRの要約を簡潔に書いてください。
+
+### Review Result
+
+以下のどれかを選んでください。
+
+- Approve
+- Comment
+- Request changes
+
+### Critical Issues
+
+修正必須の問題があれば書いてください。
+なければ「なし」と書いてください。
+
+### Suggestions
+
+改善提案を書いてください。
+
+### Test Recommendations
+
+追加・確認すべきテストを書いてください。
+
+### Questions
+
+確認が必要な点を書いてください。
+
+## ルール
+
+- 根拠がある指摘だけを書いてください。
+- 推測だけで断定しないでください。
+- 重要度を `critical` / `major` / `minor` / `nit` で付けてください。
+- 指摘には可能なら対象ファイル名・行番号を含めてください。
+- 単なる好みの指摘は `nit` としてください。
+- 問題がない場合は無理に指摘を作らないでください。
+
+## 出力ファイル  
+
+最後に、検討結果を**レビュー観点**に従ったMarkdownとして作成し、以下のパスに出力してください。
+`{{ .ArtifactDir }}/review.md`

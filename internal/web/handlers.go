@@ -333,29 +333,25 @@ const (
 func availableActionsForEvent(event domain.Event) []string {
 	actions := make([]string, 0, 1)
 
-	switch {
-	case event.EventType == "design_ready" && event.StateFrom == string(domain.StateDesignRunning):
+	switch event.StateTo {
+	case string(domain.StateDesignRunning):
 		actions = append(actions, actionRetryDesign)
-	case event.EventType == "design_failed" || event.EventType == "design_rejected":
+	case string(domain.StateImplementationRunning), string(domain.StateTestRunning):
+		actions = append(actions, actionRetryImplementation)
+	case string(domain.StatePRCreating):
+		actions = append(actions, actionRetryPR)
+	case string(domain.StateReviewRunning):
+		actions = append(actions, actionRetryReview)
+	}
+
+	switch event.EventType {
+	case "design_failed", "design_rejected":
 		actions = append(actions, actionRetryDesign)
-	}
-
-	switch {
-	case event.EventType == "waiting_final_approval" && event.StateFrom == string(domain.StateImplementationReady):
+	case "implementation_failed", "test_failed", "final_rejected":
 		actions = append(actions, actionRetryImplementation)
-	case event.EventType == "implementation_failed" || event.EventType == "test_failed" || event.EventType == "final_rejected":
-		actions = append(actions, actionRetryImplementation)
-	}
-
-	switch {
-	case event.EventType == "pr_created" && event.StateFrom == string(domain.StatePRCreating):
+	case "pr_push_failed", "pr_create_failed":
 		actions = append(actions, actionRetryPR)
-	case event.EventType == "pr_push_failed" || event.EventType == "pr_create_failed":
-		actions = append(actions, actionRetryPR)
-	}
-
-	switch {
-	case event.EventType == "review_failed":
+	case "review_failed":
 		actions = append(actions, actionRetryReview)
 	}
 
