@@ -10,6 +10,8 @@ rules:
       assignees:
         - coco-papiyon
       excludeDraftPR: true
+      provider: ""
+      model: ""
       skillSet: default
       testProfile: go-default
       enabled: true
@@ -23,6 +25,8 @@ rules:
       authors: []
       assignees: []
       excludeDraftPR: true
+      provider: ""
+      model: ""
       skillSet: default
       testProfile: go-default
       enabled: true

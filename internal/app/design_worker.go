@@ -16,7 +16,7 @@ import (
 )
 
 func startDesignWorker(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
-	runner := skill.NewRunner(root, cfg.App().Provider)
+	runner := skill.NewRunner(root, "")
 
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -49,16 +49,23 @@ func runPendingDesigns(ctx context.Context, cfg *config.Service, orch *orchestra
 			continue
 		}
 
-		if err := orch.UpdateJobState(ctx, job.ID, domain.StateDesignRunning, "design_started", map[string]any{
-			"provider": cfg.App().Provider,
-		}); err != nil {
-			logger.Printf("design state transition failed for %s: %v", job.ID, err)
-			continue
-		}
-
 		jobDetail, events, err := orch.JobDetail(ctx, job.ID)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
+			continue
+		}
+
+		execution, err := resolveExecutionConfig(cfg, jobDetail.WatchRuleID)
+		if err != nil {
+			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
+			continue
+		}
+
+		if err := orch.UpdateJobState(ctx, job.ID, domain.StateDesignRunning, "design_started", map[string]any{
+			"provider": execution.Provider,
+			"model":    execution.Model,
+		}); err != nil {
+			logger.Printf("design state transition failed for %s: %v", job.ID, err)
 			continue
 		}
 
@@ -74,7 +81,7 @@ func runPendingDesigns(ctx context.Context, cfg *config.Service, orch *orchestra
 			continue
 		}
 
-		if _, err := runner.RunDesign(ctx, skillName, contextData); err != nil {
+		if _, err := runner.RunDesign(ctx, skillName, contextData, execution); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
 			continue
 		}

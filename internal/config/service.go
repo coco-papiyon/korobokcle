@@ -21,7 +21,7 @@ func NewService(root string, files Files) *Service {
 func (s *Service) App() App {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.files.App
+	return cloneApp(s.files.App)
 }
 
 func (s *Service) Root() string {
@@ -40,6 +40,23 @@ func (s *Service) TestProfiles() TestProfiles {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return cloneTestProfiles(s.files.TestProfiles)
+}
+
+func (s *Service) Providers() []ProviderSpec {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneProviderSpecs(s.files.App.Providers)
+}
+
+func (s *Service) ProviderByName(name string) (ProviderSpec, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, provider := range s.files.App.Providers {
+		if provider.Name == name {
+			return cloneProviderSpec(provider), true
+		}
+	}
+	return ProviderSpec{}, false
 }
 
 func (s *Service) WatchRuleByID(id string) (WatchRule, bool) {
@@ -71,14 +88,21 @@ func (s *Service) UpdateApp(app App) error {
 	if err := saveYAML(filepath.Join(s.root, appPath), app); err != nil {
 		return err
 	}
-	s.files.App = app
+	s.files.App = cloneApp(app)
 	return nil
 }
 
 func cloneFiles(files Files) Files {
+	files.App = cloneApp(files.App)
 	files.WatchRules = cloneWatchRulesFile(files.WatchRules)
 	files.TestProfiles = cloneTestProfiles(files.TestProfiles)
 	return files
+}
+
+func cloneApp(app App) App {
+	cloned := app
+	cloned.Providers = cloneProviderSpecs(app.Providers)
+	return cloned
 }
 
 func cloneWatchRulesFile(file WatchRulesFile) WatchRulesFile {
@@ -97,6 +121,20 @@ func cloneWatchRule(rule WatchRule) WatchRule {
 	cloned.Labels = append([]string(nil), rule.Labels...)
 	cloned.Authors = append([]string(nil), rule.Authors...)
 	cloned.Assignees = append([]string(nil), rule.Assignees...)
+	return cloned
+}
+
+func cloneProviderSpecs(values []ProviderSpec) []ProviderSpec {
+	cloned := make([]ProviderSpec, 0, len(values))
+	for _, provider := range values {
+		cloned = append(cloned, cloneProviderSpec(provider))
+	}
+	return cloned
+}
+
+func cloneProviderSpec(provider ProviderSpec) ProviderSpec {
+	cloned := provider
+	cloned.Models = append([]string(nil), provider.Models...)
 	return cloned
 }
 

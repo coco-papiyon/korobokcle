@@ -16,7 +16,7 @@ import (
 )
 
 func startImplementationWorker(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
-	runner := skill.NewRunner(root, cfg.App().Provider)
+	runner := skill.NewRunner(root, "")
 	testRunner := executor.NewTestRunner()
 
 	go func() {
@@ -62,7 +62,13 @@ func runPendingImplementations(ctx context.Context, cfg *config.Service, orch *o
 			continue
 		}
 
-		if _, err := runner.RunImplementation(ctx, "implement", contextData); err != nil {
+		execution, err := resolveExecutionConfig(cfg, jobDetail.WatchRuleID)
+		if err != nil {
+			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
+			continue
+		}
+
+		if _, err := runner.RunImplementation(ctx, "implement", contextData, execution); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 			continue
 		}

@@ -16,16 +16,6 @@ func TestAvailableActionsForEvent(t *testing.T) {
 		expect []string
 	}{
 		{
-			name: "design running",
-			event: domain.Event{
-				EventType: "design_started",
-				StateFrom: string(domain.StateDesignRunning),
-				StateTo:   string(domain.StateDesignRunning),
-				CreatedAt: time.Now(),
-			},
-			expect: []string{actionRetryDesign},
-		},
-		{
 			name: "design ready",
 			event: domain.Event{
 				EventType: "design_ready",
@@ -33,44 +23,44 @@ func TestAvailableActionsForEvent(t *testing.T) {
 				StateTo:   string(domain.StateDesignReady),
 				CreatedAt: time.Now(),
 			},
-			expect: nil,
+			expect: []string{actionRetryDesign},
 		},
 		{
-			name: "implementation running",
+			name: "implementation ready",
 			event: domain.Event{
-				EventType: "implementation_started",
+				EventType: "implementation_ready",
 				StateFrom: string(domain.StateImplementationRunning),
-				StateTo:   string(domain.StateImplementationRunning),
+				StateTo:   string(domain.StateImplementationReady),
 				CreatedAt: time.Now(),
 			},
 			expect: []string{actionRetryImplementation},
 		},
 		{
-			name: "test running",
+			name: "review ready",
 			event: domain.Event{
-				EventType: "test_started",
-				StateFrom: string(domain.StateTestRunning),
-				StateTo:   string(domain.StateTestRunning),
-				CreatedAt: time.Now(),
-			},
-			expect: []string{actionRetryImplementation},
-		},
-		{
-			name: "review running",
-			event: domain.Event{
-				EventType: "review_started",
+				EventType: "review_ready",
 				StateFrom: string(domain.StateReviewRunning),
-				StateTo:   string(domain.StateReviewRunning),
+				StateTo:   string(domain.StateReviewReady),
 				CreatedAt: time.Now(),
 			},
 			expect: []string{actionRetryReview},
 		},
 		{
-			name: "pr creating",
+			name: "review completed",
 			event: domain.Event{
-				EventType: "final_approved",
-				StateFrom: string(domain.StateDetected),
-				StateTo:   string(domain.StatePRCreating),
+				EventType: "review_completed",
+				StateFrom: string(domain.StateReviewRunning),
+				StateTo:   string(domain.StateCompleted),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{actionRetryReview},
+		},
+		{
+			name: "pr created",
+			event: domain.Event{
+				EventType: "pr_created",
+				StateFrom: string(domain.StatePRCreating),
+				StateTo:   string(domain.StateCompleted),
 				CreatedAt: time.Now(),
 			},
 			expect: []string{actionRetryPR},

@@ -91,6 +91,31 @@ const prCreateInfo = computed(() => {
 const canReviewDesign = computed(() => data.value?.job.state === 'waiting_design_approval')
 const canReviewImplementation = computed(() => data.value?.job.state === 'waiting_final_approval')
 const testReportMarkdown = computed(() => formatTestReportMarkdown(data.value?.testReport?.content))
+const groupedLogs = computed(() => {
+  const logs = data.value?.logs ?? []
+  return [
+    {
+      phase: 'design',
+      title: 'Design Logs',
+      items: logs.filter((log) => log.phase === 'design'),
+    },
+    {
+      phase: 'implementation',
+      title: 'Implementation Logs',
+      items: logs.filter((log) => log.phase === 'implementation'),
+    },
+    {
+      phase: 'review',
+      title: 'Review Logs',
+      items: logs.filter((log) => log.phase === 'review'),
+    },
+    {
+      phase: 'pr',
+      title: 'PR Logs',
+      items: logs.filter((log) => log.phase === 'pr'),
+    },
+  ].filter((group) => group.items.length > 0)
+})
 
 function rerunState(action: RerunAction) {
   if (action === 'retry_design') {
@@ -212,6 +237,26 @@ function formatTestReportMarkdown(raw?: string) {
   }
 }
 
+function formatLogName(name: string) {
+  if (name === 'ai-stdout.log') {
+    return 'AI stdout'
+  }
+  if (name === 'ai-stderr.log') {
+    return 'AI stderr'
+  }
+  if (name === 'git-push.log') {
+    return 'git push'
+  }
+  if (name === 'gh-pr-create.log') {
+    return 'gh pr create'
+  }
+  return name
+}
+
+function formatIssueBody(body?: string) {
+  return body && body.trim().length > 0 ? body : 'Issue body is empty.'
+}
+
 async function submitRerun(action: RerunAction, eventId: number) {
   rerunState(action).value = 'saving'
   rerunError(action).value = null
@@ -306,6 +351,13 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           </PanelCard>
         </section>
 
+        <PanelCard title="Issue" description="元の issue 内容です。">
+          <details class="stack-sm">
+            <summary class="text-muted">Open issue body</summary>
+            <pre class="artifact-view">{{ formatIssueBody(data.issueBody) }}</pre>
+          </details>
+        </PanelCard>
+
         <p v-if="designRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_design') }}: {{ designRerunError }}</p>
         <p v-if="implementationRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_implementation') }}: {{ implementationRerunError }}</p>
         <p v-if="reviewRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_review') }}: {{ reviewRerunError }}</p>
@@ -317,8 +369,10 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           description="生成された設計成果物です。承認前に内容を確認します。"
         >
           <div class="stack-sm">
-            <p class="text-muted">{{ data.designArtifact.path }}</p>
-            <pre class="artifact-view">{{ data.designArtifact.content }}</pre>
+            <details class="stack-sm">
+              <summary class="text-muted">{{ data.designArtifact.path }}</summary>
+              <pre class="artifact-view">{{ data.designArtifact.content }}</pre>
+            </details>
           </div>
         </PanelCard>
 
@@ -328,8 +382,10 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           description="実装フェーズの成果物サマリです。最終承認前に確認します。"
         >
           <div class="stack-sm">
-            <p class="text-muted">{{ data.implementationArtifact.path }}</p>
-            <pre class="artifact-view">{{ data.implementationArtifact.content }}</pre>
+            <details class="stack-sm">
+              <summary class="text-muted">{{ data.implementationArtifact.path }}</summary>
+              <pre class="artifact-view">{{ data.implementationArtifact.content }}</pre>
+            </details>
           </div>
         </PanelCard>
 
@@ -339,8 +395,10 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           description="PR review フェーズの成果物です。"
         >
           <div class="stack-sm">
-            <p class="text-muted">{{ data.reviewArtifact.path }}</p>
-            <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>
+            <details class="stack-sm">
+              <summary class="text-muted">{{ data.reviewArtifact.path }}</summary>
+              <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>
+            </details>
           </div>
         </PanelCard>
 
@@ -350,8 +408,10 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           description="設定された test profile の実行結果です。"
         >
           <div class="stack-sm">
-            <p class="text-muted">{{ data.testReport.path }}</p>
-            <pre class="artifact-view">{{ testReportMarkdown }}</pre>
+            <details class="stack-sm">
+              <summary class="text-muted">{{ data.testReport.path }}</summary>
+              <pre class="artifact-view">{{ testReportMarkdown }}</pre>
+            </details>
           </div>
         </PanelCard>
 
@@ -361,16 +421,34 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           description="作成された PR の記録です。"
         >
           <div class="stack-sm">
-            <p class="text-muted">{{ data.prCreateArtifact.path }}</p>
-            <template v-if="prCreateInfo">
-              <p v-if="prCreateInfo.title"><strong>{{ prCreateInfo.title }}</strong></p>
-              <p v-if="prCreateInfo.repository" class="text-muted">Repository: <code>{{ prCreateInfo.repository }}</code></p>
-              <p v-if="prCreateInfo.branchName" class="text-muted">Branch: <code>{{ prCreateInfo.branchName }}</code></p>
-              <p v-if="prCreateInfo.url">
-                <a class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">Open Pull Request</a>
-              </p>
-            </template>
-            <pre class="artifact-view">{{ data.prCreateArtifact.content }}</pre>
+            <details class="stack-sm">
+              <summary class="text-muted">{{ data.prCreateArtifact.path }}</summary>
+              <template v-if="prCreateInfo">
+                <p v-if="prCreateInfo.title"><strong>{{ prCreateInfo.title }}</strong></p>
+                <p v-if="prCreateInfo.repository" class="text-muted">Repository: <code>{{ prCreateInfo.repository }}</code></p>
+                <p v-if="prCreateInfo.branchName" class="text-muted">Branch: <code>{{ prCreateInfo.branchName }}</code></p>
+                <p v-if="prCreateInfo.url">
+                  <a class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">Open Pull Request</a>
+                </p>
+              </template>
+              <pre class="artifact-view">{{ data.prCreateArtifact.content }}</pre>
+            </details>
+          </div>
+        </PanelCard>
+
+        <PanelCard
+          v-if="groupedLogs.length > 0"
+          title="Logs"
+          description="各フェーズの実行ログです。"
+        >
+          <div class="stack-md">
+            <section v-for="group in groupedLogs" :key="group.phase" class="stack-sm">
+              <h3>{{ group.title }}</h3>
+              <details v-for="log in group.items" :key="log.path" class="stack-sm">
+                <summary class="text-muted">{{ formatLogName(log.name) }} <code>{{ log.path }}</code></summary>
+                <pre class="artifact-view">{{ log.content }}</pre>
+              </details>
+            </section>
           </div>
         </PanelCard>
 

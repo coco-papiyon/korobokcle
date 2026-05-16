@@ -42,7 +42,7 @@ func (p *CopilotCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		Name:        "copilot",
 		EnvPrefix:   "KOROBOKCLE_COPILOT",
 		DefaultBin:  "copilot",
-		DefaultArgs: []string{"suggest", "-t", "general", "{{prompt}}"},
+		DefaultArgs: []string{"suggest", "-t", "general", "{{model_flag}}", "{{model}}", "{{prompt}}"},
 	}
 	return provider.Run(ctx, req)
 }
@@ -58,7 +58,7 @@ func (p *CodexCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, er
 		Name:        "codex",
 		EnvPrefix:   "KOROBOKCLE_CODEX",
 		DefaultBin:  "codex",
-		DefaultArgs: []string{"exec", "{{prompt}}"},
+		DefaultArgs: []string{"exec", "{{model_flag}}", "{{model}}", "{{prompt}}"},
 	}
 	return provider.Run(ctx, req)
 }
@@ -133,6 +133,8 @@ func loadProviderArgs(envName string, defaults []string) ([]string, error) {
 func expandProviderArgs(args []string, req AIRequest) []string {
 	replacements := map[string]string{
 		"{{prompt}}":       req.Prompt,
+		"{{model_flag}}":   modelFlag(req.Model),
+		"{{model}}":        req.Model,
 		"{{work_dir}}":     req.WorkDir,
 		"{{artifact_dir}}": req.ArtifactDir,
 		"{{output_path}}":  req.OutputPath,
@@ -145,6 +147,9 @@ func expandProviderArgs(args []string, req AIRequest) []string {
 		value := arg
 		for placeholder, replacement := range replacements {
 			value = strings.ReplaceAll(value, placeholder, replacement)
+		}
+		if strings.TrimSpace(value) == "" {
+			continue
 		}
 		expanded = append(expanded, value)
 	}
@@ -167,6 +172,13 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func modelFlag(model string) string {
+	if strings.TrimSpace(model) == "" {
+		return ""
+	}
+	return "--model"
 }
 
 func ProviderFor(name string) (AIProvider, error) {

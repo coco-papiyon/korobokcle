@@ -3,14 +3,21 @@ package config
 import "time"
 
 type App struct {
-	HTTPPort        int           `yaml:"httpPort"`
-	PollInterval    time.Duration `yaml:"pollInterval"`
-	DataDir         string        `yaml:"dataDir"`
-	ArtifactsDir    string        `yaml:"artifactsDir"`
-	WorkspaceDir    string        `yaml:"workspaceDir"`
-	Provider        string        `yaml:"provider"`
-	SQLitePath      string        `yaml:"sqlitePath"`
-	ShutdownTimeout time.Duration `yaml:"shutdownTimeout"`
+	HTTPPort        int            `yaml:"httpPort"`
+	PollInterval    time.Duration  `yaml:"pollInterval"`
+	DataDir         string         `yaml:"dataDir"`
+	ArtifactsDir    string         `yaml:"artifactsDir"`
+	WorkspaceDir    string         `yaml:"workspaceDir"`
+	Provider        string         `yaml:"provider"`
+	Model           string         `yaml:"model"`
+	Providers       []ProviderSpec `yaml:"providers"`
+	SQLitePath      string         `yaml:"sqlitePath"`
+	ShutdownTimeout time.Duration  `yaml:"shutdownTimeout"`
+}
+
+type ProviderSpec struct {
+	Name   string   `yaml:"name"`
+	Models []string `yaml:"models"`
 }
 
 type WatchRule struct {
@@ -23,6 +30,8 @@ type WatchRule struct {
 	Authors        []string `yaml:"authors"`
 	Assignees      []string `yaml:"assignees"`
 	ExcludeDraftPR bool     `yaml:"excludeDraftPR"`
+	Provider       string   `yaml:"provider"`
+	Model          string   `yaml:"model"`
 	SkillSet       string   `yaml:"skillSet"`
 	TestProfile    string   `yaml:"testProfile"`
 	Enabled        bool     `yaml:"enabled"`

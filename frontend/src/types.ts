@@ -25,14 +25,23 @@ export type JobEvent = {
 export type JobDetail = {
   job: Job
   events: JobEvent[]
+  issueBody?: string
   designArtifact?: Artifact
   implementationArtifact?: Artifact
   reviewArtifact?: Artifact
   testReport?: Artifact
   prCreateArtifact?: Artifact
+  logs?: JobLog[]
 }
 
 export type Artifact = {
+  path: string
+  content: string
+}
+
+export type JobLog = {
+  name: string
+  phase: string
   path: string
   content: string
 }
@@ -47,6 +56,8 @@ export type WatchRule = {
   authors: string[] | null
   assignees: string[] | null
   excludeDraftPR: boolean
+  provider: string
+  model: string
   skillSet: string
   testProfile: string
   enabled: boolean
@@ -61,4 +72,11 @@ export type WatchRuleForm = WatchRule & {
 
 export type AppConfig = {
   provider: string
+  model: string
+  providers: ProviderSpec[]
+}
+
+export type ProviderSpec = {
+  name: string
+  models: string[]
 }

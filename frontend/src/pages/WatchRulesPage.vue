@@ -5,10 +5,12 @@ import AsyncState from '@/components/AsyncState.vue'
 import PanelCard from '@/components/PanelCard.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
-import { fetchWatchRules, saveWatchRules } from '@/lib/api'
-import type { WatchRule, WatchRuleForm } from '@/types'
+import { fetchAppConfig, fetchWatchRules, saveWatchRules } from '@/lib/api'
+import { modelOptionsForProvider, watchRuleProviderOptions } from '@/lib/provider-options'
+import type { AppConfig, WatchRule, WatchRuleForm } from '@/types'
 
 const { data, isLoading, error, reload } = useAsyncData(fetchWatchRules)
+const { data: appConfig } = useAsyncData(fetchAppConfig)
 const forms = ref<WatchRuleForm[]>([])
 const selectedRuleId = ref('')
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -26,6 +28,14 @@ watch(
 )
 
 const selectedRule = computed(() => forms.value.find((rule) => rule.id === selectedRuleId.value) ?? null)
+const availableModelOptions = computed(() => {
+  const config = appConfig.value as AppConfig | null | undefined
+  const providerCatalog = config?.providers ?? []
+  const selectedProvider = selectedRule.value?.provider?.trim() || config?.provider || ''
+  return modelOptionsForProvider(providerCatalog, selectedProvider, selectedRule.value?.model ?? '').map((option) =>
+    option.value === '' ? { ...option, label: 'Use setting' } : option,
+  )
+})
 
 function toForm(rule: WatchRule): WatchRuleForm {
   return {
@@ -52,6 +62,8 @@ function fromForm(rule: WatchRuleForm): WatchRule {
     authors: splitCSV(rule.authorsText),
     assignees: splitCSV(rule.assigneesText),
     excludeDraftPR: rule.excludeDraftPR,
+    provider: rule.provider.trim(),
+    model: rule.model.trim(),
     skillSet: rule.skillSet.trim(),
     testProfile: rule.testProfile.trim(),
     enabled: rule.enabled,
@@ -85,6 +97,8 @@ function addRule() {
     assignees: [],
     assigneesText: '',
     excludeDraftPR: true,
+    provider: '',
+    model: '',
     skillSet: 'default',
     testProfile: 'go-default',
     enabled: false,
@@ -157,6 +171,7 @@ async function persistRules() {
               </div>
               <p class="text-muted">{{ rule.id }}</p>
               <p class="text-muted">{{ rule.repositoriesText || 'repository not set' }}</p>
+              <p class="text-muted">Provider: {{ rule.provider || 'use setting' }} / Model: {{ rule.model || 'use setting' }}</p>
             </button>
           </div>
         </aside>
@@ -240,6 +255,24 @@ async function persistRules() {
               <label class="field">
                 <span class="field__label">Test Profile</span>
                 <input v-model="selectedRule.testProfile" class="field__control" type="text" />
+              </label>
+
+              <label class="field">
+                <span class="field__label">Provider</span>
+                <select v-model="selectedRule.provider" class="field__control">
+                  <option v-for="option in watchRuleProviderOptions(appConfig?.providers ?? [])" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span class="field__label">Model</span>
+                <select v-model="selectedRule.model" class="field__control">
+                  <option v-for="option in availableModelOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </option>
+                </select>
               </label>
 
               <label class="field field-checkbox field-full">

@@ -13,5 +13,8 @@ export function formatStateLabel(value: string): string {
   if (value.startsWith('provider:')) {
     return `provider ${value.slice('provider:'.length)}`
   }
+  if (value.startsWith('model:')) {
+    return `model ${value.slice('model:'.length)}`
+  }
   return value.replaceAll('_', ' ')
 }

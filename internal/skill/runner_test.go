@@ -28,7 +28,7 @@ func TestRunDesignWritesArtifacts(t *testing.T) {
 	_, err := runner.RunDesign(context.Background(), "design", DesignContext{
 		Title:       "My Issue",
 		ArtifactDir: artifactDir,
-	})
+	}, ExecutionConfig{})
 	if err != nil {
 		t.Fatalf("RunDesign() error = %v", err)
 	}
@@ -63,7 +63,7 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 	_, err := runner.RunDesign(context.Background(), "design", DesignContext{
 		Title:       "My Issue",
 		ArtifactDir: artifactDir,
-	})
+	}, ExecutionConfig{})
 	if err != nil {
 		t.Fatalf("RunDesign() error = %v", err)
 	}

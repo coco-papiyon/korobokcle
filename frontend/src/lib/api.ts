@@ -83,7 +83,7 @@ export function fetchAppConfig(): Promise<AppConfig> {
   return request<AppConfig>('/api/app-config')
 }
 
-export function saveAppConfig(config: AppConfig): Promise<AppConfig> {
+export function saveAppConfig(config: Pick<AppConfig, 'provider' | 'model'>): Promise<AppConfig> {
   return request<AppConfig>('/api/app-config', {
     method: 'PUT',
     body: JSON.stringify(config),

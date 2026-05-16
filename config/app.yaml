@@ -4,5 +4,19 @@ dataDir: data
 artifactsDir: artifacts
 workspaceDir: .
 provider: codex
+model: ""
+providers:
+  - name: copilot
+    models:
+      - gpt-4.1
+  - name: codex
+    models:
+      - gpt-5.5
+      - gpt-5.4
+      - gpt-5.4-mini
+      - gpt-5.3-codex
+      - gpt-5.2
+  - name: mock
+    models: []
 sqlitePath: data/korobokcle.db
 shutdownTimeout: 10s

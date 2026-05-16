@@ -83,3 +83,29 @@ func TestExternalCLIProviderExpandsPromptArgument(t *testing.T) {
 		t.Fatalf("expected argument output, got %q", result.Output)
 	}
 }
+
+func TestExternalCLIProviderExpandsModelArgument(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "echo-model.cmd")
+	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %1 %2 %3\r\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["suggest","{{model_flag}}","{{model}}","{{prompt}}"]`)
+
+	provider := NewCodexCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:      "argument-output",
+		Model:       "gpt-4.1",
+		WorkDir:     dir,
+		ArtifactDir: dir,
+		OutputPath:  filepath.Join(dir, "out.txt"),
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(result.Output, "--model") || !strings.Contains(result.Output, "gpt-4.1") {
+		t.Fatalf("expected model arguments, got %q", result.Output)
+	}
+}

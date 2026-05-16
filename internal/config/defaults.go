@@ -5,12 +5,27 @@ import "time"
 func DefaultFiles() Files {
 	return Files{
 		App: App{
-			HTTPPort:        8080,
-			PollInterval:    2 * time.Minute,
-			DataDir:         "data",
-			ArtifactsDir:    "artifacts",
-			WorkspaceDir:    ".",
-			Provider:        "mock",
+			HTTPPort:     8080,
+			PollInterval: 2 * time.Minute,
+			DataDir:      "data",
+			ArtifactsDir: "artifacts",
+			WorkspaceDir: ".",
+			Provider:     "mock",
+			Model:        "",
+			Providers: []ProviderSpec{
+				{
+					Name:   "mock",
+					Models: []string{},
+				},
+				{
+					Name:   "copilot",
+					Models: []string{"gpt-4.1", "gpt-4o", "o4-mini"},
+				},
+				{
+					Name:   "codex",
+					Models: []string{"gpt-4.1", "gpt-4o", "o4-mini"},
+				},
+			},
 			SQLitePath:      "data/korobokcle.db",
 			ShutdownTimeout: 10 * time.Second,
 		},
@@ -23,6 +38,8 @@ func DefaultFiles() Files {
 					Target:         "issue",
 					Labels:         []string{"ai:design"},
 					ExcludeDraftPR: true,
+					Provider:       "",
+					Model:          "",
 					SkillSet:       "default",
 					TestProfile:    "go-default",
 					Enabled:        false,
@@ -34,6 +51,8 @@ func DefaultFiles() Files {
 					Target:         "pull_request",
 					Labels:         []string{"ai:review"},
 					ExcludeDraftPR: true,
+					Provider:       "",
+					Model:          "",
 					SkillSet:       "default",
 					TestProfile:    "go-default",
 					Enabled:        false,
