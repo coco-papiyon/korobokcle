@@ -73,6 +73,38 @@ func TestRunPendingPRCreationsCompletesJob(t *testing.T) {
 	}
 }
 
+func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := config.NewService(root, config.DefaultFiles())
+	job := domain.Job{
+		ID:           "job-1",
+		Repository:   "owner/repo",
+		GitHubNumber: 12,
+		Title:        "Implement feature",
+		BranchName:   "korobokcle/issue-12",
+	}
+
+	if err := writeFile(filepath.Join(root, cfg.App().ArtifactsDir, "changes", job.ID, "summary.md"), []byte("original summary")); err != nil {
+		t.Fatalf("write summary.md: %v", err)
+	}
+	if err := writeFile(filepath.Join(root, cfg.App().ArtifactsDir, "fixes", job.ID, "fix-summary.md"), []byte("fix summary")); err != nil {
+		t.Fatalf("write fix-summary.md: %v", err)
+	}
+
+	req, err := buildPRCreateRequest(cfg, job)
+	if err != nil {
+		t.Fatalf("buildPRCreateRequest() error = %v", err)
+	}
+	if !strings.Contains(req.Body, "original summary") {
+		t.Fatalf("expected PR body to include original summary, got %q", req.Body)
+	}
+	if !strings.Contains(req.Body, "## Fix Summary") || !strings.Contains(req.Body, "fix summary") {
+		t.Fatalf("expected PR body to append fix summary, got %q", req.Body)
+	}
+}
+
 func writeTestSummary(artifactDir string) error {
 	return writeFile(filepath.Join(artifactDir, "summary.md"), []byte("Implemented the requested changes."))
 }

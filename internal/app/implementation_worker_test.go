@@ -84,7 +84,12 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 		},
 	}
 
-	got, err := buildImplementationContext(svc, job, events)
+	runSpec, err := resolveImplementationRunSpec(svc, job, events)
+	if err != nil {
+		t.Fatalf("resolveImplementationRunSpec() error = %v", err)
+	}
+
+	got, err := buildImplementationContext(svc, job, events, runSpec)
 	if err != nil {
 		t.Fatalf("buildImplementationContext() error = %v", err)
 	}
@@ -93,5 +98,43 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	}
 	if got.PreviousTestReport == "" {
 		t.Fatalf("expected previous test report to be captured")
+	}
+	if got.ArtifactDir != filepath.Join(root, "artifacts", "changes", job.ID) {
+		t.Fatalf("expected changes artifact dir, got %q", got.ArtifactDir)
+	}
+}
+
+func TestResolveImplementationRunSpecUsesFixSkillAfterTestFailureRerun(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.ArtifactsDir = "artifacts"
+	svc := config.NewService(root, files)
+
+	job := domain.Job{ID: "job-1"}
+	testFailedID := int64(10)
+	rerunPayload, err := json.Marshal(map[string]any{
+		"eventId": testFailedID,
+	})
+	if err != nil {
+		t.Fatalf("marshal rerun payload: %v", err)
+	}
+
+	events := []domain.Event{
+		{ID: testFailedID, EventType: "test_failed", CreatedAt: time.Now()},
+		{ID: 11, EventType: "implementation_rerun_requested", Payload: string(rerunPayload), CreatedAt: time.Now()},
+	}
+
+	got, err := resolveImplementationRunSpec(svc, job, events)
+	if err != nil {
+		t.Fatalf("resolveImplementationRunSpec() error = %v", err)
+	}
+	if got.SkillName != fixSkillName {
+		t.Fatalf("expected skill %q, got %q", fixSkillName, got.SkillName)
+	}
+	wantDir := filepath.Join(root, "artifacts", "fixes", job.ID)
+	if got.ArtifactDir != wantDir {
+		t.Fatalf("expected artifact dir %q, got %q", wantDir, got.ArtifactDir)
 	}
 }

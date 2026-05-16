@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -224,14 +225,19 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 
 func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest, error) {
 	artifactDir := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID)
-	summaryPath := filepath.Join(artifactDir, "summary.md")
+	summaryPath := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID, "summary.md")
 	summaryRaw, err := os.ReadFile(summaryPath)
 	if err != nil {
 		return PRCreateRequest{}, err
 	}
 
+	fixSummaryRaw, err := readOptionalFixSummary(cfg, job.ID)
+	if err != nil {
+		return PRCreateRequest{}, err
+	}
+
 	title := fmt.Sprintf("%s (#%d)", job.Title, job.GitHubNumber)
-	body := buildPRBody(job, string(summaryRaw))
+	body := buildPRBody(job, string(summaryRaw), fixSummaryRaw)
 
 	return PRCreateRequest{
 		Repository:  job.Repository,
@@ -242,8 +248,25 @@ func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest,
 	}, nil
 }
 
-func buildPRBody(job domain.Job, summary string) string {
-	return fmt.Sprintf("## Summary\n\n%s\n\n## Source\n\n- Repository: `%s`\n- Issue: #%d\n- Job: `%s`\n", trimImplementationSummary(summary), job.Repository, job.GitHubNumber, job.ID)
+func readOptionalFixSummary(cfg *config.Service, jobID string) (string, error) {
+	path := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "fixes", jobID, "fix-summary.md")
+	raw, err := os.ReadFile(path)
+	if err == nil {
+		return string(raw), nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	return "", err
+}
+
+func buildPRBody(job domain.Job, summary string, fixSummary string) string {
+	body := fmt.Sprintf("## Summary\n\n%s\n", trimImplementationSummary(summary))
+	if strings.TrimSpace(fixSummary) != "" {
+		body += fmt.Sprintf("\n## Fix Summary\n\n%s\n", trimImplementationSummary(fixSummary))
+	}
+	body += fmt.Sprintf("\n## Source\n\n- Repository: `%s`\n- Issue: #%d\n- Job: `%s`\n", job.Repository, job.GitHubNumber, job.ID)
+	return body
 }
 
 func writePRCreateArtifact(artifactDir string, url string, req PRCreateRequest) error {

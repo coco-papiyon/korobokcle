@@ -18,6 +18,16 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
 
+const (
+	implementationSkillName = "implement"
+	fixSkillName            = "fix"
+)
+
+type implementationRunSpec struct {
+	SkillName   string
+	ArtifactDir string
+}
+
 func startImplementationWorker(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
 	runner := skill.NewRunner(root, "")
 	testRunner := executor.NewTestRunner()
@@ -59,7 +69,13 @@ func runPendingImplementations(ctx context.Context, root string, cfg *config.Ser
 			continue
 		}
 
-		contextData, err := buildImplementationContext(cfg, jobDetail, events)
+		runSpec, err := resolveImplementationRunSpec(cfg, jobDetail, events)
+		if err != nil {
+			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
+			continue
+		}
+
+		contextData, err := buildImplementationContext(cfg, jobDetail, events, runSpec)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 			continue
@@ -71,7 +87,7 @@ func runPendingImplementations(ctx context.Context, root string, cfg *config.Ser
 			continue
 		}
 
-		result, err := runner.RunImplementation(ctx, "implement", contextData, execution)
+		result, err := runner.RunImplementation(ctx, runSpec.SkillName, contextData, execution)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 			continue
@@ -118,7 +134,7 @@ func runPendingImplementations(ctx context.Context, root string, cfg *config.Ser
 	return nil
 }
 
-func buildImplementationContext(cfg *config.Service, job domain.Job, events []domain.Event) (skill.ImplementationContext, error) {
+func buildImplementationContext(cfg *config.Service, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
 	designArtifactDir := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "designs", job.ID)
 	designArtifactPath := filepath.Join(designArtifactDir, "design.md")
 	designArtifactRaw, err := os.ReadFile(designArtifactPath)
@@ -135,7 +151,7 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 		BranchName:        job.BranchName,
 		DesignArtifact:    string(designArtifactRaw),
 		DesignArtifactDir: designArtifactDir,
-		ArtifactDir:       filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID),
+		ArtifactDir:       runSpec.ArtifactDir,
 	}
 
 	previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)
@@ -169,6 +185,51 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 	return ctxData, nil
 }
 
+func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []domain.Event) (implementationRunSpec, error) {
+	skillName := implementationSkillName
+	artifactDir := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID)
+
+	sourceEventType, err := latestImplementationRerunSourceEventType(events)
+	if err != nil {
+		return implementationRunSpec{}, err
+	}
+	if sourceEventType == "test_failed" {
+		skillName = fixSkillName
+		artifactDir = filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "fixes", job.ID)
+	}
+
+	return implementationRunSpec{
+		SkillName:   skillName,
+		ArtifactDir: artifactDir,
+	}, nil
+}
+
+func latestImplementationRerunSourceEventType(events []domain.Event) (string, error) {
+	for i := len(events) - 1; i >= 0; i-- {
+		event := events[i]
+		if event.EventType != "implementation_rerun_requested" {
+			continue
+		}
+
+		var payload struct {
+			EventID *int64 `json:"eventId"`
+		}
+		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			return "", err
+		}
+		if payload.EventID == nil {
+			return "", nil
+		}
+		for j := i - 1; j >= 0; j-- {
+			if events[j].ID == *payload.EventID {
+				return events[j].EventType, nil
+			}
+		}
+		return "", nil
+	}
+	return "", nil
+}
+
 func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events []domain.Event) (string, string, error) {
 	var previousFailure string
 	var previousTestReport string
@@ -198,11 +259,17 @@ func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events 
 	}
 
 	if previousTestReport == "" {
-		reportPath := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID, "test-report.json")
-		if raw, err := os.ReadFile(reportPath); err == nil {
-			previousTestReport = string(raw)
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", "", fmt.Errorf("read previous test report: %w", err)
+		reportPaths := []string{
+			filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "fixes", job.ID, "test-report.json"),
+			filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID, "test-report.json"),
+		}
+		for _, reportPath := range reportPaths {
+			if raw, err := os.ReadFile(reportPath); err == nil {
+				previousTestReport = string(raw)
+				break
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return "", "", fmt.Errorf("read previous test report: %w", err)
+			}
 		}
 	}
 

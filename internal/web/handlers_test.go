@@ -304,3 +304,28 @@ func TestHandleSaveNotificationConfigUpdatesEvents(t *testing.T) {
 		t.Fatalf("expected saved config to include pr_created, got %s", string(raw))
 	}
 }
+
+func TestHandleJobDetailIncludesFixArtifact(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	jobID := "job-1"
+	if err := os.MkdirAll(filepath.Join(root, "artifacts", "fixes", jobID), 0o755); err != nil {
+		t.Fatalf("MkdirAll(fixes) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "artifacts", "fixes", jobID, "fix-summary.md"), []byte("fix content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(fix-summary.md) error = %v", err)
+	}
+
+	artifact, err := server.loadFixArtifact(jobID)
+	if err != nil {
+		t.Fatalf("loadFixArtifact() error = %v", err)
+	}
+	if artifact.Content != "fix content" {
+		t.Fatalf("expected fix content, got %q", artifact.Content)
+	}
+}

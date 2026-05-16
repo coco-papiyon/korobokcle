@@ -29,6 +29,7 @@ export type JobDetail = {
   issueBody?: string
   designArtifact?: Artifact
   implementationArtifact?: Artifact
+  fixArtifact?: Artifact
   reviewArtifact?: Artifact
   testReport?: Artifact
   prCreateArtifact?: Artifact

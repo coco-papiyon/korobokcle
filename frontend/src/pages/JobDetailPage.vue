@@ -122,6 +122,11 @@ const groupedLogs = computed(() => {
       items: logs.filter((log) => log.phase === 'implementation'),
     },
     {
+      phase: 'fix',
+      title: 'Fix Logs',
+      items: logs.filter((log) => log.phase === 'fix'),
+    },
+    {
       phase: 'review',
       title: 'Review Logs',
       items: logs.filter((log) => log.phase === 'review'),
@@ -419,6 +424,19 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
             <details class="stack-sm">
               <summary class="text-muted">{{ data.implementationArtifact.path }}</summary>
               <pre class="artifact-view">{{ data.implementationArtifact.content }}</pre>
+            </details>
+          </div>
+        </PanelCard>
+
+        <PanelCard
+          v-if="data.fixArtifact"
+          title="Fix Artifact"
+          description="test_failed 後の修正フェーズで生成された成果物です。"
+        >
+          <div class="stack-sm">
+            <details class="stack-sm">
+              <summary class="text-muted">{{ data.fixArtifact.path }}</summary>
+              <pre class="artifact-view">{{ data.fixArtifact.content }}</pre>
             </details>
           </div>
         </PanelCard>

@@ -48,6 +48,7 @@ type jobDetailResponse struct {
 	IssueBody              string            `json:"issueBody,omitempty"`
 	DesignArtifact         *artifactResponse `json:"designArtifact,omitempty"`
 	ImplementationArtifact *artifactResponse `json:"implementationArtifact,omitempty"`
+	FixArtifact            *artifactResponse `json:"fixArtifact,omitempty"`
 	ReviewArtifact         *artifactResponse `json:"reviewArtifact,omitempty"`
 	TestReport             *artifactResponse `json:"testReport,omitempty"`
 	PRCreateArtifact       *artifactResponse `json:"prCreateArtifact,omitempty"`
@@ -155,6 +156,9 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	if artifact, err := s.loadImplementationArtifact(job.ID); err == nil {
 		out.ImplementationArtifact = artifact
 	}
+	if artifact, err := s.loadFixArtifact(job.ID); err == nil {
+		out.FixArtifact = artifact
+	}
 	if artifact, err := s.loadReviewArtifact(job.ID); err == nil {
 		out.ReviewArtifact = artifact
 	}
@@ -166,6 +170,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Logs = append(out.Logs, s.loadLogResponses("design", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "designs", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("implementation", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("fix", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "fixes", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("pr", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", job.ID), []string{"git-push.log", "gh-pr-create.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("review", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "reviews", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
 	writeJSON(w, http.StatusOK, out)
@@ -778,6 +783,15 @@ func (s *Server) loadDesignArtifact(jobID string) (*artifactResponse, error) {
 
 func (s *Server) loadImplementationArtifact(jobID string) (*artifactResponse, error) {
 	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", jobID, "summary.md")
+	return s.loadArtifact(path)
+}
+
+func (s *Server) loadFixArtifact(jobID string) (*artifactResponse, error) {
+	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "fixes", jobID, "fix-summary.md")
+	return s.loadArtifact(path)
+}
+
+func (s *Server) loadArtifact(path string) (*artifactResponse, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -801,15 +815,23 @@ func (s *Server) loadReviewArtifact(jobID string) (*artifactResponse, error) {
 }
 
 func (s *Server) loadTestReport(jobID string) (*artifactResponse, error) {
-	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", jobID, "test-report.json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+	paths := []string{
+		filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "fixes", jobID, "test-report.json"),
+		filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", jobID, "test-report.json"),
 	}
-	return &artifactResponse{
-		Path:    path,
-		Content: string(raw),
-	}, nil
+	for _, path := range paths {
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			return &artifactResponse{
+				Path:    path,
+				Content: string(raw),
+			}, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return nil, os.ErrNotExist
 }
 
 func (s *Server) loadPRCreateArtifact(jobID string) (*artifactResponse, error) {
