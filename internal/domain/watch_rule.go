@@ -13,9 +13,20 @@ const (
 type MonitoredTarget string
 
 const (
-	TargetIssue       MonitoredTarget = "issue"
-	TargetPullRequest MonitoredTarget = "pull_request"
+	TargetIssue        MonitoredTarget = "issue"
+	TargetIssueProject MonitoredTarget = "issue_project"
+	TargetPullRequest  MonitoredTarget = "pull_request"
 )
+
+type ProjectField struct {
+	Name  string
+	Value string
+}
+
+type ProjectCard struct {
+	Project string
+	Fields  []ProjectField
+}
 
 type RepositoryItem struct {
 	Repository   string
@@ -29,6 +40,7 @@ type RepositoryItem struct {
 	URL          string
 	UpdatedAt    time.Time
 	Target       MonitoredTarget
+	ProjectCards []ProjectCard
 	DefaultState JobState
 }
 

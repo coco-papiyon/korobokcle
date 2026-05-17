@@ -17,7 +17,7 @@ func EvaluateWatchRule(rule config.WatchRule, item RepositoryItem) MatchResult {
 		return MatchResult{Status: MatchStatusIgnored, Reason: "repository_mismatch"}
 	}
 
-	if string(item.Target) != rule.Target {
+	if !targetMatches(rule.Target, item.Target) {
 		return MatchResult{Status: MatchStatusIgnored, Reason: "target_mismatch"}
 	}
 
@@ -44,7 +44,71 @@ func EvaluateWatchRule(rule config.WatchRule, item RepositoryItem) MatchResult {
 		return MatchResult{Status: MatchStatusIgnored, Reason: "label_mismatch"}
 	}
 
+	if strings.EqualFold(strings.TrimSpace(rule.Target), string(TargetIssueProject)) &&
+		!projectMatches(strings.TrimSpace(rule.ProjectName), rule.ProjectFilters, item.ProjectCards) {
+		return MatchResult{Status: MatchStatusIgnored, Reason: "project_filter_mismatch"}
+	}
+
 	return MatchResult{Status: MatchStatusMatched, Reason: "matched"}
+}
+
+func targetMatches(ruleTarget string, itemTarget MonitoredTarget) bool {
+	switch strings.TrimSpace(ruleTarget) {
+	case string(TargetIssue):
+		return itemTarget == TargetIssue
+	case string(TargetIssueProject):
+		return itemTarget == TargetIssueProject
+	case string(TargetPullRequest):
+		return itemTarget == TargetPullRequest
+	default:
+		return false
+	}
+}
+
+func projectMatches(projectName string, filters []config.ProjectFieldFilter, cards []ProjectCard) bool {
+	if len(cards) == 0 {
+		return false
+	}
+
+	for _, card := range cards {
+		if projectName != "" && !strings.EqualFold(strings.TrimSpace(projectName), strings.TrimSpace(card.Project)) {
+			continue
+		}
+		if projectFieldsMatch(filters, card.Fields) {
+			return true
+		}
+	}
+	return false
+}
+
+func projectFieldsMatch(filters []config.ProjectFieldFilter, fields []ProjectField) bool {
+	for _, filter := range filters {
+		if !projectFieldMatches(filter, fields) {
+			return false
+		}
+	}
+	return true
+}
+
+func projectFieldMatches(filter config.ProjectFieldFilter, fields []ProjectField) bool {
+	name := strings.TrimSpace(filter.Field)
+	if name == "" {
+		return true
+	}
+	for _, field := range fields {
+		if !strings.EqualFold(name, strings.TrimSpace(field.Name)) {
+			continue
+		}
+		if len(filter.Values) == 0 {
+			return true
+		}
+		for _, candidate := range filter.Values {
+			if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(field.Value)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func containsFold(values []string, target string) bool {

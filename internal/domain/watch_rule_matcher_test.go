@@ -71,3 +71,67 @@ func TestEvaluateWatchRuleMatchedWithRepositoryURLAndAssignee(t *testing.T) {
 		t.Fatalf("expected matched, got %s", result.Status)
 	}
 }
+
+func TestEvaluateWatchRuleMatchedProjectIssue(t *testing.T) {
+	t.Parallel()
+
+	rule := config.WatchRule{
+		Enabled:      true,
+		Repositories: []string{"owner/repo"},
+		Target:       "issue_project",
+		ProjectName:  "Roadmap",
+		ProjectFilters: []config.ProjectFieldFilter{
+			{Field: "Status", Values: []string{"Ready"}},
+		},
+	}
+	item := RepositoryItem{
+		Repository: "owner/repo",
+		Target:     TargetIssueProject,
+		ProjectCards: []ProjectCard{
+			{
+				Project: "Roadmap",
+				Fields: []ProjectField{
+					{Name: "Status", Value: "Ready"},
+				},
+			},
+		},
+		UpdatedAt: time.Now(),
+	}
+
+	result := EvaluateWatchRule(rule, item)
+	if result.Status != MatchStatusMatched {
+		t.Fatalf("expected matched, got %s", result.Status)
+	}
+}
+
+func TestEvaluateWatchRuleIgnoresIssueProjectWithoutMatchingProjectFilters(t *testing.T) {
+	t.Parallel()
+
+	rule := config.WatchRule{
+		Enabled:      true,
+		Repositories: []string{"owner/repo"},
+		Target:       "issue_project",
+		ProjectName:  "Roadmap",
+		ProjectFilters: []config.ProjectFieldFilter{
+			{Field: "Status", Values: []string{"Ready"}},
+		},
+	}
+	item := RepositoryItem{
+		Repository: "owner/repo",
+		Target:     TargetIssueProject,
+		ProjectCards: []ProjectCard{
+			{
+				Project: "Roadmap",
+				Fields: []ProjectField{
+					{Name: "Status", Value: "Backlog"},
+				},
+			},
+		},
+		UpdatedAt: time.Now(),
+	}
+
+	result := EvaluateWatchRule(rule, item)
+	if result.Status != MatchStatusIgnored {
+		t.Fatalf("expected ignored, got %s", result.Status)
+	}
+}

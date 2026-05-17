@@ -3,8 +3,11 @@ rules:
       name: issue
       repositories:
         - https://github.com/coco-papiyon/korobokcle
-      target: issue
+      target: issue_project
+      branch: ""
+      projectName: ""
       labels: []
+      projectFilters: []
       titlePattern: ""
       authors: []
       assignees:
@@ -14,16 +17,41 @@ rules:
       model: ""
       skillSet: default
       testProfile: go-default
-      enabled: true
+      enabled: false
     - id: rule-2
       name: PR
       repositories:
         - https://github.com/coco-papiyon/korobokcle
       target: pull_request
+      branch: ""
+      projectName: ""
       labels: []
+      projectFilters: []
       titlePattern: ""
       authors: []
       assignees: []
+      excludeDraftPR: true
+      provider: ""
+      model: ""
+      skillSet: default
+      testProfile: go-default
+      enabled: true
+    - id: rule-3
+      name: New Rule 3
+      repositories:
+        - https://github.com/coco-papiyon/korobokcle
+      target: issue_project
+      branch: ""
+      projectName: develop
+      labels: []
+      projectFilters:
+        - field: Status
+          values:
+            - Todo
+      titlePattern: ""
+      authors: []
+      assignees:
+        - coco-papiyon
       excludeDraftPR: true
       provider: ""
       model: ""
