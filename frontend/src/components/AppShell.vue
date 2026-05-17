@@ -11,7 +11,6 @@ defineProps<{
       <div class="hero__content">
         <p class="eyebrow">Automation Control Plane</p>
         <h1>{{ title }}</h1>
-        <p class="hero__description">{{ description }}</p>
       </div>
       <nav class="nav-tabs" aria-label="Main">
         <RouterLink class="nav-tabs__link" to="/">Dashboard</RouterLink>
@@ -19,6 +18,7 @@ defineProps<{
         <RouterLink class="nav-tabs__link" to="/settings/watch-rules">Watch Rules</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings/skillsets">Skill Sets</RouterLink>
       </nav>
+      <p class="hero__description">{{ description }}</p>
     </header>
     <main class="stack-lg">
       <slot />

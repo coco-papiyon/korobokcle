@@ -21,7 +21,7 @@
 }
 
 .hero__description {
-  margin-top: var(--space-3);
+  margin-top: var(--space-5);
   color: var(--ink-muted);
   font-size: 1.05rem;
   line-height: 1.6;
@@ -50,7 +50,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
-  margin-top: var(--space-6);
+  margin-top: var(--space-5);
 }
 
 .nav-tabs__link {

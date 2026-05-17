@@ -187,8 +187,11 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 }
 
 func readFirstArtifactFile(dir string, names ...string) ([]byte, error) {
+	paths := make([]string, 0, len(names))
 	for _, name := range names {
-		raw, err := os.ReadFile(filepath.Join(dir, name))
+		path := filepath.Join(dir, name)
+		paths = append(paths, path)
+		raw, err := os.ReadFile(path)
 		if err == nil {
 			return raw, nil
 		}
@@ -196,7 +199,7 @@ func readFirstArtifactFile(dir string, names ...string) ([]byte, error) {
 			return nil, err
 		}
 	}
-	return nil, os.ErrNotExist
+	return nil, fmt.Errorf("%w: searched %s", os.ErrNotExist, strings.Join(paths, ", "))
 }
 
 func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []domain.Event) (implementationRunSpec, error) {
