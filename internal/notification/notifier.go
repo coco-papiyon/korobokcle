@@ -1,6 +1,9 @@
 package notification
 
-import "context"
+import (
+	"context"
+	"errors"
+)
 
 type Notification struct {
 	Title      string
@@ -11,6 +14,8 @@ type Notification struct {
 	Number     int
 	JobID      string
 }
+
+var ErrNotificationSkipped = errors.New("notification skipped")
 
 type Notifier interface {
 	Notify(ctx context.Context, n Notification) error

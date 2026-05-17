@@ -21,7 +21,7 @@ import type { JobEvent } from '@/types'
 
 const route = useRoute()
 const jobID = computed(() => String(route.params.id))
-const { data, isLoading, error, reload } = useAsyncData(() => fetchJobDetail(jobID.value))
+const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetchJobDetail(jobID.value))
 let refreshTimer: number | null = null
 
 function isPollingState(state?: string) {
@@ -43,7 +43,7 @@ function startPolling() {
     return
   }
   refreshTimer = window.setInterval(() => {
-    void reload()
+    void reload({ silent: true })
   }, 5000)
 }
 
@@ -364,6 +364,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
     description="ジョブ状態、関連ブランチ、イベント履歴を確認するページです。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
+      <p v-if="isRefreshing" class="text-muted">Syncing job detail...</p>
       <template v-if="data">
         <section class="hero-grid">
           <PanelCard :title="data.job.id" description="Job summary">

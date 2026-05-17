@@ -78,6 +78,7 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, rule config.WatchRule, 
 	if err := o.store.UpsertJob(ctx, job); err != nil {
 		return err
 	}
+	log.Printf("info job started job=%s type=%s repository=%s number=%d state=%s watch_rule=%s", job.ID, job.Type, job.Repository, job.GitHubNumber, job.State, job.WatchRuleID)
 
 	payload, err := json.Marshal(map[string]any{
 		"ruleId":     rule.ID,
@@ -106,6 +107,7 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, rule config.WatchRule, 
 	if err := o.store.AppendEvent(ctx, storedEvent); err != nil {
 		return err
 	}
+	log.Printf("info job event started job=%s event=%s state_from=%s state_to=%s", job.ID, storedEvent.EventType, storedEvent.StateFrom, storedEvent.StateTo)
 	o.notifyJobEvent(ctx, job, storedEvent)
 	return nil
 }
@@ -143,6 +145,7 @@ func (o *Orchestrator) UpdateJobState(ctx context.Context, jobID string, nextSta
 	if err := o.store.AppendEvent(ctx, storedEvent); err != nil {
 		return err
 	}
+	log.Printf("info job event started job=%s event=%s state_from=%s state_to=%s", job.ID, storedEvent.EventType, storedEvent.StateFrom, storedEvent.StateTo)
 	o.notifyJobEvent(ctx, job, storedEvent)
 	return nil
 }
@@ -373,7 +376,7 @@ func (o *Orchestrator) notifyJobEvent(ctx context.Context, job domain.Job, event
 		return
 	}
 
-	if err := o.notifier.Notify(ctx, notification.Notification{
+	notificationPayload := notification.Notification{
 		Title:      notificationTitle(job, event),
 		Message:    notificationMessage(job, event),
 		Event:      event.EventType,
@@ -381,9 +384,15 @@ func (o *Orchestrator) notifyJobEvent(ctx context.Context, job domain.Job, event
 		Repository: job.Repository,
 		Number:     job.GitHubNumber,
 		JobID:      job.ID,
-	}); err != nil {
-		log.Printf("notification failed job=%s event=%s: %v", job.ID, event.EventType, err)
 	}
+	if err := o.notifier.Notify(ctx, notificationPayload); err != nil {
+		if errors.Is(err, notification.ErrNotificationSkipped) {
+			return
+		}
+		log.Printf("notification failed job=%s event=%s: %v", job.ID, event.EventType, err)
+		return
+	}
+	log.Printf("info notification sent job=%s event=%s state=%s repository=%s number=%d", job.ID, event.EventType, event.StateTo, job.Repository, job.GitHubNumber)
 }
 
 func notificationTitle(job domain.Job, event domain.Event) string {

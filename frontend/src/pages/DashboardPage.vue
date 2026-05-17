@@ -7,11 +7,44 @@ import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchAppConfig, fetchJobs } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import type { Job } from '@/types'
 
-const { data, isLoading, error } = useAsyncData(fetchJobs, {
+function mergeJobs(current: Job[] | null, incoming: Job[]) {
+  if (!current) {
+    return incoming
+  }
+
+  const currentByID = new Map(current.map((job) => [job.id, job]))
+  return incoming.map((job) => {
+    const existing = currentByID.get(job.id)
+    if (!existing) {
+      return job
+    }
+    if (
+      existing.type === job.type &&
+      existing.repository === job.repository &&
+      existing.githubNumber === job.githubNumber &&
+      existing.state === job.state &&
+      existing.title === job.title &&
+      existing.branchName === job.branchName &&
+      existing.watchRuleId === job.watchRuleId &&
+      existing.createdAt === job.createdAt &&
+      existing.updatedAt === job.updatedAt
+    ) {
+      return existing
+    }
+    return {
+      ...existing,
+      ...job,
+    }
+  })
+}
+
+const { data, isLoading, isRefreshing, error } = useAsyncData(fetchJobs, {
   pollIntervalMs: 5000,
+  mergeData: mergeJobs,
 })
-const { data: appConfig } = useAsyncData(fetchAppConfig, {
+const { data: appConfig, isRefreshing: isRefreshingAppConfig } = useAsyncData(fetchAppConfig, {
   pollIntervalMs: 5000,
 })
 </script>
@@ -28,10 +61,12 @@ const { data: appConfig } = useAsyncData(fetchAppConfig, {
           <StateBadge :state="`provider:${appConfig?.provider ?? 'mock'}`" />
           <StateBadge :state="`model:${appConfig?.model ?? 'default'}`" />
         </div>
+        <p v-if="isRefreshingAppConfig" class="text-muted">Syncing settings...</p>
       </PanelCard>
     </section>
 
     <AsyncState :is-loading="isLoading" :error="error">
+      <p v-if="isRefreshing" class="text-muted">Syncing jobs...</p>
       <DataTable :columns="['ID', 'Type', 'Repository', 'State', 'Updated']">
         <tr v-for="job in data ?? []" :key="job.id">
           <td>

@@ -65,17 +65,29 @@ func NewConfiguredNotifier(cfg config.Notifications) (Notifier, error) {
 
 func (n fanoutNotifier) Notify(ctx context.Context, event Notification) error {
 	var errs []error
+	delivered := false
 	for _, notifier := range n.notifiers {
 		if err := notifier.Notify(ctx, event); err != nil {
+			if errors.Is(err, ErrNotificationSkipped) {
+				continue
+			}
 			errs = append(errs, err)
+			continue
 		}
+		delivered = true
+	}
+	if delivered {
+		return nil
+	}
+	if len(errs) == 0 {
+		return ErrNotificationSkipped
 	}
 	return errors.Join(errs...)
 }
 
 func (n filteredNotifier) Notify(ctx context.Context, event Notification) error {
 	if !matchesNotificationEvent(n.events, event) {
-		return nil
+		return ErrNotificationSkipped
 	}
 	return n.next.Notify(ctx, event)
 }

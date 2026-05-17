@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -34,20 +35,36 @@ func (n *WindowsToastNotifier) Notify(ctx context.Context, event Notification) e
 	if err != nil {
 		return fmt.Errorf("show windows toast: %w: %s", err, strings.TrimSpace(string(raw)))
 	}
+	if output := strings.TrimSpace(string(raw)); output != "" {
+		log.Printf("info windows toast notifier output: %s", output)
+	}
 	return nil
 }
 
 func buildWindowsToastScript(event Notification) string {
 	return fmt.Sprintf(
 		"$ErrorActionPreference = 'Stop'\n"+
-			"[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null\n"+
-			"[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null\n"+
-			"$xml = New-Object Windows.Data.Xml.Dom.XmlDocument\n"+
-			"$xml.LoadXml(\"<toast><visual><binding template='ToastGeneric'><text>%s</text><text>%s</text></binding></visual></toast>\")\n"+
-			"$toast = [Windows.UI.Notifications.ToastNotification]::new($xml)\n"+
-			"[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Korobokcle').Show($toast)\n",
-		xmlEscape(event.Title),
-		xmlEscape(event.Message),
+			"Add-Type -AssemblyName System.Windows.Forms\n"+
+			"Add-Type -AssemblyName System.Drawing\n"+
+			"$identity = [Security.Principal.WindowsIdentity]::GetCurrent()\n"+
+			"$principal = [Security.Principal.WindowsPrincipal]::new($identity)\n"+
+			"$isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)\n"+
+			"$isInteractive = [Environment]::UserInteractive\n"+
+			"$sessionId = [System.Diagnostics.Process]::GetCurrentProcess().SessionId\n"+
+			"$notify = New-Object System.Windows.Forms.NotifyIcon\n"+
+			"$notify.Icon = [System.Drawing.SystemIcons]::Information\n"+
+			"$notify.Visible = $true\n"+
+			"$notify.ShowBalloonTip(\n"+
+			"  5000,\n"+
+			"  '%s',\n"+
+			"  '%s',\n"+
+			"  [System.Windows.Forms.ToolTipIcon]::Info\n"+
+			")\n"+
+			"Start-Sleep -Seconds 6\n"+
+			"$notify.Dispose()\n"+
+			"Write-Output \"balloon=shown interactive=$isInteractive admin=$isAdmin session=$sessionId user=$($identity.Name)\"\n",
+		psSingleQuoteEscape(event.Title),
+		psSingleQuoteEscape(event.Message),
 	)
 }
 
@@ -61,13 +78,6 @@ func encodePowerShellCommand(command string) string {
 	return base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
-func xmlEscape(value string) string {
-	replacer := strings.NewReplacer(
-		"&", "&amp;",
-		"<", "&lt;",
-		">", "&gt;",
-		"\"", "&quot;",
-		"'", "&apos;",
-	)
-	return replacer.Replace(value)
+func psSingleQuoteEscape(value string) string {
+	return strings.ReplaceAll(value, "'", "''")
 }

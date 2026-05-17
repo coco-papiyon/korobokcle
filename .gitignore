@@ -1,8 +1,7 @@
 .gocache/
 gocache-local/
 gocache-notify/
-.gocache-local/
-.gocache-skillset-move/
+.gocache-*/
 
 data/
 artifacts/

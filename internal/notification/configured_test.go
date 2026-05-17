@@ -22,8 +22,10 @@ func TestConfiguredNotifierMatchesExactAndFailedAlias(t *testing.T) {
 	if err := notifier.Notify(context.Background(), Notification{Event: "test_failed", State: "failed"}); err != nil {
 		t.Fatalf("Notify(test_failed) error = %v", err)
 	}
-	if err := notifier.Notify(context.Background(), Notification{Event: "review_ready", State: "review_ready"}); err != nil {
-		t.Fatalf("Notify(review_ready) error = %v", err)
+	if err := notifier.Notify(context.Background(), Notification{Event: "review_ready", State: "review_ready"}); err == nil {
+		t.Fatalf("expected Notify(review_ready) to be skipped")
+	} else if err != ErrNotificationSkipped {
+		t.Fatalf("expected ErrNotificationSkipped, got %v", err)
 	}
 
 	if len(recorder.events) != 2 {
