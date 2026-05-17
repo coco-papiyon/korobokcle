@@ -143,7 +143,7 @@ function skillLabel(name: string) {
 <template>
   <AppShell
     title="Skill Sets"
-    description="default を基点に skill set を複製し、worker ごとの prompt、provider、artifact 設定を管理します。"
+    description="自動処理を実行するスキルを設定します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <section class="watch-layout">

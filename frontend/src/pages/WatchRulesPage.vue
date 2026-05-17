@@ -138,7 +138,7 @@ async function persistRules() {
 <template>
   <AppShell
     title="Watch Rules"
-    description="GitHub の監視対象、ブランチ、マッチ条件、実行スキルをまとめて管理します。"
+    description="GitHubの監視対象および検出した際のAI/動作を設定します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <section class="watch-layout">

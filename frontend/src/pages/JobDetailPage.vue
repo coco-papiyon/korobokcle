@@ -368,7 +368,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
 <template>
   <AppShell
     title="Job Detail"
-    description="ジョブ状態、関連ブランチ、イベント履歴を確認するページです。"
+    description="自動処理の詳細情報(設計結果、実装結果、レビュー結果等)やイベント履歴を確認できます。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <p v-if="isRefreshing" class="text-muted">Syncing job detail...</p>

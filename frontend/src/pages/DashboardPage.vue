@@ -48,7 +48,7 @@ const { data, isLoading, isRefreshing, error } = useAsyncData(fetchJobs, {
 <template>
   <AppShell
     title="korobokcle"
-    description="承認付きのGitHubジョブを一覧で追跡し、状態遷移と詳細を確認できます。"
+    description="Watch Ruleに一致するGitHub Issue/PRの一覧と自動処理の状況を確認できます。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <p v-if="isRefreshing" class="text-muted">Syncing jobs...</p>

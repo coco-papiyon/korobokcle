@@ -113,7 +113,7 @@ async function persistNotificationConfig() {
 <template>
   <AppShell
     title="Settings"
-    description="AI provider、model、poll interval、通知チャネルなど、アプリ全体の動作設定を管理します。"
+    description="アプリの動作設定を管理します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <section class="panel stack-md">
