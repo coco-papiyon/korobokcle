@@ -231,7 +231,7 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest, error) {
 	artifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerPR)
 	summaryDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
-	summaryRaw, err := readFirstArtifactFile(summaryDir, "result.md", "summary.md")
+	summaryRaw, err := readFirstArtifactFile(summaryDir, "result.md", "implement.md", "summary.md")
 	if err != nil {
 		return PRCreateRequest{}, err
 	}

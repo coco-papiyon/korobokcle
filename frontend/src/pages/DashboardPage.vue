@@ -2,10 +2,9 @@
 import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
 import DataTable from '@/components/DataTable.vue'
-import PanelCard from '@/components/PanelCard.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
-import { fetchAppConfig, fetchJobs } from '@/lib/api'
+import { fetchJobs } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import type { Job } from '@/types'
 
@@ -44,27 +43,13 @@ const { data, isLoading, isRefreshing, error } = useAsyncData(fetchJobs, {
   pollIntervalMs: 5000,
   mergeData: mergeJobs,
 })
-const { data: appConfig, isRefreshing: isRefreshingAppConfig } = useAsyncData(fetchAppConfig, {
-  pollIntervalMs: 5000,
-})
 </script>
 
 <template>
   <AppShell
     title="korobokcle"
-    description="承認付きのGitHubジョブを管理するダッシュボードです。"
+    description="承認付きのGitHubジョブを一覧で追跡し、状態遷移と詳細を確認できます。"
   >
-    <section class="hero-grid">
-      <PanelCard title="Jobs" description="承認待ち、進行中、失敗ジョブを一箇所で追跡します。" />
-      <PanelCard title="AI Provider" description="現在の実行 provider を表示します。">
-        <div class="status-inline">
-          <StateBadge :state="`provider:${appConfig?.provider ?? 'mock'}`" />
-          <StateBadge :state="`model:${appConfig?.model ?? 'default'}`" />
-        </div>
-        <p v-if="isRefreshingAppConfig" class="text-muted">Syncing settings...</p>
-      </PanelCard>
-    </section>
-
     <AsyncState :is-loading="isLoading" :error="error">
       <p v-if="isRefreshing" class="text-muted">Syncing jobs...</p>
       <DataTable :columns="['ID', 'Type', 'Repository', 'State', 'Updated']">

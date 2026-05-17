@@ -911,7 +911,7 @@ func (s *Server) loadDesignArtifact(jobID string) (*artifactResponse, error) {
 
 func (s *Server) loadImplementationArtifact(jobID string) (*artifactResponse, error) {
 	dir := artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerImplementation)
-	return s.loadFirstArtifact(dir, "result.md", "summary.md")
+	return s.loadFirstArtifact(dir, "result.md", "implement.md", "summary.md")
 }
 
 func (s *Server) loadFixArtifact(jobID string) (*artifactResponse, error) {
