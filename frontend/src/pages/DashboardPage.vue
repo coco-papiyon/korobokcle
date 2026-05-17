@@ -52,7 +52,7 @@ const { data: appConfig, isRefreshing: isRefreshingAppConfig } = useAsyncData(fe
 <template>
   <AppShell
     title="korobokcle"
-    description="GitHub Issue / Pull Request automation orchestration with approval-driven job control."
+    description="承認付きのGitHubジョブを管理するダッシュボードです。"
   >
     <section class="hero-grid">
       <PanelCard title="Jobs" description="承認待ち、進行中、失敗ジョブを一箇所で追跡します。" />
