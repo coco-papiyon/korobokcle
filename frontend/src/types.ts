@@ -48,13 +48,20 @@ export type JobLog = {
   content: string
 }
 
+export type ProjectFieldFilter = {
+  field: string
+  values: string[]
+}
+
 export type WatchRule = {
   id: string
   name: string
   repositories: string[] | null
   target: string
   branch: string
+  projectName: string
   labels: string[] | null
+  projectFilters: ProjectFieldFilter[]
   titlePattern: string
   authors: string[] | null
   assignees: string[] | null
@@ -68,6 +75,7 @@ export type WatchRule = {
 
 export type WatchRuleForm = WatchRule & {
   repositoriesText: string
+  projectFiltersText: string
   labelsText: string
   authorsText: string
   assigneesText: string

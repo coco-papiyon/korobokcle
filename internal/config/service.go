@@ -137,6 +137,13 @@ func cloneWatchRule(rule WatchRule) WatchRule {
 	cloned := rule
 	cloned.Repositories = append([]string(nil), rule.Repositories...)
 	cloned.Labels = append([]string(nil), rule.Labels...)
+	cloned.ProjectFilters = make([]ProjectFieldFilter, 0, len(rule.ProjectFilters))
+	for _, filter := range rule.ProjectFilters {
+		cloned.ProjectFilters = append(cloned.ProjectFilters, ProjectFieldFilter{
+			Field:  filter.Field,
+			Values: append([]string(nil), filter.Values...),
+		})
+	}
 	cloned.Authors = append([]string(nil), rule.Authors...)
 	cloned.Assignees = append([]string(nil), rule.Assignees...)
 	return cloned

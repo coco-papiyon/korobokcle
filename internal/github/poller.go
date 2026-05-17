@@ -12,6 +12,7 @@ import (
 
 type RepositoryLister interface {
 	ListIssues(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
+	ListProjectIssues(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
 	ListPullRequests(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
 }
 
@@ -90,10 +91,10 @@ func (p *Poller) Poll(ctx context.Context) ([]domain.DomainEvent, error) {
 }
 
 type Watcher struct {
-	poller          *Poller
+	poller           *Poller
 	intervalProvider func() time.Duration
-	logger          *log.Logger
-	debug           *log.Logger
+	logger           *log.Logger
+	debug            *log.Logger
 }
 
 func NewWatcher(poller *Poller, intervalProvider func() time.Duration, logger *log.Logger, debug *log.Logger) *Watcher {
@@ -185,6 +186,8 @@ func (p *Poller) listItems(ctx context.Context, repository string, target string
 	switch target {
 	case string(domain.TargetIssue):
 		return p.client.ListIssues(ctx, repository, since)
+	case string(domain.TargetIssueProject):
+		return p.client.ListProjectIssues(ctx, repository, since)
 	case string(domain.TargetPullRequest):
 		return p.client.ListPullRequests(ctx, repository, since)
 	default:

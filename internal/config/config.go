@@ -20,22 +20,29 @@ type ProviderSpec struct {
 	Models []string `yaml:"models"`
 }
 
+type ProjectFieldFilter struct {
+	Field  string   `yaml:"field" json:"field"`
+	Values []string `yaml:"values" json:"values"`
+}
+
 type WatchRule struct {
-	ID             string   `yaml:"id"`
-	Name           string   `yaml:"name"`
-	Repositories   []string `yaml:"repositories"`
-	Target         string   `yaml:"target"`
-	Branch         string   `yaml:"branch"`
-	Labels         []string `yaml:"labels"`
-	TitlePattern   string   `yaml:"titlePattern"`
-	Authors        []string `yaml:"authors"`
-	Assignees      []string `yaml:"assignees"`
-	ExcludeDraftPR bool     `yaml:"excludeDraftPR"`
-	Provider       string   `yaml:"provider"`
-	Model          string   `yaml:"model"`
-	SkillSet       string   `yaml:"skillSet"`
-	TestProfile    string   `yaml:"testProfile"`
-	Enabled        bool     `yaml:"enabled"`
+	ID             string               `yaml:"id"`
+	Name           string               `yaml:"name"`
+	Repositories   []string             `yaml:"repositories"`
+	Target         string               `yaml:"target"`
+	Branch         string               `yaml:"branch"`
+	ProjectName    string               `yaml:"projectName"`
+	Labels         []string             `yaml:"labels"`
+	ProjectFilters []ProjectFieldFilter `yaml:"projectFilters"`
+	TitlePattern   string               `yaml:"titlePattern"`
+	Authors        []string             `yaml:"authors"`
+	Assignees      []string             `yaml:"assignees"`
+	ExcludeDraftPR bool                 `yaml:"excludeDraftPR"`
+	Provider       string               `yaml:"provider"`
+	Model          string               `yaml:"model"`
+	SkillSet       string               `yaml:"skillSet"`
+	TestProfile    string               `yaml:"testProfile"`
+	Enabled        bool                 `yaml:"enabled"`
 }
 
 type WatchRulesFile struct {

@@ -109,6 +109,34 @@ const canReviewImplementation = computed(() => {
   }
   return state === 'failed' && latestEvent.value?.eventType === 'test_failed'
 })
+const flowRerunAction = computed<RerunAction | null>(() => {
+  const state = data.value?.job.state
+  const event = latestEvent.value
+
+  switch (state) {
+    case 'waiting_design_approval':
+    case 'design_rejected':
+    case 'detected':
+    case 'design_running':
+      return 'retry_design'
+    case 'waiting_final_approval':
+    case 'final_rejected':
+    case 'implementation_running':
+    case 'test_running':
+    case 'implementation_ready':
+      return 'retry_implementation'
+    case 'pr_creating':
+      return 'retry_pr'
+    case 'collecting_context':
+    case 'review_running':
+    case 'review_ready':
+      return 'retry_review'
+    case 'failed':
+      return flowRerunActionFromEvent(event)
+    default:
+      return null
+  }
+})
 const finalApprovalWarning = computed(() => {
   if (data.value?.job.state === 'failed' && latestEvent.value?.eventType === 'test_failed') {
     return 'Tests failed, but you can still approve and continue to PR creation.'
@@ -184,6 +212,78 @@ function rerunErrorLabel(action: RerunAction) {
     return 'Review rerun'
   }
   return 'PR rerun'
+}
+
+function flowRerunActionFromEvent(event?: JobEvent | null): RerunAction | null {
+  if (!event) {
+    return null
+  }
+
+  switch (event.eventType) {
+    case 'design_started':
+    case 'design_ready':
+    case 'waiting_design_approval':
+    case 'design_rejected':
+    case 'design_failed':
+    case 'design_rerun_requested':
+    case 'issue_matched':
+      return 'retry_design'
+    case 'design_approved':
+    case 'implementation_started':
+    case 'implementation_ready':
+    case 'waiting_final_approval':
+    case 'final_rejected':
+    case 'implementation_failed':
+    case 'test_failed':
+    case 'implementation_rerun_requested':
+      return 'retry_implementation'
+    case 'final_approved':
+    case 'pr_creating_started':
+    case 'pr_create_failed':
+    case 'pr_created':
+    case 'pr_rerun_requested':
+      return 'retry_pr'
+    case 'review_started':
+    case 'review_ready':
+    case 'review_failed':
+    case 'review_rerun_requested':
+      return 'retry_review'
+  }
+
+  switch (event.stateFrom) {
+    case 'design_running':
+    case 'detected':
+      return 'retry_design'
+    case 'implementation_running':
+    case 'test_running':
+    case 'waiting_final_approval':
+    case 'implementation_ready':
+      return 'retry_implementation'
+    case 'pr_creating':
+      return 'retry_pr'
+    case 'collecting_context':
+    case 'review_running':
+    case 'review_ready':
+      return 'retry_review'
+    default:
+      return null
+  }
+}
+
+function flowRerunButtonLabel(action: RerunAction, eventType?: string) {
+  if (action === 'retry_implementation' && eventType === 'test_failed') {
+    return 'Fix Implementation'
+  }
+  if (action === 'retry_design') {
+    return 'Rerun Design'
+  }
+  if (action === 'retry_implementation') {
+    return 'Rerun Implementation'
+  }
+  if (action === 'retry_review') {
+    return 'Rerun Review'
+  }
+  return 'Rerun PR'
 }
 
 function actionButtonLabel(action: RerunAction, eventType: string, sourceEventType?: string) {
@@ -303,7 +403,7 @@ function formatIssueBody(body?: string) {
   return body && body.trim().length > 0 ? body : 'Issue body is empty.'
 }
 
-function rerunCommentForEvent(action: RerunAction, event?: JobEvent) {
+function rerunCommentForEvent(action: RerunAction, event?: JobEvent | null) {
   if (!event || action !== 'retry_implementation') {
     return ''
   }
@@ -315,11 +415,12 @@ function rerunCommentForEvent(action: RerunAction, event?: JobEvent) {
   }
 }
 
-async function submitRerun(action: RerunAction, eventId: number) {
+async function submitRerun(action: RerunAction, eventId?: number) {
   rerunState(action).value = 'saving'
   rerunError(action).value = null
   try {
-    const event = data.value?.events.find((candidate) => candidate.id === eventId)
+    const event =
+      eventId === undefined ? latestEvent.value : data.value?.events.find((candidate) => candidate.id === eventId)
     const comment = rerunCommentForEvent(action, event)
     if (action === 'retry_design') {
       data.value = await submitDesignRerun(jobID.value, '', eventId)
@@ -386,27 +487,36 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           <PanelCard title="Flow" description="設計承認、実装成果物確認、最終承認をここから行えます。">
             <div class="stack-sm">
               <p class="text-muted">Current state: <code>{{ data.job.state }}</code></p>
-              <template v-if="canReviewDesign">
-                <div class="button-row">
+              <div v-if="flowRerunAction || canReviewDesign || canReviewImplementation" class="button-row">
+                <button
+                  v-if="flowRerunAction"
+                  class="button button-secondary"
+                  type="button"
+                  :disabled="approvalState === 'saving' || finalApprovalState === 'saving' || rerunState(flowRerunAction) === 'saving'"
+                  @click="submitRerun(flowRerunAction)"
+                >
+                  {{ flowRerunButtonLabel(flowRerunAction, latestEvent?.eventType) }}
+                </button>
+                <template v-if="canReviewDesign">
                   <button class="button button-secondary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('rejected')">
                     Reject Design
                   </button>
                   <button class="button button-primary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('approved')">
                     Approve Design
                   </button>
-                </div>
-              </template>
-              <p v-if="approvalState === 'error'" class="notice notice-danger">{{ approvalError }}</p>
-              <template v-if="canReviewImplementation">
-                <p v-if="finalApprovalWarning" class="notice notice-danger">{{ finalApprovalWarning }}</p>
-                <div class="button-row">
+                </template>
+                <template v-if="canReviewImplementation">
                   <button class="button button-secondary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('rejected')">
                     Reject Final
                   </button>
                   <button class="button button-primary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('approved')">
                     Approve Final
                   </button>
-                </div>
+                </template>
+              </div>
+              <p v-if="approvalState === 'error'" class="notice notice-danger">{{ approvalError }}</p>
+              <template v-if="canReviewImplementation">
+                <p v-if="finalApprovalWarning" class="notice notice-danger">{{ finalApprovalWarning }}</p>
                 <p v-if="finalApprovalState === 'error'" class="notice notice-danger">{{ finalApprovalError }}</p>
               </template>
             </div>

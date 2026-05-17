@@ -497,3 +497,32 @@ func TestHandleSaveWatchRulesUpdatesBranch(t *testing.T) {
 		t.Fatalf("expected branch release/1.x, got %q", got)
 	}
 }
+
+func TestHandleSaveWatchRulesUpdatesProjectFilters(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repo"],"target":"issue_project","branch":"","projectName":"Roadmap","projectFilters":[{"field":"Status","values":["Ready","In Progress"]}],"labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
+
+	server.handleSaveWatchRules(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	saved := svc.WatchRules().Rules[0]
+	if saved.Target != "issue_project" {
+		t.Fatalf("expected target issue_project, got %q", saved.Target)
+	}
+	if saved.ProjectName != "Roadmap" {
+		t.Fatalf("expected project name Roadmap, got %q", saved.ProjectName)
+	}
+	if len(saved.ProjectFilters) != 1 || saved.ProjectFilters[0].Field != "Status" {
+		t.Fatalf("unexpected project filters: %+v", saved.ProjectFilters)
+	}
+}

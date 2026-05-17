@@ -6,7 +6,7 @@ import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchAppConfig, fetchSkillSets, fetchWatchRules, saveWatchRules } from '@/lib/api'
 import { modelOptionsForProvider, watchRuleProviderOptions } from '@/lib/provider-options'
-import type { AppConfig, WatchRule, WatchRuleForm } from '@/types'
+import type { AppConfig, ProjectFieldFilter, WatchRule, WatchRuleForm } from '@/types'
 
 const { data, isLoading, error, reload } = useAsyncData(fetchWatchRules)
 const { data: appConfig } = useAsyncData(fetchAppConfig)
@@ -36,13 +36,17 @@ const availableModelOptions = computed(() => {
 })
 
 function toForm(rule: WatchRule): WatchRuleForm {
+  const normalizedProjectFilters = normalizeProjectFilters(rule.projectFilters)
   return {
     ...rule,
     repositories: rule.repositories ?? [],
+    projectName: rule.projectName ?? '',
+    projectFilters: normalizedProjectFilters,
     labels: rule.labels ?? [],
     authors: rule.authors ?? [],
     assignees: rule.assignees ?? [],
     repositoriesText: (rule.repositories ?? []).join(', '),
+    projectFiltersText: formatProjectFilters(normalizedProjectFilters),
     labelsText: (rule.labels ?? []).join(', '),
     authorsText: (rule.authors ?? []).join(', '),
     assigneesText: (rule.assignees ?? []).join(', '),
@@ -56,7 +60,9 @@ function fromForm(rule: WatchRuleForm): WatchRule {
     repositories: splitCSV(rule.repositoriesText),
     target: rule.target,
     branch: rule.branch.trim(),
+    projectName: rule.projectName.trim(),
     labels: splitCSV(rule.labelsText),
+    projectFilters: parseProjectFilters(rule.projectFiltersText),
     titlePattern: rule.titlePattern.trim(),
     authors: splitCSV(rule.authorsText),
     assignees: splitCSV(rule.assigneesText),
@@ -67,6 +73,65 @@ function fromForm(rule: WatchRuleForm): WatchRule {
     testProfile: rule.testProfile.trim(),
     enabled: rule.enabled,
   }
+}
+
+function parseProjectFilters(value: string): ProjectFieldFilter[] {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separatorIndex = line.indexOf(':')
+      if (separatorIndex < 0) {
+        return { field: line, values: [] }
+      }
+      return {
+        field: line.slice(0, separatorIndex).trim(),
+        values: splitCSV(line.slice(separatorIndex + 1)),
+      }
+    })
+    .filter((filter) => filter.field)
+}
+
+function normalizeProjectFilters(value: unknown): ProjectFieldFilter[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return null
+      }
+      const record = item as Record<string, unknown>
+      const fieldValue = record.field ?? record.Field
+      const valuesValue = record.values ?? record.Values
+      const field = typeof fieldValue === 'string' ? fieldValue.trim() : ''
+      const values = Array.isArray(valuesValue)
+        ? valuesValue.map((entry) => String(entry).trim()).filter(Boolean)
+        : []
+      if (!field) {
+        return null
+      }
+      return { field, values }
+    })
+    .filter((filter): filter is ProjectFieldFilter => filter !== null)
+}
+
+function formatProjectFilters(filters: ProjectFieldFilter[]): string {
+  return filters
+    .map((filter) => {
+      const field = (filter.field ?? '').trim()
+      if (!field) {
+        return ''
+      }
+      const values = (filter.values ?? []).map((value) => value.trim()).filter(Boolean)
+      if (!values.length) {
+        return field
+      }
+      return `${field}: ${values.join(', ')}`
+    })
+    .filter(Boolean)
+    .join('\n')
 }
 
 function splitCSV(value: string): string[] {
@@ -89,6 +154,9 @@ function addRule() {
     repositoriesText: '',
     target: 'issue',
     branch: '',
+    projectName: '',
+    projectFilters: [],
+    projectFiltersText: '',
     labels: [],
     labelsText: '',
     titlePattern: '',
@@ -203,6 +271,7 @@ async function persistRules() {
                 <span class="field__label">Target</span>
                 <select v-model="selectedRule.target" class="field__control">
                   <option value="issue">Issue</option>
+                  <option value="issue_project">Issue (Project)</option>
                   <option value="pull_request">Pull Request</option>
                 </select>
               </label>
@@ -225,6 +294,27 @@ async function persistRules() {
               <label class="field field-full">
                 <span class="field__label">Branch</span>
                 <input v-model="selectedRule.branch" class="field__control" type="text" placeholder="Default branch" />
+              </label>
+
+              <label v-if="selectedRule.target === 'issue_project'" class="field field-full">
+                <span class="field__label">Project Name</span>
+                <input
+                  v-model="selectedRule.projectName"
+                  class="field__control"
+                  type="text"
+                  placeholder="Roadmap"
+                />
+              </label>
+
+              <label v-if="selectedRule.target === 'issue_project'" class="field field-full">
+                <span class="field__label">Project Field Filters</span>
+                <textarea
+                  v-model="selectedRule.projectFiltersText"
+                  class="field__control field__control--textarea"
+                  rows="4"
+                  placeholder="Status: Todo, In Progress&#10;Iteration: Sprint 12"
+                />
+                <p class="text-muted">1 行につき `Field: value1, value2`。Project Name が空なら任意の project を対象にします。</p>
               </label>
 
               <label class="field field-full">

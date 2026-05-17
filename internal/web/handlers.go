@@ -70,21 +70,23 @@ type logResponse struct {
 }
 
 type watchRuleResponse struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	Repositories   []string `json:"repositories"`
-	Target         string   `json:"target"`
-	Branch         string   `json:"branch"`
-	Labels         []string `json:"labels"`
-	TitlePattern   string   `json:"titlePattern"`
-	Authors        []string `json:"authors"`
-	Assignees      []string `json:"assignees"`
-	ExcludeDraftPR bool     `json:"excludeDraftPR"`
-	Provider       string   `json:"provider"`
-	Model          string   `json:"model"`
-	SkillSet       string   `json:"skillSet"`
-	TestProfile    string   `json:"testProfile"`
-	Enabled        bool     `json:"enabled"`
+	ID             string                      `json:"id"`
+	Name           string                      `json:"name"`
+	Repositories   []string                    `json:"repositories"`
+	Target         string                      `json:"target"`
+	Branch         string                      `json:"branch"`
+	ProjectName    string                      `json:"projectName"`
+	Labels         []string                    `json:"labels"`
+	ProjectFilters []config.ProjectFieldFilter `json:"projectFilters"`
+	TitlePattern   string                      `json:"titlePattern"`
+	Authors        []string                    `json:"authors"`
+	Assignees      []string                    `json:"assignees"`
+	ExcludeDraftPR bool                        `json:"excludeDraftPR"`
+	Provider       string                      `json:"provider"`
+	Model          string                      `json:"model"`
+	SkillSet       string                      `json:"skillSet"`
+	TestProfile    string                      `json:"testProfile"`
+	Enabled        bool                        `json:"enabled"`
 }
 
 type providerSpecResponse struct {
@@ -358,7 +360,9 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 			Repositories:   sliceOrEmpty(rule.Repositories),
 			Target:         rule.Target,
 			Branch:         rule.Branch,
+			ProjectName:    rule.ProjectName,
 			Labels:         sliceOrEmpty(rule.Labels),
+			ProjectFilters: append([]config.ProjectFieldFilter(nil), rule.ProjectFilters...),
 			TitlePattern:   rule.TitlePattern,
 			Authors:        sliceOrEmpty(rule.Authors),
 			Assignees:      sliceOrEmpty(rule.Assignees),
@@ -655,8 +659,10 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].name is required", index))
 			return
 		}
-		if rule.Target != string(domain.TargetIssue) && rule.Target != string(domain.TargetPullRequest) {
-			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].target must be issue or pull_request", index))
+		if rule.Target != string(domain.TargetIssue) &&
+			rule.Target != string(domain.TargetIssueProject) &&
+			rule.Target != string(domain.TargetPullRequest) {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].target must be issue, issue_project, or pull_request", index))
 			return
 		}
 		provider, err := s.parseOptionalProvider(rule.Provider)
@@ -675,7 +681,9 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			Repositories:   compactStrings(rule.Repositories),
 			Target:         rule.Target,
 			Branch:         strings.TrimSpace(rule.Branch),
+			ProjectName:    strings.TrimSpace(rule.ProjectName),
 			Labels:         compactStrings(rule.Labels),
+			ProjectFilters: compactProjectFilters(rule.ProjectFilters),
 			TitlePattern:   strings.TrimSpace(rule.TitlePattern),
 			Authors:        compactStrings(rule.Authors),
 			Assignees:      compactStrings(rule.Assignees),
@@ -760,6 +768,21 @@ func compactStrings(values []string) []string {
 		if trimmed != "" {
 			out = append(out, trimmed)
 		}
+	}
+	return out
+}
+
+func compactProjectFilters(values []config.ProjectFieldFilter) []config.ProjectFieldFilter {
+	out := make([]config.ProjectFieldFilter, 0, len(values))
+	for _, value := range values {
+		field := strings.TrimSpace(value.Field)
+		if field == "" {
+			continue
+		}
+		out = append(out, config.ProjectFieldFilter{
+			Field:  field,
+			Values: compactStrings(value.Values),
+		})
 	}
 	return out
 }
