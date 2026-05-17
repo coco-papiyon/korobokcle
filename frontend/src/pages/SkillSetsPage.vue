@@ -145,7 +145,7 @@ function skillLabel(name: string) {
   <AppShell title="Skill Sets" description="Skill set ごとの prompt / provider / artifact 設定を編集します。">
     <AsyncState :is-loading="isLoading" :error="error">
       <section class="hero-grid">
-        <PanelCard title="Default Policy" description="default は参照専用です。コピーして派生 skill set を作成します。" />
+        <PanelCard title="Skill Sets" description="Skill Sets を管理します。default から複製して用途ごとに編集します。" />
         <PanelCard title="Storage Model" description="custom skill set は skills/&lt;name&gt; 配下へ保存されます。" />
       </section>
 
