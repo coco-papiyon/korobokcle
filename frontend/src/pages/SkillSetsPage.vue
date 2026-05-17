@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
-import PanelCard from '@/components/PanelCard.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { createSkillSet, deleteSkillSet, fetchSkillSet, fetchSkillSets, saveSkillSet } from '@/lib/api'
 import type { SkillFile, SkillSet, SkillSetSummary } from '@/types'
@@ -142,13 +141,11 @@ function skillLabel(name: string) {
 </script>
 
 <template>
-  <AppShell title="Skill Sets" description="Skill set ごとの prompt / provider / artifact 設定を編集します。">
+  <AppShell
+    title="Skill Sets"
+    description="default を基点に skill set を複製し、worker ごとの prompt、provider、artifact 設定を管理します。"
+  >
     <AsyncState :is-loading="isLoading" :error="error">
-      <section class="hero-grid">
-        <PanelCard title="Skill Sets" description="Skill Sets を管理します。default から複製して用途ごとに編集します。" />
-        <PanelCard title="Storage Model" description="custom skill set は skills/&lt;name&gt; 配下へ保存されます。" />
-      </section>
-
       <section class="watch-layout">
         <aside class="panel rule-list">
           <div class="rule-list__header">

@@ -279,7 +279,14 @@ func buildPRBody(job domain.Job, summary string, fixSummary string) string {
 	if strings.TrimSpace(fixSummary) != "" {
 		body += fmt.Sprintf("\n## Fix Summary\n\n%s\n", trimImplementationSummary(fixSummary))
 	}
-	body += fmt.Sprintf("\n## Source\n\n- Repository: `%s`\n- Issue: #%d\n- Job: `%s`\n", job.Repository, job.GitHubNumber, job.ID)
+	body += fmt.Sprintf(
+		"\n## Source\n\n- Repository: `%s`\n- Issue: #%d\n- Job: `%s`\n\nCloses %s#%d\n",
+		job.Repository,
+		job.GitHubNumber,
+		job.ID,
+		job.Repository,
+		job.GitHubNumber,
+	)
 	return body
 }
 

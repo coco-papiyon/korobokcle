@@ -196,6 +196,53 @@ func TestBuildImplementationContextFallsBackToLegacyDesignFileName(t *testing.T)
 	}
 }
 
+func TestLoadImplementationRetryContextPrefersLatestImplementationReport(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.ArtifactsDir = "artifacts"
+	svc := config.NewService(root, files)
+
+	job := domain.Job{ID: "job-1"}
+	fixDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerFix)
+	implementationDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(fixDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(fixDir) error = %v", err)
+	}
+	if err := os.MkdirAll(implementationDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(implementationDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fixDir, "test-report.json"), []byte(`{"worker":"fix"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(fix test-report.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(implementationDir, "test-report.json"), []byte(`{"worker":"implementation"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(implementation test-report.json) error = %v", err)
+	}
+
+	implementationFailedID := int64(10)
+	rerunPayload, err := json.Marshal(map[string]any{
+		"comment": "retry with narrower scope",
+		"eventId": implementationFailedID,
+	})
+	if err != nil {
+		t.Fatalf("marshal rerun payload error = %v", err)
+	}
+
+	events := []domain.Event{
+		{ID: implementationFailedID, EventType: "implementation_failed", Payload: `{"error":"apply failed"}`, CreatedAt: time.Now()},
+		{ID: 11, EventType: "implementation_rerun_requested", Payload: string(rerunPayload), CreatedAt: time.Now()},
+	}
+
+	_, _, previousTestReport, err := loadImplementationRetryContext(svc, job, events)
+	if err != nil {
+		t.Fatalf("loadImplementationRetryContext() error = %v", err)
+	}
+	if previousTestReport != `{"worker":"implementation"}` {
+		t.Fatalf("expected implementation test report, got %q", previousTestReport)
+	}
+}
+
 func TestResolveImplementationSkillNameDefault(t *testing.T) {
 	t.Parallel()
 

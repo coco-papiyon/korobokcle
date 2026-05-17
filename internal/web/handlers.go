@@ -186,7 +186,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	if artifact, err := s.loadReviewArtifact(job.ID); err == nil {
 		out.ReviewArtifact = artifact
 	}
-	if artifact, err := s.loadTestReport(job.ID); err == nil {
+	if artifact, err := s.loadTestReport(job.ID, events); err == nil {
 		out.TestReport = artifact
 	}
 	if artifact, err := s.loadPRCreateArtifact(job.ID); err == nil {
@@ -454,7 +454,7 @@ func (s *Server) handleSaveNotificationConfig(w http.ResponseWriter, r *http.Req
 		file.Channels = append(file.Channels, config.NotificationChannel{
 			Name:    name,
 			Type:    channelType,
-			Events:  compactStrings(channel.Events),
+			Events:  normalizeNotificationEvents(compactStrings(channel.Events)),
 			Enabled: channel.Enabled,
 		})
 	}
@@ -786,11 +786,27 @@ func toNotificationConfigResponse(notifications config.Notifications) notificati
 		channels = append(channels, notificationChannelResponse{
 			Name:    channel.Name,
 			Type:    channel.Type,
-			Events:  sliceOrEmpty(channel.Events),
+			Events:  sliceOrEmpty(normalizeNotificationEvents(channel.Events)),
 			Enabled: channel.Enabled,
 		})
 	}
 	return notificationConfigResponse{Channels: channels}
+}
+
+func normalizeNotificationEvents(events []string) []string {
+	normalized := make([]string, 0, len(events))
+	seen := make(map[string]struct{}, len(events))
+	for _, candidate := range events {
+		switch name := strings.ToLower(strings.TrimSpace(candidate)); name {
+		case "waiting_design_approval", "waiting_final_approval", "review_completed", "pr_created", "failed":
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			normalized = append(normalized, name)
+		}
+	}
+	return normalized
 }
 
 func toSkillSetResponse(set skill.SkillSet) skillSetResponse {
@@ -935,10 +951,13 @@ func (s *Server) loadReviewArtifact(jobID string) (*artifactResponse, error) {
 	return s.loadFirstArtifact(dir, "result.md", "review.md")
 }
 
-func (s *Server) loadTestReport(jobID string) (*artifactResponse, error) {
+func (s *Server) loadTestReport(jobID string, events []domain.Event) (*artifactResponse, error) {
 	paths := []string{
-		filepath.Join(artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerFix), "test-report.json"),
-		filepath.Join(artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerImplementation), "test-report.json"),
+		filepath.Join(resolveTestReportArtifactDir(s.config, jobID, events), "test-report.json"),
+	}
+	fallbackPath := filepath.Join(artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerImplementation), "test-report.json")
+	if fallbackPath != paths[0] {
+		paths = append(paths, fallbackPath)
 	}
 	for _, path := range paths {
 		raw, err := os.ReadFile(path)
@@ -953,6 +972,40 @@ func (s *Server) loadTestReport(jobID string) (*artifactResponse, error) {
 		}
 	}
 	return nil, os.ErrNotExist
+}
+
+func resolveTestReportArtifactDir(cfg *config.Service, jobID string, events []domain.Event) string {
+	sourceEventType, err := latestImplementationRerunSourceEventType(events)
+	if err == nil && sourceEventType == "test_failed" {
+		return artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, jobID, artifacts.WorkerFix)
+	}
+	return artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, jobID, artifacts.WorkerImplementation)
+}
+
+func latestImplementationRerunSourceEventType(events []domain.Event) (string, error) {
+	for i := len(events) - 1; i >= 0; i-- {
+		event := events[i]
+		if event.EventType != "implementation_rerun_requested" {
+			continue
+		}
+
+		var payload struct {
+			EventID *int64 `json:"eventId"`
+		}
+		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			return "", err
+		}
+		if payload.EventID == nil {
+			return "", nil
+		}
+		for j := i - 1; j >= 0; j-- {
+			if events[j].ID == *payload.EventID {
+				return events[j].EventType, nil
+			}
+		}
+		return "", nil
+	}
+	return "", nil
 }
 
 func (s *Server) loadPRCreateArtifact(jobID string) (*artifactResponse, error) {

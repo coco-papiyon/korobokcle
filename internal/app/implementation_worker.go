@@ -312,8 +312,11 @@ func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events 
 
 	if previousTestReport == "" {
 		reportPaths := []string{
-			filepath.Join(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerFix), "test-report.json"),
-			filepath.Join(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "test-report.json"),
+			filepath.Join(resolveImplementationRetryArtifactDir(cfg, job, events), "test-report.json"),
+		}
+		fallbackPath := filepath.Join(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "test-report.json")
+		if fallbackPath != reportPaths[0] {
+			reportPaths = append(reportPaths, fallbackPath)
 		}
 		for _, reportPath := range reportPaths {
 			if raw, err := os.ReadFile(reportPath); err == nil {
@@ -326,6 +329,14 @@ func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events 
 	}
 
 	return rerunComment, previousFailure, previousTestReport, nil
+}
+
+func resolveImplementationRetryArtifactDir(cfg *config.Service, job domain.Job, events []domain.Event) string {
+	sourceEventType, err := latestImplementationRerunSourceEventType(events)
+	if err == nil && sourceEventType == "test_failed" {
+		return artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerFix)
+	}
+	return artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
 }
 
 func runTestsForJob(ctx context.Context, cfg *config.Service, testRunner *executor.TestRunner, job domain.Job, artifactDir string) (executor.TestReport, error) {

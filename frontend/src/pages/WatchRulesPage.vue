@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
-import PanelCard from '@/components/PanelCard.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchAppConfig, fetchSkillSets, fetchWatchRules, saveWatchRules } from '@/lib/api'
@@ -139,14 +138,9 @@ async function persistRules() {
 <template>
   <AppShell
     title="Watch Rules"
-    description="GitHub の監視対象、マッチ条件、実行スキルを Web 画面から設定します。"
+    description="GitHub の監視対象、ブランチ、マッチ条件、実行スキルをまとめて管理します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
-      <section class="hero-grid">
-        <PanelCard title="Rules" description="Issue / PR 監視対象を追加し、ラベルや対象リポジトリを調整します。" />
-        <PanelCard title="Save Behavior" description="保存すると watch-rules.yaml に反映され、次回ポーリングから新しい設定が使われます。" />
-      </section>
-
       <section class="watch-layout">
         <aside class="panel rule-list">
           <div class="rule-list__header">

@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
-import PanelCard from '@/components/PanelCard.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchAppConfig, fetchNotificationConfig, saveAppConfig, saveNotificationConfig } from '@/lib/api'
 import { modelOptionsForProvider, providerOptions } from '@/lib/provider-options'
@@ -21,11 +20,8 @@ const notificationSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const notificationSaveError = ref<string | null>(null)
 
 const notificationEventOptions = [
-  { value: 'design_ready', label: 'Design Ready' },
   { value: 'waiting_design_approval', label: 'Waiting Design Approval' },
-  { value: 'implementation_ready', label: 'Implementation Ready' },
   { value: 'waiting_final_approval', label: 'Waiting Final Approval' },
-  { value: 'review_ready', label: 'Review Ready' },
   { value: 'review_completed', label: 'Review Completed' },
   { value: 'pr_created', label: 'PR Created' },
   { value: 'failed', label: 'Any Failure' },
@@ -115,13 +111,11 @@ async function persistNotificationConfig() {
 </script>
 
 <template>
-  <AppShell title="Settings" description="AI provider などアプリ全体の挙動を設定します。">
+  <AppShell
+    title="Settings"
+    description="AI provider、model、poll interval、通知チャネルなど、アプリ全体の動作設定を管理します。"
+  >
     <AsyncState :is-loading="isLoading" :error="error">
-      <section class="hero-grid">
-        <PanelCard title="Application Settings" description="起動後に変更可能なアプリ設定を編集します。" />
-        <PanelCard title="Current Defaults" description="provider / model / pollInterval の現在値を確認できます。" />
-      </section>
-
       <section class="panel stack-md">
         <div class="rule-editor__header">
           <div>

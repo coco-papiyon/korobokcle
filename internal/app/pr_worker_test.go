@@ -108,6 +108,9 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 	if !strings.Contains(req.Body, "## Fix Summary") || !strings.Contains(req.Body, "fix summary") {
 		t.Fatalf("expected PR body to append fix summary, got %q", req.Body)
 	}
+	if !strings.Contains(req.Body, "Closes owner/repo#12") {
+		t.Fatalf("expected PR body to include issue auto-close directive, got %q", req.Body)
+	}
 	if req.BaseBranch != "release/1.x" {
 		t.Fatalf("expected base branch release/1.x, got %q", req.BaseBranch)
 	}

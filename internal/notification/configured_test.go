@@ -12,12 +12,12 @@ func TestConfiguredNotifierMatchesExactAndFailedAlias(t *testing.T) {
 
 	recorder := &recordingNotifier{}
 	notifier := filteredNotifier{
-		events: []string{"design_ready", "failed"},
+		events: []string{"waiting_design_approval", "failed"},
 		next:   recorder,
 	}
 
-	if err := notifier.Notify(context.Background(), Notification{Event: "design_ready", State: "design_ready"}); err != nil {
-		t.Fatalf("Notify(design_ready) error = %v", err)
+	if err := notifier.Notify(context.Background(), Notification{Event: "waiting_design_approval", State: "waiting_design_approval"}); err != nil {
+		t.Fatalf("Notify(waiting_design_approval) error = %v", err)
 	}
 	if err := notifier.Notify(context.Background(), Notification{Event: "test_failed", State: "failed"}); err != nil {
 		t.Fatalf("Notify(test_failed) error = %v", err)
@@ -46,6 +46,30 @@ func TestNewConfiguredNotifierSkipsUnsupportedChannels(t *testing.T) {
 	}
 	if err == nil {
 		t.Fatalf("expected setup warning error")
+	}
+}
+
+func TestNormalizeNotificationEventsDropsLegacyReadyEvents(t *testing.T) {
+	t.Parallel()
+
+	got := normalizeNotificationEvents([]string{
+		"design_ready",
+		"waiting_design_approval",
+		"implementation_ready",
+		"review_ready",
+		"pr_created",
+		"failed",
+		"failed",
+	})
+
+	want := []string{"waiting_design_approval", "pr_created", "failed"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d events, got %d: %v", len(want), len(got), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected event[%d] = %q, got %q", i, want[i], got[i])
+		}
 	}
 }
 

@@ -19,6 +19,14 @@ type filteredNotifier struct {
 	next   Notifier
 }
 
+var supportedNotificationEvents = map[string]struct{}{
+	"waiting_design_approval": {},
+	"waiting_final_approval":  {},
+	"review_completed":        {},
+	"pr_created":              {},
+	"failed":                  {},
+}
+
 func NewNopNotifier() Notifier {
 	return fanoutNotifier{}
 }
@@ -52,7 +60,7 @@ func NewConfiguredNotifier(cfg config.Notifications) (Notifier, error) {
 		}
 
 		notifiers = append(notifiers, filteredNotifier{
-			events: append([]string(nil), channel.Events...),
+			events: normalizeNotificationEvents(channel.Events),
 			next:   notifier,
 		})
 	}
@@ -110,4 +118,21 @@ func matchesNotificationEvent(configured []string, event Notification) bool {
 		}
 	}
 	return false
+}
+
+func normalizeNotificationEvents(events []string) []string {
+	normalized := make([]string, 0, len(events))
+	seen := make(map[string]struct{}, len(events))
+	for _, candidate := range events {
+		name := strings.ToLower(strings.TrimSpace(candidate))
+		if _, ok := supportedNotificationEvents[name]; !ok {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		normalized = append(normalized, name)
+	}
+	return normalized
 }

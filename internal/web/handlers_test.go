@@ -279,7 +279,7 @@ func TestHandleSaveNotificationConfigUpdatesEvents(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"channels":[{"name":"windows-toast","type":"windows_toast","enabled":true,"events":["design_ready","pr_created"]}]}`)
+	body := []byte(`{"channels":[{"name":"windows-toast","type":"windows_toast","enabled":true,"events":["design_ready","waiting_design_approval","pr_created"]}]}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/notification-config", bytes.NewReader(body))
 
@@ -293,7 +293,7 @@ func TestHandleSaveNotificationConfigUpdatesEvents(t *testing.T) {
 	if len(notifications.Channels) != 1 {
 		t.Fatalf("expected 1 channel, got %d", len(notifications.Channels))
 	}
-	if got := notifications.Channels[0].Events; len(got) != 2 || got[0] != "design_ready" || got[1] != "pr_created" {
+	if got := notifications.Channels[0].Events; len(got) != 2 || got[0] != "waiting_design_approval" || got[1] != "pr_created" {
 		t.Fatalf("unexpected saved events: %v", got)
 	}
 
@@ -303,6 +303,9 @@ func TestHandleSaveNotificationConfigUpdatesEvents(t *testing.T) {
 	}
 	if !bytes.Contains(raw, []byte("- pr_created")) {
 		t.Fatalf("expected saved config to include pr_created, got %s", string(raw))
+	}
+	if bytes.Contains(raw, []byte("design_ready")) {
+		t.Fatalf("expected saved config to drop design_ready, got %s", string(raw))
 	}
 }
 
@@ -380,6 +383,96 @@ func TestLoadImplementationArtifactFallsBackToImplementFileName(t *testing.T) {
 	}
 	if artifact.Content != "legacy implementation content" {
 		t.Fatalf("expected legacy implementation content, got %q", artifact.Content)
+	}
+}
+
+func TestLoadTestReportPrefersLatestImplementationReport(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	jobID := "job-1"
+	fixDir := artifacts.WorkerDir(root, "artifacts", jobID, artifacts.WorkerFix)
+	implementationDir := artifacts.WorkerDir(root, "artifacts", jobID, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(fixDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(fixDir) error = %v", err)
+	}
+	if err := os.MkdirAll(implementationDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(implementationDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fixDir, "test-report.json"), []byte(`{"worker":"fix"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(fix test-report.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(implementationDir, "test-report.json"), []byte(`{"worker":"implementation"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(implementation test-report.json) error = %v", err)
+	}
+
+	implementationFailedID := int64(10)
+	rerunPayload, err := json.Marshal(map[string]any{
+		"eventId": implementationFailedID,
+	})
+	if err != nil {
+		t.Fatalf("marshal rerun payload error = %v", err)
+	}
+	events := []domain.Event{
+		{ID: implementationFailedID, EventType: "implementation_failed"},
+		{ID: 11, EventType: "implementation_rerun_requested", Payload: string(rerunPayload)},
+	}
+
+	artifact, err := server.loadTestReport(jobID, events)
+	if err != nil {
+		t.Fatalf("loadTestReport() error = %v", err)
+	}
+	if artifact.Content != `{"worker":"implementation"}` {
+		t.Fatalf("expected implementation test report, got %q", artifact.Content)
+	}
+}
+
+func TestLoadTestReportPrefersFixReportForTestFailureRerun(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	jobID := "job-1"
+	fixDir := artifacts.WorkerDir(root, "artifacts", jobID, artifacts.WorkerFix)
+	implementationDir := artifacts.WorkerDir(root, "artifacts", jobID, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(fixDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(fixDir) error = %v", err)
+	}
+	if err := os.MkdirAll(implementationDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(implementationDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fixDir, "test-report.json"), []byte(`{"worker":"fix"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(fix test-report.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(implementationDir, "test-report.json"), []byte(`{"worker":"implementation"}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(implementation test-report.json) error = %v", err)
+	}
+
+	testFailedID := int64(10)
+	rerunPayload, err := json.Marshal(map[string]any{
+		"eventId": testFailedID,
+	})
+	if err != nil {
+		t.Fatalf("marshal rerun payload error = %v", err)
+	}
+	events := []domain.Event{
+		{ID: testFailedID, EventType: "test_failed"},
+		{ID: 11, EventType: "implementation_rerun_requested", Payload: string(rerunPayload)},
+	}
+
+	artifact, err := server.loadTestReport(jobID, events)
+	if err != nil {
+		t.Fatalf("loadTestReport() error = %v", err)
+	}
+	if artifact.Content != `{"worker":"fix"}` {
+		t.Fatalf("expected fix test report, got %q", artifact.Content)
 	}
 }
 
