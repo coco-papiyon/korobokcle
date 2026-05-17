@@ -12,6 +12,8 @@ const { data: notificationData, reload: reloadNotificationData } = useAsyncData(
 const provider = ref('mock')
 const model = ref('')
 const pollInterval = ref(120)
+const prTitleTemplate = ref('')
+const branchTemplate = ref('')
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const saveError = ref<string | null>(null)
 const providerCatalog = ref<ProviderSpec[]>([])
@@ -37,6 +39,8 @@ watch(
     provider.value = config?.provider ?? 'mock'
     model.value = config?.model ?? ''
     pollInterval.value = config?.pollInterval ?? 120
+    prTitleTemplate.value = config?.prTitleTemplate ?? ''
+    branchTemplate.value = config?.branchTemplate ?? ''
     providerCatalog.value = config?.providers ?? []
   },
   { immediate: true },
@@ -64,10 +68,18 @@ async function persistConfig() {
   saveState.value = 'saving'
   saveError.value = null
   try {
-    const saved = await saveAppConfig({ provider: provider.value, model: model.value, pollInterval: interval })
+    const saved = await saveAppConfig({
+      provider: provider.value,
+      model: model.value,
+      pollInterval: interval,
+      prTitleTemplate: prTitleTemplate.value,
+      branchTemplate: branchTemplate.value,
+    })
     provider.value = saved.provider
     model.value = saved.model
     pollInterval.value = saved.pollInterval
+    prTitleTemplate.value = saved.prTitleTemplate
+    branchTemplate.value = saved.branchTemplate
     saveState.value = 'saved'
     await reload()
   } catch (err) {
@@ -156,6 +168,18 @@ async function persistNotificationConfig() {
             step="1"
           />
           <p class="text-muted">Whole seconds only. The watcher uses the updated value on the next poll cycle.</p>
+        </label>
+
+        <label class="field">
+          <span class="field__label">PR Title Template</span>
+          <input v-model="prTitleTemplate" class="field__control" type="text" />
+          <p class="text-muted">Available: <code>{{issue_number}}</code>, <code>{{issue_title}}</code>, <code>{{repository}}</code>.</p>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Branch Template</span>
+          <input v-model="branchTemplate" class="field__control" type="text" />
+          <p class="text-muted">Available: <code>{{issue_number}}</code>, <code>{{issue_title}}</code>, <code>{{repository}}</code>.</p>
         </label>
 
         <div v-if="saveState === 'saved'" class="notice notice-success">app.yaml を更新しました。</div>

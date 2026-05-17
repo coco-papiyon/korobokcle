@@ -10,6 +10,8 @@ type App struct {
 	WorkspaceDir    string         `yaml:"workspaceDir"`
 	Provider        string         `yaml:"provider"`
 	Model           string         `yaml:"model"`
+	PRTitleTemplate string         `yaml:"prTitleTemplate"`
+	BranchTemplate  string         `yaml:"branchTemplate"`
 	Providers       []ProviderSpec `yaml:"providers"`
 	SQLitePath      string         `yaml:"sqlitePath"`
 	ShutdownTimeout time.Duration  `yaml:"shutdownTimeout"`

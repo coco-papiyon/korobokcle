@@ -50,7 +50,7 @@ func startWatcher(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 				if debugLogger != nil {
 					debugLogger.Printf("processing matched event type=%s jobTarget=%s repository=%s number=%d rule=%s", event.Type, event.Item.Target, event.Item.Repository, event.Item.Number, event.RuleID)
 				}
-				if err := orch.ProcessMatch(ctx, rule, event); err != nil {
+				if err := orch.ProcessMatch(ctx, cfg.App(), rule, event); err != nil {
 					logger.Printf("process match failed for %s#%d: %v", event.Item.Repository, event.Item.Number, err)
 					if debugLogger != nil {
 						debugLogger.Printf("processing matched event failed repository=%s number=%d error=%v", event.Item.Repository, event.Item.Number, err)

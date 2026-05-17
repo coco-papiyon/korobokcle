@@ -13,6 +13,7 @@ import (
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/naming"
 	"github.com/coco-papiyon/korobokcle/internal/notification"
 	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
 )
@@ -47,12 +48,17 @@ func (o *Orchestrator) JobDetail(ctx context.Context, jobID string) (domain.Job,
 	return job, events, nil
 }
 
-func (o *Orchestrator) ProcessMatch(ctx context.Context, rule config.WatchRule, event domain.DomainEvent) error {
+func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, rule config.WatchRule, event domain.DomainEvent) error {
 	jobType := domain.JobTypeIssue
 	state := domain.StateDetected
 	if event.Item.Target == domain.TargetPullRequest {
 		jobType = domain.JobTypePRReview
 		state = domain.StateCollectingContext
+	}
+
+	branchName := makeBranchName(appConfig, event.Item)
+	if event.Item.Target == domain.TargetPullRequest {
+		branchName = makePRReviewBranchName(event.Item.Number)
 	}
 
 	job := domain.Job{
@@ -62,7 +68,7 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, rule config.WatchRule, 
 		GitHubNumber: event.Item.Number,
 		State:        state,
 		Title:        event.Item.Title,
-		BranchName:   makeBranchName(event.Item.Target, event.Item.Number),
+		BranchName:   branchName,
 		WatchRuleID:  rule.ID,
 		CreatedAt:    time.Now().UTC(),
 		UpdatedAt:    time.Now().UTC(),
@@ -342,11 +348,12 @@ func makeJobID(repository string, target domain.MonitoredTarget, number int) str
 	return fmt.Sprintf("%s-%s-%d", target, replacer.Replace(repository), number)
 }
 
-func makeBranchName(target domain.MonitoredTarget, number int) string {
-	if target == domain.TargetPullRequest {
-		return fmt.Sprintf("korobokcle/pr-review-%d", number)
-	}
-	return fmt.Sprintf("korobokcle/issue-%d", number)
+func makeBranchName(appConfig config.App, item domain.RepositoryItem) string {
+	return naming.RenderBranchName(appConfig.BranchTemplate, item)
+}
+
+func makePRReviewBranchName(number int) string {
+	return fmt.Sprintf("korobokcle/pr-review-%d", number)
 }
 
 func (o *Orchestrator) ensureFinalApprovalAllowed(ctx context.Context, jobID string) error {

@@ -132,9 +132,11 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 
 	var got struct {
-		Provider     string `json:"provider"`
-		Model        string `json:"model"`
-		PollInterval int    `json:"pollInterval"`
+		Provider        string `json:"provider"`
+		Model           string `json:"model"`
+		PollInterval    int    `json:"pollInterval"`
+		PRTitleTemplate string `json:"prTitleTemplate"`
+		BranchTemplate  string `json:"branchTemplate"`
 	}
 	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -142,6 +144,12 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 
 	if got.PollInterval != 45 {
 		t.Fatalf("expected poll interval 45, got %d", got.PollInterval)
+	}
+	if got.PRTitleTemplate != "[#{{issue_number}}]{{issue_title}}" {
+		t.Fatalf("unexpected pr title template %q", got.PRTitleTemplate)
+	}
+	if got.BranchTemplate != "issue_{{issue_number}}" {
+		t.Fatalf("unexpected branch template %q", got.BranchTemplate)
 	}
 }
 
@@ -153,7 +161,7 @@ func TestHandleSaveAppConfigUpdatesPollInterval(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"pollInterval":90}`)
+	body := []byte(`{"pollInterval":90,"prTitleTemplate":"[#{{issue_number}}]{{issue_title}}","branchTemplate":"issue_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -191,7 +199,7 @@ func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"codex","model":"gpt-4.1","pollInterval":90}`)
+	body := []byte(`{"provider":"codex","model":"gpt-4.1","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -207,6 +215,12 @@ func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
 	if got := svc.App().Model; got != "gpt-4.1" {
 		t.Fatalf("expected saved model gpt-4.1, got %q", got)
 	}
+	if got := svc.App().PRTitleTemplate; got != "PR {{issue_number}}: {{issue_title}}" {
+		t.Fatalf("expected saved pr title template, got %q", got)
+	}
+	if got := svc.App().BranchTemplate; got != "feature_{{issue_number}}" {
+		t.Fatalf("expected saved branch template, got %q", got)
+	}
 
 	savedConfigPath := filepath.Join(root, "config", "app.yaml")
 	raw, err := os.ReadFile(savedConfigPath)
@@ -218,6 +232,12 @@ func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
 	}
 	if !bytes.Contains(raw, []byte("model: gpt-4.1")) {
 		t.Fatalf("expected saved config to contain updated model, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("prTitleTemplate: 'PR {{issue_number}}: {{issue_title}}'")) {
+		t.Fatalf("expected saved config to contain prTitleTemplate, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("branchTemplate: feature_{{issue_number}}")) {
+		t.Fatalf("expected saved config to contain branchTemplate, got %s", string(raw))
 	}
 }
 

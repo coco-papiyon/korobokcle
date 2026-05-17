@@ -34,14 +34,22 @@ Source URL: {{ .SourceURL }}
 {{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
 ```
 
+## PRタイトルフォーマット
+
+<issueタイトル> (#<issue番号>)
+
+例: Job DetailのFlowにRerunボタンを表示する (#30)
+
 ## レビュー観点
 
 以下の観点で確認してください。
 
-### 1. 変更内容の要約
+### 1. 要件の実現状況
 
-- このPRで何が変わったか
-- 目的に対して妥当な変更か
+- issue番号をもとにissue情報を取得する
+- issueに記載の内容が実装に反映されているか
+- 追加された機能が正しく動作するか
+- 既存機能に影響がないか
 
 ### 2. correctness
 
@@ -54,7 +62,6 @@ Source URL: {{ .SourceURL }}
 
 ### 3. design
 
-- Issueの要件を満たしているか
 - 責務分離
 - 既存設計との整合性
 - 過度な複雑化がないか
@@ -96,11 +103,11 @@ Source URL: {{ .SourceURL }}
 
 Markdownで出力してください。
 
-### Summary
+### 概要
 
 PRの要約を簡潔に書いてください。
 
-### Review Result
+### レビュー結果
 
 以下のどれかを選んでください。
 
@@ -108,20 +115,20 @@ PRの要約を簡潔に書いてください。
 - Comment
 - Request changes
 
-### Critical Issues
+### 修正必須の課題
 
 修正必須の問題があれば書いてください。
 なければ「なし」と書いてください。
 
-### Suggestions
+### 改善提案
 
 改善提案を書いてください。
 
-### Test Recommendations
+### テスト確認
 
 追加・確認すべきテストを書いてください。
 
-### Questions
+### 質問
 
 確認が必要な点を書いてください。
 
