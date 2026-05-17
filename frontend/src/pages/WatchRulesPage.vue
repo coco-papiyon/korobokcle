@@ -56,6 +56,7 @@ function fromForm(rule: WatchRuleForm): WatchRule {
     name: rule.name.trim(),
     repositories: splitCSV(rule.repositoriesText),
     target: rule.target,
+    branch: rule.branch.trim(),
     labels: splitCSV(rule.labelsText),
     titlePattern: rule.titlePattern.trim(),
     authors: splitCSV(rule.authorsText),
@@ -88,6 +89,7 @@ function addRule() {
     repositories: [],
     repositoriesText: '',
     target: 'issue',
+    branch: '',
     labels: [],
     labelsText: '',
     titlePattern: '',
@@ -224,6 +226,11 @@ async function persistRules() {
                   type="text"
                   placeholder="owner/repo-a, owner/repo-b"
                 />
+              </label>
+
+              <label class="field field-full">
+                <span class="field__label">Branch</span>
+                <input v-model="selectedRule.branch" class="field__control" type="text" placeholder="Default branch" />
               </label>
 
               <label class="field field-full">

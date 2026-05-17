@@ -25,6 +25,7 @@ type WatchRule struct {
 	Name           string   `yaml:"name"`
 	Repositories   []string `yaml:"repositories"`
 	Target         string   `yaml:"target"`
+	Branch         string   `yaml:"branch"`
 	Labels         []string `yaml:"labels"`
 	TitlePattern   string   `yaml:"titlePattern"`
 	Authors        []string `yaml:"authors"`

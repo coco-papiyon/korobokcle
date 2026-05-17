@@ -29,6 +29,7 @@ type BranchPusher interface {
 type PRCreateRequest struct {
 	Repository  string
 	BranchName  string
+	BaseBranch  string
 	Title       string
 	Body        string
 	ArtifactDir string
@@ -131,6 +132,9 @@ func (c *GHPRCreator) Create(ctx context.Context, req PRCreateRequest) (string, 
 		"--title", req.Title,
 		"--body-file", bodyPath,
 	)
+	if strings.TrimSpace(req.BaseBranch) != "" {
+		cmd.Args = append(cmd.Args, "--base", req.BaseBranch)
+	}
 	cmd.Dir = req.WorkDir
 
 	raw, err := cmd.CombinedOutput()
@@ -243,10 +247,19 @@ func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest,
 	return PRCreateRequest{
 		Repository:  job.Repository,
 		BranchName:  job.BranchName,
+		BaseBranch:  resolveWatchRuleBranch(cfg, job.WatchRuleID),
 		Title:       title,
 		Body:        body,
 		ArtifactDir: artifactDir,
 	}, nil
+}
+
+func resolveWatchRuleBranch(cfg *config.Service, watchRuleID string) string {
+	rule, ok := cfg.WatchRuleByID(watchRuleID)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(rule.Branch)
 }
 
 func readOptionalFixSummary(cfg *config.Service, jobID string) (string, error) {

@@ -74,6 +74,7 @@ type watchRuleResponse struct {
 	Name           string   `json:"name"`
 	Repositories   []string `json:"repositories"`
 	Target         string   `json:"target"`
+	Branch         string   `json:"branch"`
 	Labels         []string `json:"labels"`
 	TitlePattern   string   `json:"titlePattern"`
 	Authors        []string `json:"authors"`
@@ -356,6 +357,7 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 			Name:           rule.Name,
 			Repositories:   sliceOrEmpty(rule.Repositories),
 			Target:         rule.Target,
+			Branch:         rule.Branch,
 			Labels:         sliceOrEmpty(rule.Labels),
 			TitlePattern:   rule.TitlePattern,
 			Authors:        sliceOrEmpty(rule.Authors),
@@ -672,6 +674,7 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			Name:           strings.TrimSpace(rule.Name),
 			Repositories:   compactStrings(rule.Repositories),
 			Target:         rule.Target,
+			Branch:         strings.TrimSpace(rule.Branch),
 			Labels:         compactStrings(rule.Labels),
 			TitlePattern:   strings.TrimSpace(rule.TitlePattern),
 			Authors:        compactStrings(rule.Authors),

@@ -356,3 +356,25 @@ func TestLoadDesignArtifactFallsBackToLegacyFileName(t *testing.T) {
 		t.Fatalf("expected legacy design content, got %q", artifact.Content)
 	}
 }
+
+func TestHandleSaveWatchRulesUpdatesBranch(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repo"],"target":"issue","branch":"release/1.x","labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
+
+	server.handleSaveWatchRules(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := svc.WatchRules().Rules[0].Branch; got != "release/1.x" {
+		t.Fatalf("expected branch release/1.x, got %q", got)
+	}
+}

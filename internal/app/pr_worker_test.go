@@ -79,13 +79,16 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	cfg := config.NewService(root, config.DefaultFiles())
+	files := config.DefaultFiles()
+	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", Branch: "release/1.x"}}
+	cfg := config.NewService(root, files)
 	job := domain.Job{
 		ID:           "job-1",
 		Repository:   "owner/repo",
 		GitHubNumber: 12,
 		Title:        "Implement feature",
 		BranchName:   "korobokcle/issue-12",
+		WatchRuleID:  "rule-1",
 	}
 
 	if err := writeFile(filepath.Join(artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "result.md"), []byte("original summary")); err != nil {
@@ -104,6 +107,9 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 	}
 	if !strings.Contains(req.Body, "## Fix Summary") || !strings.Contains(req.Body, "fix summary") {
 		t.Fatalf("expected PR body to append fix summary, got %q", req.Body)
+	}
+	if req.BaseBranch != "release/1.x" {
+		t.Fatalf("expected base branch release/1.x, got %q", req.BaseBranch)
 	}
 }
 

@@ -53,6 +53,7 @@ export type WatchRule = {
   name: string
   repositories: string[] | null
   target: string
+  branch: string
   labels: string[] | null
   titlePattern: string
   authors: string[] | null
