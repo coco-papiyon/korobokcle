@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 )
 
 func TestRunDesignWritesArtifacts(t *testing.T) {
@@ -16,7 +18,7 @@ func TestRunDesignWritesArtifacts(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nartifacts:\n  output_file: design.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
@@ -24,7 +26,7 @@ func TestRunDesignWritesArtifacts(t *testing.T) {
 	}
 
 	runner := NewRunner(root, "mock")
-	artifactDir := filepath.Join(root, "artifacts", "designs", "job-1")
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-1", artifacts.WorkerDesign)
 	_, err := runner.RunDesign(context.Background(), "design", DesignContext{
 		Title:       "My Issue",
 		ArtifactDir: artifactDir,
@@ -33,9 +35,9 @@ func TestRunDesignWritesArtifacts(t *testing.T) {
 		t.Fatalf("RunDesign() error = %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(artifactDir, "ai-stdout.log"))
+	raw, err := os.ReadFile(filepath.Join(artifactDir, "stdout.log"))
 	if err != nil {
-		t.Fatalf("ReadFile(ai-stdout.log) error = %v", err)
+		t.Fatalf("ReadFile(stdout.log) error = %v", err)
 	}
 	content := string(raw)
 	if !strings.Contains(content, "mock provider executed") {
@@ -51,7 +53,7 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nprovider: mock\nartifacts:\n  output_file: design.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nprovider: mock\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
@@ -59,7 +61,7 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 	}
 
 	runner := NewRunner(root, "mock")
-	artifactDir := filepath.Join(root, "artifacts", "designs", "job-2")
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-2", artifacts.WorkerDesign)
 	_, err := runner.RunDesign(context.Background(), "design", DesignContext{
 		Title:       "My Issue",
 		ArtifactDir: artifactDir,
@@ -68,9 +70,9 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 		t.Fatalf("RunDesign() error = %v", err)
 	}
 
-	raw, err := os.ReadFile(filepath.Join(artifactDir, "ai-stdout.log"))
+	raw, err := os.ReadFile(filepath.Join(artifactDir, "stdout.log"))
 	if err != nil {
-		t.Fatalf("ReadFile(ai-stdout.log) error = %v", err)
+		t.Fatalf("ReadFile(stdout.log) error = %v", err)
 	}
 	if !strings.Contains(string(raw), "mock provider executed") {
 		t.Fatalf("expected mock provider stdout, got %q", string(raw))
@@ -83,7 +85,7 @@ func TestRunImplementationUsesArtifactDirAsWorkDir(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: implement\nartifacts:\n  output_file: summary.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: implement\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
@@ -98,12 +100,12 @@ func TestRunImplementationUsesArtifactDirAsWorkDir(t *testing.T) {
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `[]`)
 
 	runner := NewRunner(root, "")
-	artifactDir := filepath.Join(root, "artifacts", "changes", "job-1")
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-1", artifacts.WorkerImplementation)
 	result, err := runner.RunImplementation(context.Background(), "implement", ImplementationContext{
 		Title:             "My Issue",
 		ArtifactDir:       artifactDir,
 		DesignArtifact:    "approved design",
-		DesignArtifactDir: filepath.Join(root, "artifacts", "designs", "job-1"),
+		DesignArtifactDir: artifacts.WorkerDir(root, "artifacts", "job-1", artifacts.WorkerDesign),
 	}, ExecutionConfig{Provider: "codex"})
 	if err != nil {
 		t.Fatalf("RunImplementation() error = %v", err)

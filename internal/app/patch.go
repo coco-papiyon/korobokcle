@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const implementationPatchArtifact = "implementation.patch"
+const implementationPatchArtifact = "patch.diff"
 
 var errImplementationNoPatchNeeded = errors.New("implementation output indicates no patch is needed")
 

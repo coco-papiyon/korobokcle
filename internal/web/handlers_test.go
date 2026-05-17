@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
@@ -314,11 +315,11 @@ func TestHandleJobDetailIncludesFixArtifact(t *testing.T) {
 	server := &Server{config: svc}
 
 	jobID := "job-1"
-	if err := os.MkdirAll(filepath.Join(root, "artifacts", "fixes", jobID), 0o755); err != nil {
+	if err := os.MkdirAll(artifacts.WorkerDir(root, "artifacts", jobID, artifacts.WorkerFix), 0o755); err != nil {
 		t.Fatalf("MkdirAll(fixes) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "artifacts", "fixes", jobID, "fix-summary.md"), []byte("fix content"), 0o644); err != nil {
-		t.Fatalf("WriteFile(fix-summary.md) error = %v", err)
+	if err := os.WriteFile(filepath.Join(artifacts.WorkerDir(root, "artifacts", jobID, artifacts.WorkerFix), "result.md"), []byte("fix content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
 	}
 
 	artifact, err := server.loadFixArtifact(jobID)
@@ -327,5 +328,31 @@ func TestHandleJobDetailIncludesFixArtifact(t *testing.T) {
 	}
 	if artifact.Content != "fix content" {
 		t.Fatalf("expected fix content, got %q", artifact.Content)
+	}
+}
+
+func TestLoadDesignArtifactFallsBackToLegacyFileName(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	jobID := "job-legacy-design"
+	dir := artifacts.WorkerDir(root, "artifacts", jobID, artifacts.WorkerDesign)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(design) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "design.md"), []byte("legacy design content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(design.md) error = %v", err)
+	}
+
+	artifact, err := server.loadDesignArtifact(jobID)
+	if err != nil {
+		t.Fatalf("loadDesignArtifact() error = %v", err)
+	}
+	if artifact.Content != "legacy design content" {
+		t.Fatalf("expected legacy design content, got %q", artifact.Content)
 	}
 }

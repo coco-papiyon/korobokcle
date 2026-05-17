@@ -28,7 +28,14 @@ function isPollingState(state?: string) {
   if (!state) {
     return false
   }
-  return state === 'detected' || state.includes('running') || state === 'pr_creating'
+  return (
+    state === 'detected' ||
+    state.includes('running') ||
+    state === 'pr_creating' ||
+    state === 'design_ready' ||
+    state === 'implementation_ready' ||
+    state === 'review_ready'
+  )
 }
 
 function stopPolling() {
@@ -277,10 +284,10 @@ function formatTestReportMarkdown(raw?: string) {
 }
 
 function formatLogName(name: string) {
-  if (name === 'ai-stdout.log') {
+  if (name === 'stdout.log') {
     return 'AI stdout'
   }
-  if (name === 'ai-stderr.log') {
+  if (name === 'stderr.log') {
     return 'AI stderr'
   }
   if (name === 'git-push.log') {

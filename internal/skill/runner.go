@@ -76,10 +76,10 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 	if err := os.WriteFile(outputPath, []byte(result.Output), 0o644); err != nil {
 		return AIResult{}, err
 	}
-	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "ai-stdout.log"), []byte(result.Stdout), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "stdout.log"), []byte(result.Stdout), 0o644); err != nil {
 		return AIResult{}, err
 	}
-	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "ai-stderr.log"), []byte(result.Stderr), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "stderr.log"), []byte(result.Stderr), 0o644); err != nil {
 		return AIResult{}, err
 	}
 	return result, nil
@@ -134,10 +134,10 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 	if err := os.WriteFile(outputPath, []byte(result.Output), 0o644); err != nil {
 		return AIResult{}, err
 	}
-	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "ai-stdout.log"), []byte(result.Stdout), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "stdout.log"), []byte(result.Stdout), 0o644); err != nil {
 		return AIResult{}, err
 	}
-	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "ai-stderr.log"), []byte(result.Stderr), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "stderr.log"), []byte(result.Stderr), 0o644); err != nil {
 		return AIResult{}, err
 	}
 	return result, nil
@@ -192,10 +192,10 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 	if err := os.WriteFile(outputPath, []byte(result.Output), 0o644); err != nil {
 		return AIResult{}, err
 	}
-	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "ai-stdout.log"), []byte(result.Stdout), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "stdout.log"), []byte(result.Stdout), 0o644); err != nil {
 		return AIResult{}, err
 	}
-	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "ai-stderr.log"), []byte(result.Stderr), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "stderr.log"), []byte(result.Stderr), 0o644); err != nil {
 		return AIResult{}, err
 	}
 	return result, nil

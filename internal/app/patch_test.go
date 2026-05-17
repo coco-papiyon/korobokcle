@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 )
 
 func TestExtractImplementationPatchFromFencedBlock(t *testing.T) {
@@ -32,7 +34,7 @@ func TestApplyImplementationPatch(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	artifactDir := filepath.Join(root, "artifacts", "changes", "job-1")
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-1", artifacts.WorkerImplementation)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatalf("MkdirAll(root) error = %v", err)
 	}
@@ -71,7 +73,7 @@ func TestApplyImplementationPatchAllowsNoOpOutput(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	artifactDir := filepath.Join(root, "artifacts", "changes", "job-1")
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-1", artifacts.WorkerImplementation)
 	output := "## 実装内容の要約\n\n- 確認した結果、変更不要です。\n\n## Patch\n\nNo patch required.\n"
 
 	if err := applyImplementationPatch(context.Background(), root, artifactDir, output); err != nil {

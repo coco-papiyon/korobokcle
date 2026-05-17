@@ -6,4 +6,4 @@ inputs:
 outputs:
   - review_doc
 artifacts:
-  output_file: review.md
+output_file: result.md

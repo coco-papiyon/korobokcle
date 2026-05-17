@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
@@ -123,7 +124,7 @@ func buildDesignContext(cfg *config.Service, job domain.Job, events []domain.Eve
 		Title:       job.Title,
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
-		ArtifactDir: filepath.Join(cfg.App().WorkspaceDir, cfg.App().ArtifactsDir, "designs", job.ID),
+		ArtifactDir: artifacts.WorkerDir(cfg.App().WorkspaceDir, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerDesign),
 	}
 
 	for _, event := range events {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
@@ -29,15 +30,15 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 		WatchRuleID:  "rule-1",
 	}
 
-	designDir := filepath.Join(root, "artifacts", "designs", job.ID)
+	designDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerDesign)
 	if err := os.MkdirAll(designDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(designDir) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(designDir, "design.md"), []byte("design content"), 0o644); err != nil {
-		t.Fatalf("WriteFile(design.md) error = %v", err)
+	if err := os.WriteFile(filepath.Join(designDir, "result.md"), []byte("design content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
 	}
 
-	changesDir := filepath.Join(root, "artifacts", "changes", job.ID)
+	changesDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(changesDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(changesDir) error = %v", err)
 	}
@@ -114,7 +115,7 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	if got.PreviousTestReport == "" {
 		t.Fatalf("expected previous test report to be captured")
 	}
-	if got.ArtifactDir != filepath.Join(root, "artifacts", "changes", job.ID) {
+	if got.ArtifactDir != artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerImplementation) {
 		t.Fatalf("expected changes artifact dir, got %q", got.ArtifactDir)
 	}
 }
@@ -149,9 +150,49 @@ func TestResolveImplementationRunSpecUsesFixSkillAfterTestFailureRerun(t *testin
 	if got.SkillName != fixSkillName {
 		t.Fatalf("expected skill %q, got %q", fixSkillName, got.SkillName)
 	}
-	wantDir := filepath.Join(root, "artifacts", "fixes", job.ID)
+	wantDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerFix)
 	if got.ArtifactDir != wantDir {
 		t.Fatalf("expected artifact dir %q, got %q", wantDir, got.ArtifactDir)
+	}
+}
+
+func TestBuildImplementationContextFallsBackToLegacyDesignFileName(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.ArtifactsDir = "artifacts"
+	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
+	svc := config.NewService(root, files)
+
+	job := domain.Job{
+		ID:           "job-legacy-design",
+		Repository:   "coco-papiyon/korobokcle",
+		GitHubNumber: 1,
+		State:        domain.StateImplementationRunning,
+		Title:        "Issue",
+		WatchRuleID:  "rule-1",
+	}
+
+	designDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerDesign)
+	if err := os.MkdirAll(designDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(designDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(designDir, "design.md"), []byte("legacy design content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(design.md) error = %v", err)
+	}
+
+	runSpec, err := resolveImplementationRunSpec(svc, job, nil)
+	if err != nil {
+		t.Fatalf("resolveImplementationRunSpec() error = %v", err)
+	}
+
+	got, err := buildImplementationContext(svc, job, nil, runSpec)
+	if err != nil {
+		t.Fatalf("buildImplementationContext() error = %v", err)
+	}
+	if got.DesignArtifact != "legacy design content" {
+		t.Fatalf("expected legacy design artifact, got %q", got.DesignArtifact)
 	}
 }
 

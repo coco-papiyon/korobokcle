@@ -50,7 +50,7 @@ func TestCreateAndDeleteSkillSet(t *testing.T) {
 			Inputs:   []string{"issue"},
 			Outputs:  []string{"design_doc"},
 			Artifacts: ArtifactBlock{
-				OutputFile: "design.md",
+				OutputFile: "result.md",
 			},
 		},
 		PromptTemplate: "updated prompt",

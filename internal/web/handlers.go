@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
@@ -190,11 +191,11 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	if artifact, err := s.loadPRCreateArtifact(job.ID); err == nil {
 		out.PRCreateArtifact = artifact
 	}
-	out.Logs = append(out.Logs, s.loadLogResponses("design", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "designs", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
-	out.Logs = append(out.Logs, s.loadLogResponses("implementation", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
-	out.Logs = append(out.Logs, s.loadLogResponses("fix", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "fixes", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
-	out.Logs = append(out.Logs, s.loadLogResponses("pr", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", job.ID), []string{"git-push.log", "gh-pr-create.log"})...)
-	out.Logs = append(out.Logs, s.loadLogResponses("review", filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "reviews", job.ID), []string{"ai-stdout.log", "ai-stderr.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("design", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerDesign), []string{"stdout.log", "stderr.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("implementation", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), []string{"stdout.log", "stderr.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("fix", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerFix), []string{"stdout.log", "stderr.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("pr", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerPR), []string{"git-push.log", "gh-pr-create.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("review", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerReview), []string{"stdout.log", "stderr.log"})...)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -901,25 +902,18 @@ func containsString(values []string, target string) bool {
 }
 
 func (s *Server) loadDesignArtifact(jobID string) (*artifactResponse, error) {
-	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "designs", jobID, "design.md")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return &artifactResponse{
-		Path:    path,
-		Content: string(raw),
-	}, nil
+	dir := artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerDesign)
+	return s.loadFirstArtifact(dir, "result.md", "design.md")
 }
 
 func (s *Server) loadImplementationArtifact(jobID string) (*artifactResponse, error) {
-	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", jobID, "summary.md")
-	return s.loadArtifact(path)
+	dir := artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerImplementation)
+	return s.loadFirstArtifact(dir, "result.md", "summary.md")
 }
 
 func (s *Server) loadFixArtifact(jobID string) (*artifactResponse, error) {
-	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "fixes", jobID, "fix-summary.md")
-	return s.loadArtifact(path)
+	dir := artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerFix)
+	return s.loadFirstArtifact(dir, "result.md", "fix-summary.md")
 }
 
 func (s *Server) loadArtifact(path string) (*artifactResponse, error) {
@@ -934,21 +928,14 @@ func (s *Server) loadArtifact(path string) (*artifactResponse, error) {
 }
 
 func (s *Server) loadReviewArtifact(jobID string) (*artifactResponse, error) {
-	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "reviews", jobID, "review.md")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return &artifactResponse{
-		Path:    path,
-		Content: string(raw),
-	}, nil
+	dir := artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerReview)
+	return s.loadFirstArtifact(dir, "result.md", "review.md")
 }
 
 func (s *Server) loadTestReport(jobID string) (*artifactResponse, error) {
 	paths := []string{
-		filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "fixes", jobID, "test-report.json"),
-		filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", jobID, "test-report.json"),
+		filepath.Join(artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerFix), "test-report.json"),
+		filepath.Join(artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerImplementation), "test-report.json"),
 	}
 	for _, path := range paths {
 		raw, err := os.ReadFile(path)
@@ -966,15 +953,8 @@ func (s *Server) loadTestReport(jobID string) (*artifactResponse, error) {
 }
 
 func (s *Server) loadPRCreateArtifact(jobID string) (*artifactResponse, error) {
-	path := filepath.Join(s.config.Root(), s.config.App().ArtifactsDir, "changes", jobID, "pr-create.json")
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	return &artifactResponse{
-		Path:    path,
-		Content: string(raw),
-	}, nil
+	dir := artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerPR)
+	return s.loadFirstArtifact(dir, "result.json", "pr-create.json")
 }
 
 func extractIssueBody(payload string) string {
@@ -1003,4 +983,17 @@ func (s *Server) loadLogResponses(phase string, dir string, names []string) []lo
 		})
 	}
 	return logs
+}
+
+func (s *Server) loadFirstArtifact(dir string, names ...string) (*artifactResponse, error) {
+	for _, name := range names {
+		artifact, err := s.loadArtifact(filepath.Join(dir, name))
+		if err == nil {
+			return artifact, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return nil, os.ErrNotExist
 }

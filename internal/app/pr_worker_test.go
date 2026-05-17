@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
@@ -44,10 +45,11 @@ func TestRunPendingPRCreationsCompletesJob(t *testing.T) {
 		t.Fatalf("UpsertJob() error = %v", err)
 	}
 
-	artifactDir := filepath.Join(root, cfg.App().ArtifactsDir, "changes", job.ID)
-	if err := writeTestSummary(artifactDir); err != nil {
+	implementationDir := artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
+	if err := writeTestSummary(implementationDir); err != nil {
 		t.Fatalf("writeTestSummary() error = %v", err)
 	}
+	artifactDir := artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerPR)
 
 	recorder := &recordingPublisher{}
 	if err := runPendingPRCreations(context.Background(), cfg, orch, recorder, recorder, root, testLogger(t)); err != nil {
@@ -64,12 +66,12 @@ func TestRunPendingPRCreationsCompletesJob(t *testing.T) {
 	if strings.Join(recorder.calls, ",") != "push,create" {
 		t.Fatalf("expected push then create, got %v", recorder.calls)
 	}
-	raw, err := os.ReadFile(filepath.Join(artifactDir, "pr-create.json"))
+	raw, err := os.ReadFile(filepath.Join(artifactDir, "result.json"))
 	if err != nil {
-		t.Fatalf("ReadFile(pr-create.json) error = %v", err)
+		t.Fatalf("ReadFile(result.json) error = %v", err)
 	}
 	if !strings.Contains(string(raw), `"pushed": true`) {
-		t.Fatalf("expected pushed flag in pr-create.json, got %s", string(raw))
+		t.Fatalf("expected pushed flag in result.json, got %s", string(raw))
 	}
 }
 
@@ -86,11 +88,11 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 		BranchName:   "korobokcle/issue-12",
 	}
 
-	if err := writeFile(filepath.Join(root, cfg.App().ArtifactsDir, "changes", job.ID, "summary.md"), []byte("original summary")); err != nil {
-		t.Fatalf("write summary.md: %v", err)
+	if err := writeFile(filepath.Join(artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "result.md"), []byte("original summary")); err != nil {
+		t.Fatalf("write result.md: %v", err)
 	}
-	if err := writeFile(filepath.Join(root, cfg.App().ArtifactsDir, "fixes", job.ID, "fix-summary.md"), []byte("fix summary")); err != nil {
-		t.Fatalf("write fix-summary.md: %v", err)
+	if err := writeFile(filepath.Join(artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerFix), "result.md"), []byte("fix summary")); err != nil {
+		t.Fatalf("write result.md: %v", err)
 	}
 
 	req, err := buildPRCreateRequest(cfg, job)
@@ -106,7 +108,7 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 }
 
 func writeTestSummary(artifactDir string) error {
-	return writeFile(filepath.Join(artifactDir, "summary.md"), []byte("Implemented the requested changes."))
+	return writeFile(filepath.Join(artifactDir, "result.md"), []byte("Implemented the requested changes."))
 }
 
 func writeFile(path string, data []byte) error {

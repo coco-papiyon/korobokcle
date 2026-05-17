@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	"github.com/coco-papiyon/korobokcle/internal/executor"
@@ -135,9 +136,8 @@ func runPendingImplementations(ctx context.Context, root string, cfg *config.Ser
 }
 
 func buildImplementationContext(cfg *config.Service, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
-	designArtifactDir := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "designs", job.ID)
-	designArtifactPath := filepath.Join(designArtifactDir, "design.md")
-	designArtifactRaw, err := os.ReadFile(designArtifactPath)
+	designArtifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerDesign)
+	designArtifactRaw, err := readFirstArtifactFile(designArtifactDir, "result.md", "design.md")
 	if err != nil {
 		return skill.ImplementationContext{}, err
 	}
@@ -186,9 +186,22 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 	return ctxData, nil
 }
 
+func readFirstArtifactFile(dir string, names ...string) ([]byte, error) {
+	for _, name := range names {
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err == nil {
+			return raw, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	return nil, os.ErrNotExist
+}
+
 func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []domain.Event) (implementationRunSpec, error) {
 	isFix := false
-	artifactDir := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID)
+	artifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
 
 	sourceEventType, err := latestImplementationRerunSourceEventType(events)
 	if err != nil {
@@ -196,7 +209,7 @@ func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []
 	}
 	if sourceEventType == "test_failed" {
 		isFix = true
-		artifactDir = filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "fixes", job.ID)
+		artifactDir = artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerFix)
 	}
 
 	skillName, err := resolveImplementationSkillName(cfg, job.WatchRuleID, isFix)
@@ -296,8 +309,8 @@ func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events 
 
 	if previousTestReport == "" {
 		reportPaths := []string{
-			filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "fixes", job.ID, "test-report.json"),
-			filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID, "test-report.json"),
+			filepath.Join(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerFix), "test-report.json"),
+			filepath.Join(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "test-report.json"),
 		}
 		for _, reportPath := range reportPaths {
 			if raw, err := os.ReadFile(reportPath); err == nil {

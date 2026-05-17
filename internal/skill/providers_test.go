@@ -40,7 +40,7 @@ func TestExternalCLIProviderReadsOutputFileFallback(t *testing.T) {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	outputPath := filepath.Join(dir, "summary.md")
+	outputPath := filepath.Join(dir, "result.md")
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["{{output_path}}","{{prompt}}"]`)
 

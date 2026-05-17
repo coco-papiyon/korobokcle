@@ -6,4 +6,4 @@ inputs:
 outputs:
   - implementation_summary
 artifacts:
-  output_file: summary.md
+output_file: result.md

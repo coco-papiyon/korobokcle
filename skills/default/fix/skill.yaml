@@ -8,4 +8,4 @@ inputs:
 outputs:
   - fix_summary
 artifacts:
-  output_file: fix-summary.md
+output_file: result.md

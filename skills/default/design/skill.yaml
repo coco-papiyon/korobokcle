@@ -6,4 +6,4 @@ inputs:
 outputs:
   - design_doc
 artifacts:
-  output_file: design.md
+output_file: result.md

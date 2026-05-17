@@ -24,7 +24,7 @@ func TestRunPendingReviewsCompletesJob(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: review\nprovider: mock\nartifacts:\n  output_file: review.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: review\nprovider: mock\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("PR: {{ .PullNumber }}"), 0o644); err != nil {

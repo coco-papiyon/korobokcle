@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
@@ -119,7 +120,7 @@ func (c *GHPRCreator) Create(ctx context.Context, req PRCreateRequest) (string, 
 		return "", err
 	}
 
-	bodyPath := filepath.Join(req.ArtifactDir, "pr-body.md")
+	bodyPath := filepath.Join(req.ArtifactDir, "body.md")
 	if err := os.WriteFile(bodyPath, []byte(req.Body), 0o644); err != nil {
 		return "", err
 	}
@@ -224,9 +225,9 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 }
 
 func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest, error) {
-	artifactDir := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID)
-	summaryPath := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID, "summary.md")
-	summaryRaw, err := os.ReadFile(summaryPath)
+	artifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerPR)
+	summaryDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
+	summaryRaw, err := readFirstArtifactFile(summaryDir, "result.md", "summary.md")
 	if err != nil {
 		return PRCreateRequest{}, err
 	}
@@ -249,8 +250,8 @@ func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest,
 }
 
 func readOptionalFixSummary(cfg *config.Service, jobID string) (string, error) {
-	path := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "fixes", jobID, "fix-summary.md")
-	raw, err := os.ReadFile(path)
+	dir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, jobID, artifacts.WorkerFix)
+	raw, err := readFirstArtifactFile(dir, "result.md", "fix-summary.md")
 	if err == nil {
 		return string(raw), nil
 	}
@@ -284,7 +285,7 @@ func writePRCreateArtifact(artifactDir string, url string, req PRCreateRequest) 
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(artifactDir, "pr-create.json"), raw, 0o644)
+	return os.WriteFile(filepath.Join(artifactDir, "result.json"), raw, 0o644)
 }
 
 func writeCommandLog(artifactDir string, name string, content string) error {
