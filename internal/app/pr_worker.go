@@ -15,6 +15,7 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/naming"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
 )
 
@@ -241,7 +242,7 @@ func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest,
 		return PRCreateRequest{}, err
 	}
 
-	title := fmt.Sprintf("%s (#%d)", job.Title, job.GitHubNumber)
+	title := naming.RenderPRTitle(cfg.App().PRTitleTemplate, job)
 	body := buildPRBody(job, string(summaryRaw), fixSummaryRaw)
 
 	return PRCreateRequest{

@@ -85,6 +85,8 @@ export type AppConfig = {
   provider: string
   model: string
   pollInterval: number
+  prTitleTemplate: string
+  branchTemplate: string
   providers: ProviderSpec[]
 }
 

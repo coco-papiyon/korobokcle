@@ -15,6 +15,7 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/naming"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
 	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
@@ -95,10 +96,12 @@ type providerSpecResponse struct {
 }
 
 type appConfigResponse struct {
-	Provider     string                 `json:"provider"`
-	Model        string                 `json:"model"`
-	PollInterval int                    `json:"pollInterval"`
-	Providers    []providerSpecResponse `json:"providers"`
+	Provider        string                 `json:"provider"`
+	Model           string                 `json:"model"`
+	PollInterval    int                    `json:"pollInterval"`
+	PRTitleTemplate string                 `json:"prTitleTemplate"`
+	BranchTemplate  string                 `json:"branchTemplate"`
+	Providers       []providerSpecResponse `json:"providers"`
 }
 
 type notificationChannelResponse struct {
@@ -413,6 +416,17 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 		modelInput = model
 	}
 	appConfig.Model = modelInput
+	prTitleTemplate := strings.TrimSpace(payload.PRTitleTemplate)
+	if prTitleTemplate == "" {
+		prTitleTemplate = naming.DefaultPRTitleTemplate
+	}
+	appConfig.PRTitleTemplate = prTitleTemplate
+
+	branchTemplate := strings.TrimSpace(payload.BranchTemplate)
+	if branchTemplate == "" {
+		branchTemplate = naming.DefaultBranchTemplate
+	}
+	appConfig.BranchTemplate = branchTemplate
 	if payload.PollInterval < 1 {
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be a positive whole number of seconds"))
 		return
@@ -795,11 +809,21 @@ func sliceOrEmpty(values []string) []string {
 }
 
 func toAppConfigResponse(app config.App) appConfigResponse {
+	prTitleTemplate := strings.TrimSpace(app.PRTitleTemplate)
+	if prTitleTemplate == "" {
+		prTitleTemplate = naming.DefaultPRTitleTemplate
+	}
+	branchTemplate := strings.TrimSpace(app.BranchTemplate)
+	if branchTemplate == "" {
+		branchTemplate = naming.DefaultBranchTemplate
+	}
 	return appConfigResponse{
-		Provider:     app.Provider,
-		Model:        app.Model,
-		PollInterval: int(effectivePollInterval(app.PollInterval) / time.Second),
-		Providers:    toProviderSpecResponses(app.Providers),
+		Provider:        app.Provider,
+		Model:           app.Model,
+		PollInterval:    int(effectivePollInterval(app.PollInterval) / time.Second),
+		PRTitleTemplate: prTitleTemplate,
+		BranchTemplate:  branchTemplate,
+		Providers:       toProviderSpecResponses(app.Providers),
 	}
 }
 

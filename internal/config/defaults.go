@@ -7,13 +7,15 @@ const DefaultPollInterval = 2 * time.Minute
 func DefaultFiles() Files {
 	return Files{
 		App: App{
-			HTTPPort:     8080,
-			PollInterval: DefaultPollInterval,
-			DataDir:      "data",
-			ArtifactsDir: "artifacts",
-			WorkspaceDir: ".",
-			Provider:     "mock",
-			Model:        "",
+			HTTPPort:        8080,
+			PollInterval:    DefaultPollInterval,
+			DataDir:         "data",
+			ArtifactsDir:    "artifacts",
+			WorkspaceDir:    ".",
+			Provider:        "mock",
+			Model:           "",
+			PRTitleTemplate: "[#{{issue_number}}]{{issue_title}}",
+			BranchTemplate:  "issue_{{issue_number}}",
 			Providers: []ProviderSpec{
 				{
 					Name:   "mock",

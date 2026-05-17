@@ -105,6 +105,9 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 	if !strings.Contains(req.Body, "original summary") {
 		t.Fatalf("expected PR body to include original summary, got %q", req.Body)
 	}
+	if req.Title != "[#12]Implement feature" {
+		t.Fatalf("expected default PR title, got %q", req.Title)
+	}
 	if !strings.Contains(req.Body, "## Fix Summary") || !strings.Contains(req.Body, "fix summary") {
 		t.Fatalf("expected PR body to append fix summary, got %q", req.Body)
 	}
