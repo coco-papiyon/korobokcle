@@ -5,12 +5,13 @@ import AsyncState from '@/components/AsyncState.vue'
 import PanelCard from '@/components/PanelCard.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
-import { fetchAppConfig, fetchWatchRules, saveWatchRules } from '@/lib/api'
+import { fetchAppConfig, fetchSkillSets, fetchWatchRules, saveWatchRules } from '@/lib/api'
 import { modelOptionsForProvider, watchRuleProviderOptions } from '@/lib/provider-options'
 import type { AppConfig, WatchRule, WatchRuleForm } from '@/types'
 
 const { data, isLoading, error, reload } = useAsyncData(fetchWatchRules)
 const { data: appConfig } = useAsyncData(fetchAppConfig)
+const { data: skillSets } = useAsyncData(fetchSkillSets)
 const forms = ref<WatchRuleForm[]>([])
 const selectedRuleId = ref('')
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -247,7 +248,11 @@ async function persistRules() {
 
               <label class="field">
                 <span class="field__label">Skill Set</span>
-                <input v-model="selectedRule.skillSet" class="field__control" type="text" />
+                <select v-model="selectedRule.skillSet" class="field__control">
+                  <option v-for="skillSet in skillSets ?? []" :key="skillSet.name" :value="skillSet.name">
+                    {{ skillSet.name }}
+                  </option>
+                </select>
               </label>
 
               <label class="field">

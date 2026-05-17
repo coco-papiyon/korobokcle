@@ -20,7 +20,7 @@ func TestRunPendingReviewsCompletesJob(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	skillDir := filepath.Join(root, "skills", "review")
+	skillDir := filepath.Join(root, "skills", "default", "review")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}

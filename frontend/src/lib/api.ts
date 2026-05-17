@@ -1,4 +1,4 @@
-import type { AppConfig, Job, JobDetail, NotificationConfig, WatchRule } from '@/types'
+import type { AppConfig, Job, JobDetail, NotificationConfig, SkillSet, SkillSetSummary, WatchRule } from '@/types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -98,5 +98,33 @@ export function saveNotificationConfig(config: NotificationConfig): Promise<Noti
   return request<NotificationConfig>('/api/notification-config', {
     method: 'PUT',
     body: JSON.stringify(config),
+  })
+}
+
+export function fetchSkillSets(): Promise<SkillSetSummary[]> {
+  return request<SkillSetSummary[]>('/api/skillsets')
+}
+
+export function fetchSkillSet(name: string): Promise<SkillSet> {
+  return request<SkillSet>(`/api/skillsets/${encodeURIComponent(name)}`)
+}
+
+export function createSkillSet(name: string, source: string): Promise<SkillSet> {
+  return request<SkillSet>('/api/skillsets', {
+    method: 'POST',
+    body: JSON.stringify({ name, source }),
+  })
+}
+
+export function saveSkillSet(skillSet: SkillSet): Promise<SkillSet> {
+  return request<SkillSet>(`/api/skillsets/${encodeURIComponent(skillSet.name)}`, {
+    method: 'PUT',
+    body: JSON.stringify(skillSet),
+  })
+}
+
+export function deleteSkillSet(name: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/skillsets/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
   })
 }

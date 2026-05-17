@@ -84,6 +84,32 @@ export type ProviderSpec = {
   models: string[]
 }
 
+export type SkillDefinition = {
+  name: string
+  provider: string
+  inputs: string[]
+  outputs: string[]
+  artifacts: {
+    output_file: string
+  }
+}
+
+export type SkillFile = {
+  definition: SkillDefinition
+  promptTemplate: string
+}
+
+export type SkillSetSummary = {
+  name: string
+  mutable: boolean
+}
+
+export type SkillSet = {
+  name: string
+  mutable: boolean
+  skills: Record<string, SkillFile>
+}
+
 export type NotificationChannel = {
   name: string
   type: string

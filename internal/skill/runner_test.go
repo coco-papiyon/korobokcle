@@ -12,7 +12,7 @@ func TestRunDesignWritesArtifacts(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	skillDir := filepath.Join(root, "skills", "design")
+	skillDir := filepath.Join(root, "skills", "default", "design")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -47,7 +47,7 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	skillDir := filepath.Join(root, "skills", "design")
+	skillDir := filepath.Join(root, "skills", "default", "design")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 
 func TestRunImplementationUsesArtifactDirAsWorkDir(t *testing.T) {
 	root := t.TempDir()
-	skillDir := filepath.Join(root, "skills", "implement")
+	skillDir := filepath.Join(root, "skills", "default", "implement")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}

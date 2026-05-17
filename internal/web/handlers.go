@@ -15,6 +15,7 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
+	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
 
 type jobResponse struct {
@@ -105,6 +106,27 @@ type notificationChannelResponse struct {
 
 type notificationConfigResponse struct {
 	Channels []notificationChannelResponse `json:"channels"`
+}
+
+type skillSetSummaryResponse struct {
+	Name    string `json:"name"`
+	Mutable bool   `json:"mutable"`
+}
+
+type skillFileResponse struct {
+	Definition     skill.Definition `json:"definition"`
+	PromptTemplate string           `json:"promptTemplate"`
+}
+
+type skillSetResponse struct {
+	Name    string                       `json:"name"`
+	Mutable bool                         `json:"mutable"`
+	Skills  map[string]skillFileResponse `json:"skills"`
+}
+
+type createSkillSetRequest struct {
+	Name   string `json:"name"`
+	Source string `json:"source"`
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
@@ -441,6 +463,100 @@ func (s *Server) handleSaveNotificationConfig(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, toNotificationConfigResponse(file))
 }
 
+func (s *Server) handleSkillSets(w http.ResponseWriter, _ *http.Request) {
+	sets, err := skill.ListSkillSets(s.config.Root())
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	response := make([]skillSetSummaryResponse, 0, len(sets))
+	for _, set := range sets {
+		response = append(response, skillSetSummaryResponse{
+			Name:    set.Name,
+			Mutable: set.Mutable,
+		})
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleSkillSet(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+	set, err := skill.LoadSkillSet(s.config.Root(), name)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, os.ErrNotExist) {
+			status = http.StatusNotFound
+		}
+		writeJSONError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toSkillSetResponse(set))
+}
+
+func (s *Server) handleCreateSkillSet(w http.ResponseWriter, r *http.Request) {
+	var payload createSkillSetRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode skill set: %w", err))
+		return
+	}
+
+	set, err := skill.CreateSkillSet(s.config.Root(), payload.Name, payload.Source)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, toSkillSetResponse(set))
+}
+
+func (s *Server) handleSaveSkillSet(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+	var payload skillSetResponse
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode skill set: %w", err))
+		return
+	}
+	if strings.TrimSpace(payload.Name) != "" && strings.TrimSpace(payload.Name) != name {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("payload name must match path"))
+		return
+	}
+
+	set := skill.SkillSet{
+		Name:   name,
+		Skills: make(map[string]skill.SkillFile, len(payload.Skills)),
+	}
+	for skillName, file := range payload.Skills {
+		set.Skills[skillName] = skill.SkillFile{
+			Definition:     file.Definition,
+			PromptTemplate: file.PromptTemplate,
+		}
+	}
+	if err := skill.SaveSkillSet(s.config.Root(), set); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	saved, err := skill.LoadSkillSet(s.config.Root(), name)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toSkillSetResponse(saved))
+}
+
+func (s *Server) handleDeleteSkillSet(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+	if err := skill.DeleteSkillSet(s.config.Root(), name); err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, os.ErrNotExist) {
+			status = http.StatusNotFound
+		}
+		writeJSONError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 const (
 	actionRetryDesign         = "retry_design"
 	actionRetryImplementation = "retry_implementation"
@@ -671,6 +787,21 @@ func toNotificationConfigResponse(notifications config.Notifications) notificati
 		})
 	}
 	return notificationConfigResponse{Channels: channels}
+}
+
+func toSkillSetResponse(set skill.SkillSet) skillSetResponse {
+	files := make(map[string]skillFileResponse, len(set.Skills))
+	for name, file := range set.Skills {
+		files[name] = skillFileResponse{
+			Definition:     file.Definition,
+			PromptTemplate: file.PromptTemplate,
+		}
+	}
+	return skillSetResponse{
+		Name:    set.Name,
+		Mutable: set.Mutable,
+		Skills:  files,
+	}
 }
 
 func effectivePollInterval(value time.Duration) time.Duration {
