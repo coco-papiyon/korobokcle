@@ -129,7 +129,7 @@ async function persistNotificationConfig() {
 
         <label class="field">
           <span class="field__label">Provider</span>
-          <select v-model="provider" class="field__control">
+          <select v-model="provider" class="field__control" @change="model = ''">
             <option v-for="option in providerOptions(providerCatalog)" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
