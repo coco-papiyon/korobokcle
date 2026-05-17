@@ -28,6 +28,7 @@ type ImplementationContext struct {
 	DesignArtifact     string   `json:"designArtifact"`
 	DesignArtifactDir  string   `json:"designArtifactDir"`
 	ArtifactDir        string   `json:"artifactDir"`
+	RerunComment       string   `json:"rerunComment,omitempty"`
 	PreviousFailure    string   `json:"previousFailure,omitempty"`
 	PreviousTestReport string   `json:"previousTestReport,omitempty"`
 }

@@ -154,10 +154,11 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 		ArtifactDir:       runSpec.ArtifactDir,
 	}
 
-	previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)
+	rerunComment, previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)
 	if err != nil {
 		return skill.ImplementationContext{}, err
 	}
+	ctxData.RerunComment = rerunComment
 	ctxData.PreviousFailure = previousFailure
 	ctxData.PreviousTestReport = previousTestReport
 
@@ -186,7 +187,7 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 }
 
 func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []domain.Event) (implementationRunSpec, error) {
-	skillName := implementationSkillName
+	isFix := false
 	artifactDir := filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "changes", job.ID)
 
 	sourceEventType, err := latestImplementationRerunSourceEventType(events)
@@ -194,14 +195,37 @@ func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []
 		return implementationRunSpec{}, err
 	}
 	if sourceEventType == "test_failed" {
-		skillName = fixSkillName
+		isFix = true
 		artifactDir = filepath.Join(cfg.Root(), cfg.App().ArtifactsDir, "fixes", job.ID)
+	}
+
+	skillName, err := resolveImplementationSkillName(cfg, job.WatchRuleID, isFix)
+	if err != nil {
+		return implementationRunSpec{}, err
 	}
 
 	return implementationRunSpec{
 		SkillName:   skillName,
 		ArtifactDir: artifactDir,
 	}, nil
+}
+
+func resolveImplementationSkillName(cfg *config.Service, watchRuleID string, isFix bool) (string, error) {
+	rule, ok := cfg.WatchRuleByID(watchRuleID)
+	if !ok {
+		return "", os.ErrNotExist
+	}
+
+	baseName := implementationSkillName
+	if isFix {
+		baseName = fixSkillName
+	}
+
+	skillSet := strings.TrimSpace(rule.SkillSet)
+	if skillSet == "" || skillSet == "default" {
+		return baseName, nil
+	}
+	return filepath.ToSlash(filepath.Join(skillSet, baseName)), nil
 }
 
 func latestImplementationRerunSourceEventType(events []domain.Event) (string, error) {
@@ -230,12 +254,24 @@ func latestImplementationRerunSourceEventType(events []domain.Event) (string, er
 	return "", nil
 }
 
-func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events []domain.Event) (string, string, error) {
+func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events []domain.Event) (string, string, string, error) {
+	var rerunComment string
 	var previousFailure string
 	var previousTestReport string
 
 	for i := len(events) - 1; i >= 0; i-- {
 		event := events[i]
+		if rerunComment == "" && event.EventType == "implementation_rerun_requested" {
+			var payload struct {
+				Comment string `json:"comment"`
+			}
+			if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+				return "", "", "", err
+			}
+			rerunComment = strings.TrimSpace(payload.Comment)
+			continue
+		}
+
 		switch event.EventType {
 		case "test_failed", "implementation_failed":
 			var payload struct {
@@ -243,7 +279,7 @@ func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events 
 				ReportPath string `json:"reportPath"`
 			}
 			if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 			previousFailure = strings.TrimSpace(payload.Error)
 			if previousFailure == "" {
@@ -268,12 +304,12 @@ func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events 
 				previousTestReport = string(raw)
 				break
 			} else if !errors.Is(err, os.ErrNotExist) {
-				return "", "", fmt.Errorf("read previous test report: %w", err)
+				return "", "", "", fmt.Errorf("read previous test report: %w", err)
 			}
 		}
 	}
 
-	return previousFailure, previousTestReport, nil
+	return rerunComment, previousFailure, previousTestReport, nil
 }
 
 func runTestsForJob(ctx context.Context, cfg *config.Service, testRunner *executor.TestRunner, job domain.Job, artifactDir string) (executor.TestReport, error) {

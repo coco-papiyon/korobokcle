@@ -17,6 +17,7 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	root := t.TempDir()
 	files := config.DefaultFiles()
 	files.App.ArtifactsDir = "artifacts"
+	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
 	svc := config.NewService(root, files)
 
 	job := domain.Job{
@@ -70,6 +71,12 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	if err != nil {
 		t.Fatalf("marshal test failed payload error = %v", err)
 	}
+	rerunPayload, err := json.Marshal(map[string]any{
+		"comment": "git apply failed: exit status 128: error: corrupt patch at line 381",
+	})
+	if err != nil {
+		t.Fatalf("marshal rerun payload error = %v", err)
+	}
 
 	events := []domain.Event{
 		{
@@ -80,6 +87,11 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 		{
 			EventType: "test_failed",
 			Payload:   string(testFailedPayload),
+			CreatedAt: time.Now(),
+		},
+		{
+			EventType: "implementation_rerun_requested",
+			Payload:   string(rerunPayload),
 			CreatedAt: time.Now(),
 		},
 	}
@@ -96,6 +108,9 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	if got.PreviousFailure != "tests failed" {
 		t.Fatalf("expected previous failure to be captured, got %q", got.PreviousFailure)
 	}
+	if got.RerunComment != "git apply failed: exit status 128: error: corrupt patch at line 381" {
+		t.Fatalf("expected rerun comment to be captured, got %q", got.RerunComment)
+	}
 	if got.PreviousTestReport == "" {
 		t.Fatalf("expected previous test report to be captured")
 	}
@@ -110,9 +125,10 @@ func TestResolveImplementationRunSpecUsesFixSkillAfterTestFailureRerun(t *testin
 	root := t.TempDir()
 	files := config.DefaultFiles()
 	files.App.ArtifactsDir = "artifacts"
+	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
 	svc := config.NewService(root, files)
 
-	job := domain.Job{ID: "job-1"}
+	job := domain.Job{ID: "job-1", WatchRuleID: "rule-1"}
 	testFailedID := int64(10)
 	rerunPayload, err := json.Marshal(map[string]any{
 		"eventId": testFailedID,
@@ -136,5 +152,65 @@ func TestResolveImplementationRunSpecUsesFixSkillAfterTestFailureRerun(t *testin
 	wantDir := filepath.Join(root, "artifacts", "fixes", job.ID)
 	if got.ArtifactDir != wantDir {
 		t.Fatalf("expected artifact dir %q, got %q", wantDir, got.ArtifactDir)
+	}
+}
+
+func TestResolveImplementationSkillNameDefault(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{ID: "rule-1", SkillSet: "default"},
+			},
+		},
+	})
+
+	got, err := resolveImplementationSkillName(cfg, "rule-1", false)
+	if err != nil {
+		t.Fatalf("resolveImplementationSkillName() error = %v", err)
+	}
+	if got != "implement" {
+		t.Fatalf("expected implement, got %q", got)
+	}
+}
+
+func TestResolveImplementationSkillNameFromSkillSet(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{ID: "rule-1", SkillSet: "team-a"},
+			},
+		},
+	})
+
+	got, err := resolveImplementationSkillName(cfg, "rule-1", false)
+	if err != nil {
+		t.Fatalf("resolveImplementationSkillName() error = %v", err)
+	}
+	if got != "team-a/implement" {
+		t.Fatalf("expected team-a/implement, got %q", got)
+	}
+}
+
+func TestResolveImplementationSkillNameFixFromSkillSet(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{ID: "rule-1", SkillSet: "team-a"},
+			},
+		},
+	})
+
+	got, err := resolveImplementationSkillName(cfg, "rule-1", true)
+	if err != nil {
+		t.Fatalf("resolveImplementationSkillName() error = %v", err)
+	}
+	if got != "team-a/fix" {
+		t.Fatalf("expected team-a/fix, got %q", got)
 	}
 }

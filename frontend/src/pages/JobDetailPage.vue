@@ -17,6 +17,7 @@ import {
   submitReviewRerun,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import type { JobEvent } from '@/types'
 
 const route = useRoute()
 const jobID = computed(() => String(route.params.id))
@@ -295,14 +296,28 @@ function formatIssueBody(body?: string) {
   return body && body.trim().length > 0 ? body : 'Issue body is empty.'
 }
 
+function rerunCommentForEvent(action: RerunAction, event?: JobEvent) {
+  if (!event || action !== 'retry_implementation') {
+    return ''
+  }
+  try {
+    const payload = JSON.parse(event.payload) as { error?: unknown }
+    return typeof payload.error === 'string' ? payload.error.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
 async function submitRerun(action: RerunAction, eventId: number) {
   rerunState(action).value = 'saving'
   rerunError(action).value = null
   try {
+    const event = data.value?.events.find((candidate) => candidate.id === eventId)
+    const comment = rerunCommentForEvent(action, event)
     if (action === 'retry_design') {
       data.value = await submitDesignRerun(jobID.value, '', eventId)
     } else if (action === 'retry_implementation') {
-      data.value = await submitImplementationRerun(jobID.value, '', eventId)
+      data.value = await submitImplementationRerun(jobID.value, comment, eventId)
     } else if (action === 'retry_review') {
       data.value = await submitReviewRerun(jobID.value, '', eventId)
     } else {

@@ -35,6 +35,27 @@ Watch Rule: {{ .WatchRuleID }}
 {{ .DesignArtifact }}
 ```
 
+{{- if .RerunComment }}
+## Rerun Comment
+```
+{{ .RerunComment }}
+```
+{{- end }}
+
+{{- if .PreviousFailure }}
+## Previous Failure
+```
+{{ .PreviousFailure }}
+```
+{{- end }}
+
+{{- if .PreviousTestReport }}
+## Previous Test Report
+```
+{{ .PreviousTestReport }}
+```
+{{- end }}
+
 ## 出力内容
 
 以下の観点で、実装結果を Markdown で整理してください。
