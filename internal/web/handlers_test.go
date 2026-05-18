@@ -118,6 +118,7 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 
 	root := t.TempDir()
 	files := config.DefaultFiles()
+	files.App.Model = "default"
 	files.App.PollInterval = 45 * time.Second
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
@@ -150,6 +151,9 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 	if got.BranchTemplate != "issue_{{issue_number}}" {
 		t.Fatalf("unexpected branch template %q", got.BranchTemplate)
+	}
+	if got.Model != "" {
+		t.Fatalf("expected default model to be normalized away, got %q", got.Model)
 	}
 }
 
@@ -309,7 +313,7 @@ func TestHandleSaveAppConfigClearsModelWhenDefaultSelected(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"codex","model":"","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	body := []byte(`{"provider":"codex","model":"default","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 

@@ -83,6 +83,7 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 	}
 	promptInArgs := providerArgsContainPrompt(args)
 	args = expandProviderArgs(args, req)
+	debugEnabled := isTruthy(os.Getenv(p.EnvPrefix + "_DEBUG"))
 
 	if _, err := exec.LookPath(executable); err != nil {
 		return AIResult{}, fmt.Errorf("%s command %q is not available: %w", p.Name, executable, err)
@@ -96,11 +97,18 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	if debugEnabled {
+		fmt.Fprintf(&stderr, "[debug] provider=%s executable=%s workdir=%s prompt_in_args=%t args=%s\n", p.Name, executable, workDir, promptInArgs, debugArgsForLog(args))
+		fmt.Fprintf(&stderr, "[debug] prompt=%s\n", req.Prompt)
+	}
 	if !promptInArgs {
 		cmd.Stdin = strings.NewReader(req.Prompt)
 	}
 
 	err = cmd.Run()
+	if debugEnabled {
+		fmt.Fprintf(&stderr, "[debug] provider=%s exit_err=%v stdout_bytes=%d stderr_bytes=%d\n", p.Name, err, stdout.Len(), stderr.Len())
+	}
 	result := AIResult{
 		Stdout: stdout.String(),
 		Stderr: stderr.String(),
@@ -139,7 +147,7 @@ func expandProviderArgs(args []string, req AIRequest) []string {
 	replacements := map[string]string{
 		"{{prompt}}":       req.Prompt,
 		"{{model_flag}}":   modelFlag(req.Model),
-		"{{model}}":        req.Model,
+		"{{model}}":        normalizedModelValue(req.Model),
 		"{{work_dir}}":     req.WorkDir,
 		"{{artifact_dir}}": req.ArtifactDir,
 		"{{output_path}}":  req.OutputPath,
@@ -180,10 +188,38 @@ func firstNonEmpty(values ...string) string {
 }
 
 func modelFlag(model string) string {
-	if strings.TrimSpace(model) == "" {
+	if strings.TrimSpace(model) == "" || strings.EqualFold(strings.TrimSpace(model), "default") {
 		return ""
 	}
 	return "--model"
+}
+
+func normalizedModelValue(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" || strings.EqualFold(trimmed, "default") {
+		return ""
+	}
+	return trimmed
+}
+
+func isTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func debugArgsForLog(args []string) string {
+	if len(args) == 0 {
+		return "[]"
+	}
+	quoted := make([]string, 0, len(args))
+	for _, arg := range args {
+		quoted = append(quoted, fmt.Sprintf("%q", arg))
+	}
+	return "[" + strings.Join(quoted, " ") + "]"
 }
 
 func copilotDefaultArgs(allowTools []string) []string {
@@ -197,7 +233,9 @@ func copilotDefaultArgs(allowTools []string) []string {
 	if len(normalized) == 0 {
 		normalized = normalizeCopilotAllowTools(config.DefaultCopilotAllowTools)
 	}
-	if len(normalized) > 0 {
+	if len(normalized) == 0 {
+		args = append(args, "--allow-all-tools")
+	} else {
 		args = append(args, "--allow-tool="+strings.Join(normalized, ","))
 	}
 	args = append(args, "--no-ask-user")

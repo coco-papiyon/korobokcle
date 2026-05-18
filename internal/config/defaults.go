@@ -4,30 +4,7 @@ import "time"
 
 const DefaultPollInterval = 2 * time.Minute
 
-var DefaultCopilotAllowTools = []string{
-	"write",
-	"shell(git:*)",
-	"shell(go:*)",
-	"shell(gofmt:*)",
-	"shell(node:*)",
-	"shell(npm:*)",
-	"shell(npx:*)",
-	"shell(pnpm:*)",
-	"shell(yarn:*)",
-	"shell(python:*)",
-	"shell(py:*)",
-	"shell(pip:*)",
-	"shell(pytest:*)",
-	"shell(uv:*)",
-	"shell(cargo:*)",
-	"shell(rustc:*)",
-	"shell(java:*)",
-	"shell(javac:*)",
-	"shell(mvn:*)",
-	"shell(gradle:*)",
-	"shell(gradlew:*)",
-	"shell(dotnet:*)",
-}
+var DefaultCopilotAllowTools = []string{}
 
 func DefaultFiles() Files {
 	return Files{

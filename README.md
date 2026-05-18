@@ -167,7 +167,7 @@ watch rule 側の provider / model の候補も、`config/app.yaml` の `provide
 model を指定した場合は `--model` を付けて実行します。
 `codex` の prompt はデフォルトで標準入力から渡します。
 `copilot` はリポジトリのルートディレクトリを作業ディレクトリとして実行し、既定のパス権限（作業ディレクトリ配下と system temp）を使います。
-`copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定でき、デフォルトは `write` に加えて `git`, `go`, `node`/`npm`, `python`, `rust`, `java`, `dotnet` 系の主要コマンドです。
+`copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定でき、既定では `--allow-all-tools` を使います。必要ならここで制限できます。
 環境に応じて `KOROBOKCLE_COPILOT_BIN` / `KOROBOKCLE_COPILOT_ARGS_JSON`、
 `KOROBOKCLE_CODEX_BIN` / `KOROBOKCLE_CODEX_ARGS_JSON` で上書きできます。
 `*_ARGS_JSON` は JSON 配列で、`{{prompt}}`, `{{model_flag}}`, `{{model}}`, `{{work_dir}}`, `{{artifact_dir}}`, `{{output_path}}`, `{{skill_name}}` を使えます。

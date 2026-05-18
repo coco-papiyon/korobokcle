@@ -419,7 +419,7 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 
 	modelInput := appConfig.Model
 	if payload.Model != nil {
-		modelInput = strings.TrimSpace(*payload.Model)
+		modelInput = normalizeDefaultModelValue(*payload.Model)
 	}
 	if payload.Model != nil && modelInput == "" {
 		appConfig.Model = ""
@@ -844,6 +844,14 @@ func normalizeStringSlice(values []string) []string {
 	return normalized
 }
 
+func normalizeDefaultModelValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.EqualFold(trimmed, "default") {
+		return ""
+	}
+	return trimmed
+}
+
 func toAppConfigResponse(app config.App) appConfigResponse {
 	prTitleTemplate := strings.TrimSpace(app.PRTitleTemplate)
 	if prTitleTemplate == "" {
@@ -855,7 +863,7 @@ func toAppConfigResponse(app config.App) appConfigResponse {
 	}
 	return appConfigResponse{
 		Provider:          app.Provider,
-		Model:             app.Model,
+		Model:             normalizeDefaultModelValue(app.Model),
 		CopilotAllowTools: sliceOrEmpty(app.CopilotAllowTools),
 		PollInterval:      int(effectivePollInterval(app.PollInterval) / time.Second),
 		PRTitleTemplate:   prTitleTemplate,

@@ -5,29 +5,7 @@ artifactsDir: artifacts
 workspaceDir: .
 provider: copilot
 model: ""
-copilotAllowTools:
-    - write
-    - shell(git:*)
-    - shell(go:*)
-    - shell(gofmt:*)
-    - shell(node:*)
-    - shell(npm:*)
-    - shell(npx:*)
-    - shell(pnpm:*)
-    - shell(yarn:*)
-    - shell(python:*)
-    - shell(py:*)
-    - shell(pip:*)
-    - shell(pytest:*)
-    - shell(uv:*)
-    - shell(cargo:*)
-    - shell(rustc:*)
-    - shell(java:*)
-    - shell(javac:*)
-    - shell(mvn:*)
-    - shell(gradle:*)
-    - shell(gradlew:*)
-    - shell(dotnet:*)
+copilotAllowTools: []
 prTitleTemplate: '[#{{issue_number}}]{{issue_title}}'
 branchTemplate: issue_{{issue_number}}
 providers:
