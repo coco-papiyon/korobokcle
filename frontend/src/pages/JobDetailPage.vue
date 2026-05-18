@@ -110,32 +110,10 @@ const canReviewImplementation = computed(() => {
   return state === 'failed' && latestEvent.value?.eventType === 'test_failed'
 })
 const flowRerunAction = computed<RerunAction | null>(() => {
-  const state = data.value?.job.state
+  // Only determine rerun/fix actions based on event history (latestEvent).
+  // This keeps Flow button visibility consistent with the event history view.
   const event = latestEvent.value
-
-  switch (state) {
-    case 'waiting_design_approval':
-    case 'design_rejected':
-    case 'detected':
-    case 'design_running':
-      return 'retry_design'
-    case 'waiting_final_approval':
-    case 'final_rejected':
-    case 'implementation_running':
-    case 'test_running':
-    case 'implementation_ready':
-      return 'retry_implementation'
-    case 'pr_creating':
-      return 'retry_pr'
-    case 'collecting_context':
-    case 'review_running':
-    case 'review_ready':
-      return 'retry_review'
-    case 'failed':
-      return flowRerunActionFromEvent(event)
-    default:
-      return null
-  }
+  return flowRerunActionFromEvent(event)
 })
 const finalApprovalWarning = computed(() => {
   if (data.value?.job.state === 'failed' && latestEvent.value?.eventType === 'test_failed') {
