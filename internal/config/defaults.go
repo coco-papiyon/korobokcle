@@ -2,23 +2,27 @@ package config
 
 import "time"
 
-const DefaultPollInterval = 2 * time.Minute
+const (
+	DefaultPollInterval          = 2 * time.Minute
+	DefaultScreenRefreshInterval = 5 * time.Second
+)
 
 var DefaultCopilotAllowTools = []string{}
 
 func DefaultFiles() Files {
 	return Files{
 		App: App{
-			HTTPPort:          8080,
-			PollInterval:      DefaultPollInterval,
-			DataDir:           "data",
-			ArtifactsDir:      "artifacts",
-			WorkspaceDir:      ".",
-			Provider:          "mock",
-			Model:             "",
-			CopilotAllowTools: append([]string(nil), DefaultCopilotAllowTools...),
-			PRTitleTemplate:   "[#{{issue_number}}]{{issue_title}}",
-			BranchTemplate:    "issue_{{issue_number}}",
+			HTTPPort:              8080,
+			PollInterval:          DefaultPollInterval,
+			ScreenRefreshInterval: DefaultScreenRefreshInterval,
+			DataDir:               "data",
+			ArtifactsDir:          "artifacts",
+			WorkspaceDir:          ".",
+			Provider:              "mock",
+			Model:                 "",
+			CopilotAllowTools:     append([]string(nil), DefaultCopilotAllowTools...),
+			PRTitleTemplate:       "[#{{issue_number}}]{{issue_title}}",
+			BranchTemplate:        "issue_{{issue_number}}",
 			Providers: []ProviderSpec{
 				{
 					Name:   "mock",

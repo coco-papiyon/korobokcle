@@ -12,7 +12,7 @@ const { data: notificationData, reload: reloadNotificationData } = useAsyncData(
 const provider = ref('mock')
 const model = ref('')
 const copilotAllowToolsText = ref('')
-const pollInterval = ref(120)
+const screenRefreshInterval = ref(5)
 const prTitleTemplate = ref('')
 const branchTemplate = ref('')
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -21,6 +21,8 @@ const providerCatalog = ref<ProviderSpec[]>([])
 const notificationChannels = ref<NotificationChannel[]>([])
 const notificationSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const notificationSaveError = ref<string | null>(null)
+const screenRefreshIntervalOptions = [0, 5, 10, 20, 30] as const
+const templateVariables = ['{{issue_number}}', '{{issue_title}}', '{{repository}}'] as const
 
 const notificationEventOptions = [
   { value: 'waiting_design_approval', label: 'Waiting Design Approval' },
@@ -40,7 +42,7 @@ watch(
     provider.value = config?.provider ?? 'mock'
     model.value = config?.model ?? ''
     copilotAllowToolsText.value = (config?.copilotAllowTools ?? []).join('\n')
-    pollInterval.value = config?.pollInterval ?? 120
+    screenRefreshInterval.value = config?.screenRefreshInterval ?? 5
     prTitleTemplate.value = config?.prTitleTemplate ?? ''
     branchTemplate.value = config?.branchTemplate ?? ''
     providerCatalog.value = config?.providers ?? []
@@ -60,10 +62,10 @@ watch(
 )
 
 async function persistConfig() {
-  const interval = Number(pollInterval.value)
-  if (!Number.isInteger(interval) || interval < 1 || interval > 86400) {
+  const interval = Number(screenRefreshInterval.value)
+  if (!Number.isInteger(interval) || !screenRefreshIntervalOptions.includes(interval as (typeof screenRefreshIntervalOptions)[number])) {
     saveState.value = 'error'
-    saveError.value = 'Poll interval must be a whole number between 1 and 86400 seconds.'
+    saveError.value = 'Screen refresh interval must be one of 0, 5, 10, 20, or 30 seconds.'
     return
   }
 
@@ -74,14 +76,14 @@ async function persistConfig() {
       provider: provider.value,
       model: model.value,
       copilotAllowTools: parseCopilotAllowTools(copilotAllowToolsText.value),
-      pollInterval: interval,
+      screenRefreshInterval: interval,
       prTitleTemplate: prTitleTemplate.value,
       branchTemplate: branchTemplate.value,
     })
     provider.value = saved.provider
     model.value = saved.model
     copilotAllowToolsText.value = (saved.copilotAllowTools ?? []).join('\n')
-    pollInterval.value = saved.pollInterval
+    screenRefreshInterval.value = saved.screenRefreshInterval
     prTitleTemplate.value = saved.prTitleTemplate
     branchTemplate.value = saved.branchTemplate
     saveState.value = 'saved'
@@ -135,74 +137,87 @@ function parseCopilotAllowTools(value: string) {
 
 <template>
   <AppShell
-    title="Settings"
+    title="アプリケーション設定"
     description="アプリの動作設定を管理します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <section class="panel stack-md">
         <div class="rule-editor__header">
           <div>
-            <h2>Application Settings</h2>
-            <p class="text-muted">provider、model、pollInterval を画面から変更できます。</p>
+            <h2>アプリケーション設定</h2>
+            <p class="text-muted">provider、model、画面の自動更新間隔をここから変更できます。</p>
           </div>
           <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistConfig">
-            {{ saveState === 'saving' ? 'Saving...' : 'Save Settings' }}
+            {{ saveState === 'saving' ? '保存中...' : '設定を保存' }}
           </button>
         </div>
 
-        <label class="field">
-          <span class="field__label">Provider</span>
-          <select v-model="provider" class="field__control" @change="model = ''">
-            <option v-for="option in providerOptions(providerCatalog)" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
+        <div class="settings-list">
+          <label class="settings-row">
+            <span class="settings-row__label">プロバイダー</span>
+            <select v-model="provider" class="field__control settings-row__control" @change="model = ''">
+              <option v-for="option in providerOptions(providerCatalog)" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+            <p class="settings-row__description text-muted">利用する AI プロバイダーを選択します。</p>
+          </label>
 
-        <label class="field">
-          <span class="field__label">Model</span>
-          <select v-model="model" class="field__control">
-            <option v-for="option in availableModelOptions" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
-        </label>
+          <label class="settings-row">
+            <span class="settings-row__label">モデル</span>
+            <select v-model="model" class="field__control settings-row__control">
+              <option v-for="option in availableModelOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+            <p class="settings-row__description text-muted">選択したプロバイダーで使うモデルを指定します。</p>
+          </label>
 
-        <label v-if="provider === 'copilot'" class="field">
-          <span class="field__label">Copilot Allow Tools</span>
-          <textarea
-            v-model="copilotAllowToolsText"
-            class="field__control"
-            rows="6"
-            spellcheck="false"
-          />
-          <p class="text-muted">One tool per line. Example: <code>write</code>, <code>shell(go:*)</code>, <code>shell(git:*)</code>.</p>
-        </label>
+          <label v-if="provider === 'copilot'" class="settings-row">
+            <span class="settings-row__label">Copilot 許可ツール</span>
+            <textarea
+              v-model="copilotAllowToolsText"
+              class="field__control field__control--textarea settings-row__control"
+              rows="6"
+              spellcheck="false"
+            />
+            <p class="settings-row__description text-muted">1 行につき 1 ツールを記述します。例: <code>write</code>, <code>shell(go:*)</code>, <code>shell(git:*)</code>。</p>
+          </label>
 
-        <label class="field">
-          <span class="field__label">Poll Interval (seconds)</span>
-          <input
-            v-model.number="pollInterval"
-            class="field__control"
-            type="number"
-            min="1"
-            max="86400"
-            step="1"
-          />
-          <p class="text-muted">Whole seconds only. The watcher uses the updated value on the next poll cycle.</p>
-        </label>
+          <label class="settings-row">
+            <span class="settings-row__label">画面自動更新間隔（秒）</span>
+            <select v-model.number="screenRefreshInterval" class="field__control settings-row__control">
+              <option v-for="option in screenRefreshIntervalOptions" :key="option" :value="option">
+                {{ option }}
+              </option>
+            </select>
+            <p class="settings-row__description text-muted">0 にすると自動更新を止めます。Dashboard と Job Detail に反映されます。</p>
+          </label>
 
-        <label class="field">
-          <span class="field__label">PR Title Template</span>
-          <input v-model="prTitleTemplate" class="field__control" type="text" />
-          <p class="text-muted">Available: <code>{{issue_number}}</code>, <code>{{issue_title}}</code>, <code>{{repository}}</code>.</p>
-        </label>
+          <label class="settings-row">
+            <span class="settings-row__label">PR Title Template</span>
+            <input v-model="prTitleTemplate" class="field__control settings-row__control" type="text" />
+            <p class="settings-row__description text-muted">
+              利用可能な変数:
+              <template v-for="(variable, index) in templateVariables" :key="variable">
+                <code>{{ variable }}</code><span v-if="index < templateVariables.length - 1">, </span>
+              </template>
+              。
+            </p>
+          </label>
 
-        <label class="field">
-          <span class="field__label">Branch Template</span>
-          <input v-model="branchTemplate" class="field__control" type="text" />
-          <p class="text-muted">Available: <code>{{issue_number}}</code>, <code>{{issue_title}}</code>, <code>{{repository}}</code>.</p>
-        </label>
+          <label class="settings-row">
+            <span class="settings-row__label">Branch Template</span>
+            <input v-model="branchTemplate" class="field__control settings-row__control" type="text" />
+            <p class="settings-row__description text-muted">
+              利用可能な変数:
+              <template v-for="(variable, index) in templateVariables" :key="variable">
+                <code>{{ variable }}</code><span v-if="index < templateVariables.length - 1">, </span>
+              </template>
+              。
+            </p>
+          </label>
+        </div>
 
         <div v-if="saveState === 'saved'" class="notice notice-success">app.yaml を更新しました。</div>
         <div v-if="saveState === 'error'" class="notice notice-danger">{{ saveError }}</div>
@@ -211,7 +226,7 @@ function parseCopilotAllowTools(value: string) {
       <section class="panel stack-md">
         <div class="rule-editor__header">
           <div>
-            <h2>Notification Settings</h2>
+            <h2>通知設定</h2>
             <p class="text-muted">通知チャネルごとに、どのタイミングで通知するかを切り替えます。</p>
           </div>
           <button
@@ -220,7 +235,7 @@ function parseCopilotAllowTools(value: string) {
             :disabled="notificationSaveState === 'saving'"
             @click="persistNotificationConfig"
           >
-            {{ notificationSaveState === 'saving' ? 'Saving...' : 'Save Notifications' }}
+            {{ notificationSaveState === 'saving' ? '保存中...' : '通知を保存' }}
           </button>
         </div>
 

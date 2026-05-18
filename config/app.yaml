@@ -1,5 +1,6 @@
 httpPort: 8080
 pollInterval: 2m0s
+screenRefreshInterval: 5s
 dataDir: data
 artifactsDir: artifacts
 workspaceDir: .

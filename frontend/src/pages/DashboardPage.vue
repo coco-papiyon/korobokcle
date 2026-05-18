@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
 import DataTable from '@/components/DataTable.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
-import { fetchJobs } from '@/lib/api'
+import { fetchAppConfig, fetchJobs } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import type { Job } from '@/types'
 
@@ -39,8 +40,14 @@ function mergeJobs(current: Job[] | null, incoming: Job[]) {
   })
 }
 
+const { data: appConfig } = useAsyncData(fetchAppConfig)
+const refreshIntervalMs = computed(() => {
+  const seconds = appConfig.value?.screenRefreshInterval ?? 0
+  return seconds > 0 ? seconds * 1000 : 0
+})
+
 const { data, isLoading, isRefreshing, error } = useAsyncData(fetchJobs, {
-  pollIntervalMs: 5000,
+  pollIntervalMs: refreshIntervalMs,
   mergeData: mergeJobs,
 })
 </script>

@@ -6,6 +6,7 @@ import PanelCard from '@/components/PanelCard.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import {
+  fetchAppConfig,
   fetchJobDetail,
   submitDesignApproval,
   submitDesignRerun,
@@ -22,8 +23,13 @@ import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const jobID = computed(() => String(route.params.id))
+const { data: appConfig } = useAsyncData(fetchAppConfig)
 const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetchJobDetail(jobID.value))
 let refreshTimer: number | null = null
+const refreshIntervalMs = computed(() => {
+  const seconds = appConfig.value?.screenRefreshInterval ?? 0
+  return seconds > 0 ? seconds * 1000 : 0
+})
 
 function isPollingState(state?: string) {
   if (!state) {
@@ -46,23 +52,16 @@ function stopPolling() {
   }
 }
 
-function startPolling() {
-  if (refreshTimer !== null) {
-    return
-  }
-  refreshTimer = window.setInterval(() => {
-    void reload({ silent: true })
-  }, 5000)
-}
-
 watch(
-  () => data.value?.job.state,
-  (state) => {
-    if (isPollingState(state)) {
-      startPolling()
+  [() => data.value?.job.state, refreshIntervalMs],
+  ([state, intervalMs]) => {
+    stopPolling()
+    if (!isPollingState(state) || !intervalMs || intervalMs <= 0) {
       return
     }
-    stopPolling()
+    refreshTimer = window.setInterval(() => {
+      void reload({ silent: true })
+    }, intervalMs)
   },
   { immediate: true },
 )
