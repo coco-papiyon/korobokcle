@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -31,5 +32,13 @@ func TestLoadOrInitCreatesDefaults(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, path)); err != nil {
 			t.Fatalf("expected file %s to exist: %v", path, err)
 		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, "config", "app.yaml"))
+	if err != nil {
+		t.Fatalf("read app.yaml: %v", err)
+	}
+	if bytes.Contains(raw, []byte("providers:")) {
+		t.Fatalf("expected default app config to omit providers, got %s", string(raw))
 	}
 }

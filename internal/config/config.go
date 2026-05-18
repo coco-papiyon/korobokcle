@@ -15,7 +15,6 @@ type App struct {
 	CopilotAllowTools     []string              `yaml:"copilotAllowTools"`
 	PRTitleTemplate       string                `yaml:"prTitleTemplate"`
 	BranchTemplate        string                `yaml:"branchTemplate"`
-	Providers             []ProviderSpec        `yaml:"providers"`
 	SQLitePath            string                `yaml:"sqlitePath"`
 	ShutdownTimeout       time.Duration         `yaml:"shutdownTimeout"`
 }

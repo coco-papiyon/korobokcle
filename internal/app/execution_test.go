@@ -12,13 +12,7 @@ func TestResolveExecutionConfigUsesAppSettingsByDefault(t *testing.T) {
 	cfg := config.NewService(t.TempDir(), config.Files{
 		App: config.App{
 			Provider: "codex",
-			Model:    "gpt-4.1",
-			Providers: []config.ProviderSpec{
-				{
-					Name:   "codex",
-					Models: []string{"gpt-4.1", "gpt-4o"},
-				},
-			},
+			Model:    "gpt-5.4",
 		},
 		WatchRules: config.WatchRulesFile{
 			Rules: []config.WatchRule{
@@ -34,8 +28,8 @@ func TestResolveExecutionConfigUsesAppSettingsByDefault(t *testing.T) {
 	if got.Provider != "codex" {
 		t.Fatalf("expected provider codex, got %q", got.Provider)
 	}
-	if got.Model != "gpt-4.1" {
-		t.Fatalf("expected model gpt-4.1, got %q", got.Model)
+	if got.Model != "gpt-5.4" {
+		t.Fatalf("expected model gpt-5.4, got %q", got.Model)
 	}
 }
 
@@ -45,24 +39,14 @@ func TestResolveExecutionConfigUsesWatchRuleOverrides(t *testing.T) {
 	cfg := config.NewService(t.TempDir(), config.Files{
 		App: config.App{
 			Provider: "codex",
-			Model:    "gpt-4.1",
-			Providers: []config.ProviderSpec{
-				{
-					Name:   "codex",
-					Models: []string{"gpt-4.1", "gpt-4o"},
-				},
-				{
-					Name:   "copilot",
-					Models: []string{"gpt-4.1", "gpt-4o"},
-				},
-			},
+			Model:    "gpt-5.4",
 		},
 		WatchRules: config.WatchRulesFile{
 			Rules: []config.WatchRule{
 				{
 					ID:       "rule-1",
 					Provider: "copilot",
-					Model:    "o4-mini",
+					Model:    "gpt-4.1",
 				},
 			},
 		},
@@ -75,8 +59,8 @@ func TestResolveExecutionConfigUsesWatchRuleOverrides(t *testing.T) {
 	if got.Provider != "copilot" {
 		t.Fatalf("expected provider copilot, got %q", got.Provider)
 	}
-	if got.Model != "o4-mini" {
-		t.Fatalf("expected model o4-mini, got %q", got.Model)
+	if got.Model != "gpt-4.1" {
+		t.Fatalf("expected model gpt-4.1, got %q", got.Model)
 	}
 }
 
@@ -86,12 +70,6 @@ func TestResolveExecutionConfigUsesEmptyModelWhenAppModelEmpty(t *testing.T) {
 	cfg := config.NewService(t.TempDir(), config.Files{
 		App: config.App{
 			Provider: "codex",
-			Providers: []config.ProviderSpec{
-				{
-					Name:   "codex",
-					Models: []string{"gpt-4.1", "gpt-4o"},
-				},
-			},
 		},
 		WatchRules: config.WatchRulesFile{
 			Rules: []config.WatchRule{

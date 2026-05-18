@@ -916,7 +916,7 @@ func toAppConfigResponse(app config.App) appConfigResponse {
 		PRTitleTemplate:       prTitleTemplate,
 		BranchTemplate:        branchTemplate,
 		MonitoredRepositories: toMonitoredRepositoryResponses(app.MonitoredRepositories),
-		Providers:             toProviderSpecResponses(app.Providers),
+		Providers:             toProviderSpecResponses(config.ProviderCatalog()),
 	}
 }
 
@@ -1054,7 +1054,7 @@ func (s *Server) providerSpecByName(name string) (config.ProviderSpec, error) {
 	if spec, ok := s.config.ProviderByName(trimmed); ok {
 		return spec, nil
 	}
-	return config.ProviderSpec{}, fmt.Errorf("provider must be one of %s", strings.Join(providerNames(s.config.Providers()), ", "))
+	return config.ProviderSpec{}, fmt.Errorf("provider must be one of %s", strings.Join(config.ProviderNames(), ", "))
 }
 
 func (s *Server) parseOptionalProvider(provider string) (string, error) {
@@ -1070,12 +1070,15 @@ func (s *Server) parseOptionalProvider(provider string) (string, error) {
 
 func (s *Server) validateModelForProvider(provider string, model string) (string, error) {
 	trimmedModel := strings.TrimSpace(model)
-	if trimmedModel == "" {
-		return "", nil
-	}
 	spec, err := s.providerSpecByName(provider)
 	if err != nil {
 		return "", err
+	}
+	if trimmedModel == "" {
+		return "", nil
+	}
+	if len(spec.Models) == 0 {
+		return "", fmt.Errorf("model must be empty for provider %q", spec.Name)
 	}
 	for _, candidate := range spec.Models {
 		if candidate == trimmedModel {
@@ -1091,16 +1094,6 @@ func (s *Server) validateRuleModel(provider string, model string) (string, error
 		effectiveProvider = s.config.App().Provider
 	}
 	return s.validateModelForProvider(effectiveProvider, model)
-}
-
-func providerNames(providers []config.ProviderSpec) []string {
-	names := make([]string, 0, len(providers))
-	for _, provider := range providers {
-		if trimmed := strings.TrimSpace(provider.Name); trimmed != "" {
-			names = append(names, trimmed)
-		}
-	}
-	return names
 }
 
 func modelNames(provider config.ProviderSpec) []string {

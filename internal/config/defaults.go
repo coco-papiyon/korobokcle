@@ -24,22 +24,8 @@ func DefaultFiles() Files {
 			CopilotAllowTools:     append([]string(nil), DefaultCopilotAllowTools...),
 			PRTitleTemplate:       "[#{{issue_number}}]{{issue_title}}",
 			BranchTemplate:        "issue_{{issue_number}}",
-			Providers: []ProviderSpec{
-				{
-					Name:   "mock",
-					Models: []string{},
-				},
-				{
-					Name:   "copilot",
-					Models: []string{"gpt-4.1", "gpt-4o", "o4-mini"},
-				},
-				{
-					Name:   "codex",
-					Models: []string{"gpt-4.1", "gpt-4o", "o4-mini"},
-				},
-			},
-			SQLitePath:      "data/korobokcle.db",
-			ShutdownTimeout: 10 * time.Second,
+			SQLitePath:            "data/korobokcle.db",
+			ShutdownTimeout:       10 * time.Second,
 		},
 		WatchRules: WatchRulesFile{
 			Rules: []WatchRule{

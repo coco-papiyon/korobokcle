@@ -15,11 +15,28 @@ func resolveExecutionConfig(cfg *config.Service, watchRuleID string) (skill.Exec
 	}
 
 	provider := firstNonEmpty(rule.Provider, cfg.App().Provider)
-	if _, ok := cfg.ProviderByName(strings.ToLower(strings.TrimSpace(provider))); !ok {
+	spec, ok := cfg.ProviderByName(strings.ToLower(strings.TrimSpace(provider)))
+	if !ok {
 		return skill.ExecutionConfig{}, fmt.Errorf("provider %q not found", provider)
 	}
 
 	model := firstNonEmpty(rule.Model, cfg.App().Model)
+	if trimmedModel := strings.TrimSpace(model); trimmedModel != "" {
+		if len(spec.Models) == 0 {
+			return skill.ExecutionConfig{}, fmt.Errorf("model %q is not valid for provider %q", trimmedModel, spec.Name)
+		}
+		allowed := false
+		for _, candidate := range spec.Models {
+			if candidate == trimmedModel {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return skill.ExecutionConfig{}, fmt.Errorf("model %q is not valid for provider %q", trimmedModel, spec.Name)
+		}
+		model = trimmedModel
+	}
 	return skill.ExecutionConfig{
 		Provider: strings.ToLower(strings.TrimSpace(provider)),
 		Model:    strings.TrimSpace(model),
