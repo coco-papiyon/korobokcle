@@ -59,13 +59,14 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 	if err != nil {
 		return AIResult{}, err
 	}
+	workDir := r.executionWorkDir(definition, execution, contextData.ArtifactDir)
 
 	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
 	result, err := provider.Run(ctx, AIRequest{
 		SkillName:   definition.Name,
 		Prompt:      prompt,
 		Model:       execution.Model,
-		WorkDir:     contextData.ArtifactDir,
+		WorkDir:     workDir,
 		ArtifactDir: contextData.ArtifactDir,
 		OutputPath:  outputPath,
 	})
@@ -117,13 +118,14 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 	if err != nil {
 		return AIResult{}, err
 	}
+	workDir := r.executionWorkDir(definition, execution, contextData.ArtifactDir)
 
 	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
 	result, err := provider.Run(ctx, AIRequest{
 		SkillName:   definition.Name,
 		Prompt:      prompt,
 		Model:       execution.Model,
-		WorkDir:     contextData.ArtifactDir,
+		WorkDir:     workDir,
 		ArtifactDir: contextData.ArtifactDir,
 		OutputPath:  outputPath,
 	})
@@ -175,13 +177,14 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 	if err != nil {
 		return AIResult{}, err
 	}
+	workDir := r.executionWorkDir(definition, execution, contextData.ArtifactDir)
 
 	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
 	result, err := provider.Run(ctx, AIRequest{
 		SkillName:   definition.Name,
 		Prompt:      prompt,
 		Model:       execution.Model,
-		WorkDir:     contextData.ArtifactDir,
+		WorkDir:     workDir,
 		ArtifactDir: contextData.ArtifactDir,
 		OutputPath:  outputPath,
 	})
@@ -202,6 +205,14 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 }
 
 func (r *Runner) providerForDefinition(definition Definition, execution ExecutionConfig) (AIProvider, error) {
+	providerName := r.providerNameForDefinition(definition, execution)
+	if providerName == "" {
+		return nil, fmt.Errorf("skill provider is not configured")
+	}
+	return ProviderFor(providerName)
+}
+
+func (r *Runner) providerNameForDefinition(definition Definition, execution ExecutionConfig) string {
 	providerName := strings.TrimSpace(execution.Provider)
 	if providerName == "" {
 		providerName = strings.TrimSpace(r.defaultProviderName)
@@ -209,8 +220,12 @@ func (r *Runner) providerForDefinition(definition Definition, execution Executio
 	if providerName == "" {
 		providerName = strings.TrimSpace(definition.Provider)
 	}
-	if providerName == "" {
-		return nil, fmt.Errorf("skill provider is not configured")
+	return providerName
+}
+
+func (r *Runner) executionWorkDir(definition Definition, execution ExecutionConfig, artifactDir string) string {
+	if strings.EqualFold(r.providerNameForDefinition(definition, execution), "codex") {
+		return r.root
 	}
-	return ProviderFor(providerName)
+	return artifactDir
 }

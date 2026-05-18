@@ -88,13 +88,7 @@ func runPendingImplementations(ctx context.Context, root string, cfg *config.Ser
 			continue
 		}
 
-		result, err := runner.RunImplementation(ctx, runSpec.SkillName, contextData, execution)
-		if err != nil {
-			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
-			continue
-		}
-
-		if err := applyImplementationPatch(ctx, root, contextData.ArtifactDir, result.Output); err != nil {
+		if _, err := runner.RunImplementation(ctx, runSpec.SkillName, contextData, execution); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 			continue
 		}

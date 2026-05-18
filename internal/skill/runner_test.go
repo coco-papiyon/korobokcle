@@ -79,7 +79,7 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestRunImplementationUsesArtifactDirAsWorkDir(t *testing.T) {
+func TestRunImplementationUsesRootAsWorkDirForCodex(t *testing.T) {
 	root := t.TempDir()
 	skillDir := filepath.Join(root, "skills", "default", "implement")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -111,7 +111,7 @@ func TestRunImplementationUsesArtifactDirAsWorkDir(t *testing.T) {
 		t.Fatalf("RunImplementation() error = %v", err)
 	}
 
-	if got := strings.TrimSpace(result.Output); got != artifactDir {
-		t.Fatalf("expected work dir %q, got %q", artifactDir, got)
+	if got := strings.TrimSpace(result.Output); got != root {
+		t.Fatalf("expected work dir %q, got %q", root, got)
 	}
 }
