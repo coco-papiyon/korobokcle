@@ -27,6 +27,10 @@ type BranchPusher interface {
 	Push(ctx context.Context, req PRCreateRequest) error
 }
 
+type PRCommentSubmitter interface {
+	Submit(ctx context.Context, req PRCommentSubmitRequest) error
+}
+
 type PRCreateRequest struct {
 	Repository  string
 	BranchName  string
@@ -35,6 +39,14 @@ type PRCreateRequest struct {
 	Body        string
 	ArtifactDir string
 	WorkDir     string
+	ReuseBranch bool
+}
+
+type PRCommentSubmitRequest struct {
+	Repository  string
+	PullNumber  int
+	Body        string
+	ArtifactDir string
 }
 
 type MockBranchPusher struct{}
@@ -45,11 +57,18 @@ func (p *MockBranchPusher) Push(_ context.Context, _ PRCreateRequest) error {
 
 type MockPRCreator struct{}
 
+type MockPRCommentSubmitter struct{}
+
 func (c *MockPRCreator) Create(_ context.Context, req PRCreateRequest) (string, error) {
 	return fmt.Sprintf("https://github.com/%s/pull/%s", req.Repository, strings.ReplaceAll(req.BranchName, "/", "-")), nil
 }
 
+func (MockPRCommentSubmitter) Submit(_ context.Context, _ PRCommentSubmitRequest) error {
+	return nil
+}
+
 type GHPRCreator struct{}
+type GHPRCommentSubmitter struct{}
 
 type GitBranchPusher struct {
 	Remote string
@@ -81,7 +100,11 @@ func (p *GitBranchPusher) Push(ctx context.Context, req PRCreateRequest) error {
 }
 
 func preparePRBranch(ctx context.Context, req PRCreateRequest) error {
-	branchCmd := exec.CommandContext(ctx, "git", "checkout", "-B", req.BranchName)
+	branchArgs := []string{"checkout", "-B", req.BranchName}
+	if req.ReuseBranch {
+		branchArgs = []string{"checkout", req.BranchName}
+	}
+	branchCmd := exec.CommandContext(ctx, "git", branchArgs...)
 	branchCmd.Dir = req.WorkDir
 	branchOut, err := branchCmd.CombinedOutput()
 	branchOutput := strings.TrimSpace(string(branchOut))
@@ -152,6 +175,45 @@ func (c *GHPRCreator) Create(ctx context.Context, req PRCreateRequest) (string, 
 	return output, nil
 }
 
+func (GHPRCommentSubmitter) Submit(ctx context.Context, req PRCommentSubmitRequest) error {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return fmt.Errorf("gh command is not available: %w", err)
+	}
+	if strings.TrimSpace(req.Repository) == "" {
+		return fmt.Errorf("repository is required")
+	}
+	if req.PullNumber < 1 {
+		return fmt.Errorf("pull number must be positive")
+	}
+	if strings.TrimSpace(req.Body) == "" {
+		return fmt.Errorf("review body is empty")
+	}
+	if err := os.MkdirAll(req.ArtifactDir, 0o755); err != nil {
+		return err
+	}
+
+	bodyPath := filepath.Join(req.ArtifactDir, "gh-pr-review-body.md")
+	if err := os.WriteFile(bodyPath, []byte(req.Body), 0o644); err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, "gh", "pr", "review",
+		fmt.Sprintf("%d", req.PullNumber),
+		"--repo", req.Repository,
+		"--comment",
+		"--body-file", bodyPath,
+	)
+	raw, err := cmd.CombinedOutput()
+	output := strings.TrimSpace(string(raw))
+	if writeErr := os.WriteFile(filepath.Join(req.ArtifactDir, "gh-pr-review.log"), []byte(output), 0o644); writeErr != nil {
+		return writeErr
+	}
+	if err != nil {
+		return fmt.Errorf("gh pr review failed: %w: %s", err, output)
+	}
+	return nil
+}
+
 func startPRWorker(ctx context.Context, repoRoot string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
 	pusher, creator := newPRPublisher(cfg.App().Provider)
 
@@ -180,6 +242,13 @@ func newPRPublisher(provider string) (BranchPusher, PRCreator) {
 		return &MockBranchPusher{}, &MockPRCreator{}
 	}
 	return &GitBranchPusher{Remote: "origin"}, &GHPRCreator{}
+}
+
+func newPRCommentSubmitter(provider string) PRCommentSubmitter {
+	if strings.EqualFold(strings.TrimSpace(provider), "mock") {
+		return MockPRCommentSubmitter{}
+	}
+	return GHPRCommentSubmitter{}
 }
 
 func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, pusher BranchPusher, creator PRCreator, root string, logger *log.Logger) error {
@@ -256,6 +325,25 @@ func buildPRCreateRequest(cfg *config.Service, job domain.Job, workDir string) (
 	}, nil
 }
 
+func buildPRFeedbackPushRequest(cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
+	artifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerPR)
+	summaryRaw, err := readPRFeedbackSummaryArtifact(cfg, job.ID)
+	if err != nil {
+		return PRCreateRequest{}, err
+	}
+
+	return PRCreateRequest{
+		Repository:  job.Repository,
+		BranchName:  job.BranchName,
+		BaseBranch:  job.BranchName,
+		Title:       fmt.Sprintf("Address review feedback for PR #%d", job.GitHubNumber),
+		Body:        strings.TrimSpace(string(summaryRaw)),
+		ArtifactDir: artifactDir,
+		WorkDir:     workDir,
+		ReuseBranch: true,
+	}, nil
+}
+
 func resolveWatchRuleBranch(cfg *config.Service, watchRuleID string) string {
 	rule, ok := cfg.WatchRuleByID(watchRuleID)
 	if !ok {
@@ -274,6 +362,25 @@ func readOptionalFixSummary(cfg *config.Service, jobID string) (string, error) {
 		return "", nil
 	}
 	return "", err
+}
+
+func readPRFeedbackSummaryArtifact(cfg *config.Service, jobID string) ([]byte, error) {
+	summaryRaw, err := readFirstArtifactFile(
+		artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, jobID, artifacts.WorkerImplementation),
+		"review_fix.md",
+		"result.md",
+		"implement.md",
+		"summary.md",
+	)
+	if err == nil {
+		return summaryRaw, nil
+	}
+	return readFirstArtifactFile(
+		artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, jobID, artifacts.WorkerFix),
+		"review_fix.md",
+		"result.md",
+		"fix-summary.md",
+	)
 }
 
 func buildPRBody(job domain.Job, summary string, fixSummary string) string {

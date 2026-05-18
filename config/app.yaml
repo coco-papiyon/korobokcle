@@ -5,7 +5,7 @@ dataDir: data
 artifactsDir: artifacts
 workspaceDir: .
 monitoredRepositories:
-    - repository: owner/repository
+    - repository: https://github.com/coco-papiyon/korobokcle
       workers: 1
 provider: codex
 model: gpt-5.4-mini

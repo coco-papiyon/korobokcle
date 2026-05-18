@@ -1,5 +1,5 @@
 rules:
-    - id: rule-1
+    - id: issue
       name: issue
       repositories:
         - https://github.com/coco-papiyon/korobokcle
@@ -18,7 +18,7 @@ rules:
       skillSet: default
       testProfile: go-default
       enabled: true
-    - id: rule-2
+    - id: PR
       name: PR
       repositories:
         - https://github.com/coco-papiyon/korobokcle
@@ -36,8 +36,8 @@ rules:
       skillSet: default
       testProfile: go-default
       enabled: true
-    - id: rule-3
-      name: New Rule 3
+    - id: issue(project)
+      name: issue(project)
       repositories:
         - https://github.com/coco-papiyon/korobokcle
       target: issue_project
@@ -58,3 +58,21 @@ rules:
       skillSet: default
       testProfile: go-default
       enabled: false
+    - id: review
+      name: review
+      repositories:
+        - https://github.com/coco-papiyon/korobokcle
+      target: pull_request_review
+      branch: ""
+      projectName: ""
+      labels: []
+      projectFilters: []
+      titlePattern: ""
+      authors: []
+      assignees: []
+      excludeDraftPR: true
+      provider: ""
+      model: ""
+      skillSet: default
+      testProfile: go-default
+      enabled: true

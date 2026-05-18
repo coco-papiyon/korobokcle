@@ -1,7 +1,9 @@
 package skill
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -150,5 +152,40 @@ func TestRunImplementationUsesRootAsWorkDirForCopilot(t *testing.T) {
 
 	if got := strings.TrimSpace(result.Output); got != root {
 		t.Fatalf("expected work dir %q, got %q", root, got)
+	}
+}
+
+func TestRunDesignWritesExecutionLogsToRunnerLogger(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "skills", "default", "design")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
+		t.Fatalf("WriteFile(prompt) error = %v", err)
+	}
+
+	var buf bytes.Buffer
+	runner := NewRunner(root, root, "mock", nil).WithLogger(log.New(&buf, "", 0))
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-3", artifacts.WorkerDesign)
+	_, err := runner.RunDesign(context.Background(), "design", DesignContext{
+		Title:       "My Issue",
+		ArtifactDir: artifactDir,
+	}, ExecutionConfig{})
+	if err != nil {
+		t.Fatalf("RunDesign() error = %v", err)
+	}
+
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "ai execution started") {
+		t.Fatalf("expected execution start log, got %q", logOutput)
+	}
+	if !strings.Contains(logOutput, "ai execution completed") {
+		t.Fatalf("expected execution completion log, got %q", logOutput)
 	}
 }

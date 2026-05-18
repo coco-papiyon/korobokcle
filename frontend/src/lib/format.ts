@@ -16,5 +16,8 @@ export function formatStateLabel(value: string): string {
   if (value.startsWith('model:')) {
     return `model ${value.slice('model:'.length)}`
   }
+  if (value === 'interrupted') {
+    return 'interrupted'
+  }
   return value.replaceAll('_', ' ')
 }

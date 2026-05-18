@@ -13,6 +13,7 @@ type stubRepositoryLister struct {
 	issues        []domain.RepositoryItem
 	projectIssues []domain.RepositoryItem
 	prs           []domain.RepositoryItem
+	prReviews     []domain.RepositoryItem
 }
 
 func (s stubRepositoryLister) ListIssues(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
@@ -25,6 +26,10 @@ func (s stubRepositoryLister) ListProjectIssues(context.Context, string, time.Ti
 
 func (s stubRepositoryLister) ListPullRequests(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
 	return s.prs, nil
+}
+
+func (s stubRepositoryLister) ListPullRequestReviews(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
+	return s.prReviews, nil
 }
 
 func TestPollerPollMatchedIssue(t *testing.T) {
@@ -111,5 +116,44 @@ func TestPollerPollMatchedProjectIssue(t *testing.T) {
 	}
 	if events[0].Type != domain.DomainEventIssueMatched {
 		t.Fatalf("expected issue_matched, got %s", events[0].Type)
+	}
+}
+
+func TestPollerPollMatchedPullRequestReview(t *testing.T) {
+	t.Parallel()
+
+	poller := NewPoller(stubRepositoryLister{
+		prReviews: []domain.RepositoryItem{
+			{
+				Repository: "owner/repo",
+				Number:     12,
+				Title:      "Fix bug",
+				Labels:     []string{"ai:fix"},
+				Target:     domain.TargetPullRequestReview,
+				UpdatedAt:  time.Now().UTC(),
+			},
+		},
+	}, func() []config.WatchRule {
+		return []config.WatchRule{
+			{
+				ID:           "rule-1",
+				Name:         "PR Feedback Rule",
+				Enabled:      true,
+				Repositories: []string{"owner/repo"},
+				Target:       "pull_request_review",
+				Labels:       []string{"ai:fix"},
+			},
+		}
+	}, nil)
+
+	events, err := poller.Poll(context.Background())
+	if err != nil {
+		t.Fatalf("Poll() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Type != domain.DomainEventPRReviewMatched {
+		t.Fatalf("expected pull_request_review_matched, got %s", events[0].Type)
 	}
 }

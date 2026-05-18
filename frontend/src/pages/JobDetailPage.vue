@@ -13,6 +13,7 @@ import {
   submitFinalApproval,
   submitImplementationRerun,
   submitPRRerun,
+  submitReviewComment,
   submitReviewRerun,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
@@ -78,10 +79,13 @@ const designRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const prRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const reviewRerunState = ref<'idle' | 'saving' | 'error'>('idle')
+const reviewSubmitState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const designRerunError = ref<string | null>(null)
 const implementationRerunError = ref<string | null>(null)
 const prRerunError = ref<string | null>(null)
 const reviewRerunError = ref<string | null>(null)
+const reviewSubmitError = ref<string | null>(null)
+const reviewSubmitComment = ref('')
 
 const prCreateInfo = computed(() => {
   const raw = data.value?.prCreateArtifact?.content
@@ -157,6 +161,19 @@ const groupedLogs = computed(() => {
     },
   ].filter((group) => group.items.length > 0)
 })
+const canSubmitReviewComment = computed(() => data.value?.job.type === 'pr_review' && !!data.value?.reviewArtifact)
+const isPRFeedbackJob = computed(() => data.value?.job.type === 'pr_feedback')
+const hasReviewComments = computed(() => (data.value?.reviewComments?.length ?? 0) > 0)
+
+watch(
+  () => data.value?.reviewArtifact?.content,
+  (content) => {
+    if (typeof content === 'string' && reviewSubmitComment.value.trim() === '') {
+      reviewSubmitComment.value = content
+    }
+  },
+  { immediate: true },
+)
 
 function rerunState(action: RerunAction) {
   if (action === 'retry_design') {
@@ -200,13 +217,6 @@ function rerunErrorLabel(action: RerunAction) {
 function formatPayloadPreview(payload: string) {
   try {
     const parsed = JSON.parse(payload) as unknown
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const copy = { ...(parsed as Record<string, unknown>) }
-      if ('body' in copy) {
-        delete copy.body
-      }
-      return JSON.stringify(copy)
-    }
     return JSON.stringify(parsed)
   } catch {
     return payload
@@ -298,6 +308,16 @@ function formatIssueBody(body?: string) {
   return body && body.trim().length > 0 ? body : 'Issue body is empty.'
 }
 
+function formatReviewCommentLocation(path?: string, line?: number) {
+  if (path && line) {
+    return `${path}:${line}`
+  }
+  if (path) {
+    return path
+  }
+  return 'General review comment'
+}
+
 function defaultRerunCommentForEvent(action: RerunAction, event?: JobEvent | null) {
   if (!event || action !== 'retry_implementation') {
     return ''
@@ -358,6 +378,19 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
   } catch (err) {
     finalApprovalState.value = 'error'
     finalApprovalError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function sendReviewComment() {
+  reviewSubmitState.value = 'saving'
+  reviewSubmitError.value = null
+  try {
+    data.value = await submitReviewComment(jobID.value, reviewSubmitComment.value)
+    reviewSubmitState.value = 'saved'
+    await reload()
+  } catch (err) {
+    reviewSubmitState.value = 'error'
+    reviewSubmitError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
 </script>
@@ -432,11 +465,33 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           </PanelCard>
         </section>
 
-        <PanelCard title="Issue" description="元の issue 内容です。">
+        <PanelCard
+          v-if="!isPRFeedbackJob"
+          title="Issue"
+          description="元の issue 内容です。"
+        >
           <details class="stack-sm">
             <summary class="text-muted">Open issue body</summary>
             <pre class="artifact-view">{{ formatIssueBody(data.issueBody) }}</pre>
           </details>
+        </PanelCard>
+
+        <PanelCard
+          v-if="isPRFeedbackJob && hasReviewComments"
+          title="PR Review Comments"
+          description="修正対象の PR review コメントです。"
+        >
+          <div class="stack-sm">
+            <details v-for="(comment, index) in data.reviewComments" :key="`${comment.url ?? index}`" class="stack-sm">
+              <summary class="text-muted">
+                {{ comment.author || 'unknown' }} / {{ formatReviewCommentLocation(comment.path, comment.line) }}
+              </summary>
+              <pre class="artifact-view">{{ comment.body }}</pre>
+              <p v-if="comment.url">
+                <a class="table-link" :href="comment.url" target="_blank" rel="noreferrer">Open on GitHub</a>
+              </p>
+            </details>
+          </div>
         </PanelCard>
 
         <p v-if="designRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_design') }}: {{ designRerunError }}</p>
@@ -459,8 +514,8 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
 
         <PanelCard
           v-if="data.implementationArtifact"
-          title="Implementation Artifact"
-          description="実装フェーズの成果物サマリです。最終承認前に確認します。"
+          :title="isPRFeedbackJob ? '修正結果' : 'Implementation Artifact'"
+          :description="isPRFeedbackJob ? 'PR review コメントに対する修正結果です。' : '実装フェーズの成果物サマリです。最終承認前に確認します。'"
         >
           <div class="stack-sm">
             <details class="stack-sm">
@@ -472,8 +527,8 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
 
         <PanelCard
           v-if="data.fixArtifact"
-          title="Fix Artifact"
-          description="test_failed 後の修正フェーズで生成された成果物です。"
+          :title="isPRFeedbackJob ? '追加修正結果' : 'Fix Artifact'"
+          :description="isPRFeedbackJob ? '再実行やテスト失敗後の追加修正結果です。' : 'test_failed 後の修正フェーズで生成された成果物です。'"
         >
           <div class="stack-sm">
             <details class="stack-sm">
@@ -486,9 +541,26 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
         <PanelCard
           v-if="data.reviewArtifact"
           title="Review Artifact"
-          description="PR review フェーズの成果物です。"
+          description="PR review フェーズの成果物です。総評コメントとして GitHub へ返せます。"
         >
           <div class="stack-sm">
+            <label v-if="canSubmitReviewComment" class="field field-full">
+              <span class="field__label">Review Comment</span>
+              <textarea
+                v-model="reviewSubmitComment"
+                class="field__control field__control--textarea"
+                rows="10"
+                placeholder="GitHub に返すレビューコメント"
+                spellcheck="false"
+              />
+            </label>
+            <div v-if="canSubmitReviewComment" class="button-row">
+              <button class="button button-primary" type="button" :disabled="reviewSubmitState === 'saving'" @click="sendReviewComment">
+                {{ reviewSubmitState === 'saving' ? 'Submitting Review...' : 'Submit Review Comment' }}
+              </button>
+            </div>
+            <p v-if="reviewSubmitState === 'saved'" class="notice notice-success">レビューコメントを GitHub に送信しました。</p>
+            <p v-if="reviewSubmitState === 'error'" class="notice notice-danger">{{ reviewSubmitError }}</p>
             <details class="stack-sm">
               <summary class="text-muted">{{ data.reviewArtifact.path }}</summary>
               <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>

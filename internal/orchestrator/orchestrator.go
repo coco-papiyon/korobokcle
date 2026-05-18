@@ -54,11 +54,16 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 	if event.Item.Target == domain.TargetPullRequest {
 		jobType = domain.JobTypePRReview
 		state = domain.StateCollectingContext
+	} else if event.Item.Target == domain.TargetPullRequestReview {
+		jobType = domain.JobTypePRFeedback
+		state = domain.StateImplementationRunning
 	}
 
 	branchName := makeBranchName(appConfig, event.Item)
 	if event.Item.Target == domain.TargetPullRequest {
 		branchName = makePRReviewBranchName(event.Item.Number)
+	} else if event.Item.Target == domain.TargetPullRequestReview {
+		branchName = strings.TrimSpace(event.Item.BranchName)
 	}
 
 	job := domain.Job{
@@ -73,8 +78,24 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 		CreatedAt:    time.Now().UTC(),
 		UpdatedAt:    time.Now().UTC(),
 	}
-	if _, err := o.store.FindJobBySource(ctx, job.Repository, job.GitHubNumber, job.Type); err == nil {
-		return nil
+	if existing, err := o.store.FindJobBySource(ctx, job.Repository, job.GitHubNumber, job.Type); err == nil {
+		if jobType != domain.JobTypePRFeedback {
+			return nil
+		}
+		events, err := o.store.ListEvents(ctx, existing.ID)
+		if err != nil {
+			return err
+		}
+		if prFeedbackAlreadyIncorporated(events, event.Item.ReviewComments) {
+			return nil
+		}
+		job.ID = existing.ID
+		job.CreatedAt = existing.CreatedAt
+		job.UpdatedAt = time.Now().UTC()
+		job.State = existing.State
+		if jobType == domain.JobTypePRFeedback && !prFeedbackJobBusy(existing.State) {
+			job.State = domain.StateImplementationRunning
+		}
 	} else if errors.Is(err, domain.ErrJobNotFound) {
 		job.ID = job.ID + "-" + uuid.NewString()[:8]
 	} else {
@@ -87,17 +108,20 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 	log.Printf("info job started job=%s type=%s repository=%s number=%d state=%s watch_rule=%s", job.ID, job.Type, job.Repository, job.GitHubNumber, job.State, job.WatchRuleID)
 
 	payload, err := json.Marshal(map[string]any{
-		"ruleId":     rule.ID,
-		"ruleName":   rule.Name,
-		"repository": event.Item.Repository,
-		"number":     event.Item.Number,
-		"url":        event.Item.URL,
-		"target":     event.Item.Target,
-		"title":      event.Item.Title,
-		"body":       event.Item.Body,
-		"author":     event.Item.Author,
-		"labels":     event.Item.Labels,
-		"assignees":  event.Item.Assignees,
+		"ruleId":         rule.ID,
+		"ruleName":       rule.Name,
+		"repository":     event.Item.Repository,
+		"number":         event.Item.Number,
+		"url":            event.Item.URL,
+		"target":         event.Item.Target,
+		"title":          event.Item.Title,
+		"body":           event.Item.Body,
+		"author":         event.Item.Author,
+		"labels":         event.Item.Labels,
+		"assignees":      event.Item.Assignees,
+		"branchName":     event.Item.BranchName,
+		"baseBranch":     event.Item.BaseBranch,
+		"reviewComments": event.Item.ReviewComments,
 	})
 	if err != nil {
 		return err
@@ -154,6 +178,50 @@ func (o *Orchestrator) UpdateJobState(ctx context.Context, jobID string, nextSta
 	log.Printf("info job event started job=%s event=%s state_from=%s state_to=%s", job.ID, storedEvent.EventType, storedEvent.StateFrom, storedEvent.StateTo)
 	o.notifyJobEvent(ctx, job, storedEvent)
 	return nil
+}
+
+func (o *Orchestrator) RecoverInterruptedJobs(ctx context.Context) (int, error) {
+	jobs, err := o.store.ListJobs(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	recovered := 0
+	for _, job := range jobs {
+		eventType, ok := interruptedEventType(job.State)
+		if !ok {
+			continue
+		}
+
+		previous := job.State
+		job.State = domain.StateInterrupted
+		job.UpdatedAt = time.Now().UTC()
+		if err := o.store.UpsertJob(ctx, job); err != nil {
+			return recovered, err
+		}
+
+		payload, err := json.Marshal(map[string]any{
+			"reason":        "startup_recovery",
+			"previousState": previous,
+		})
+		if err != nil {
+			return recovered, err
+		}
+
+		if err := o.store.AppendEvent(ctx, domain.Event{
+			JobID:     job.ID,
+			EventType: eventType,
+			StateFrom: string(previous),
+			StateTo:   string(domain.StateInterrupted),
+			Payload:   string(payload),
+			CreatedAt: time.Now().UTC(),
+		}); err != nil {
+			return recovered, err
+		}
+		recovered++
+	}
+
+	return recovered, nil
 }
 
 func (o *Orchestrator) ApproveDesign(ctx context.Context, jobID string, comment string) error {
@@ -308,7 +376,7 @@ func rerunPhaseFromJob(ctx context.Context, o *Orchestrator, job domain.Job) rer
 		return rerunPhasePR
 	case domain.StateCollectingContext, domain.StateReviewRunning, domain.StateReviewReady:
 		return rerunPhaseReview
-	case domain.StateFailed:
+	case domain.StateFailed, domain.StateInterrupted:
 		events, err := o.store.ListEvents(ctx, job.ID)
 		if err != nil || len(events) == 0 {
 			return ""
@@ -323,11 +391,13 @@ func rerunPhaseFromEvent(event domain.Event) rerunPhase {
 	switch event.EventType {
 	case string(domain.DomainEventIssueMatched), "design_started", "design_ready", "waiting_design_approval", "design_rejected", "design_failed", "design_rerun_requested":
 		return rerunPhaseDesign
-	case "design_approved", "implementation_started", "implementation_ready", "waiting_final_approval", "final_rejected", "implementation_failed", "test_failed", "implementation_rerun_requested":
+	case "design_interrupted":
+		return rerunPhaseDesign
+	case string(domain.DomainEventPRReviewMatched), "design_approved", "implementation_started", "implementation_ready", "waiting_final_approval", "final_rejected", "implementation_failed", "test_failed", "implementation_rerun_requested", "implementation_interrupted", "test_interrupted":
 		return rerunPhaseImplementation
-	case "final_approved", "pr_creating_started", "pr_create_failed", "pr_created", "pr_rerun_requested":
+	case "final_approved", "pr_creating_started", "pr_create_failed", "pr_created", "pr_updated", "pr_rerun_requested", "pr_interrupted":
 		return rerunPhasePR
-	case "review_started", "review_ready", "review_failed", "review_rerun_requested":
+	case "review_started", "review_ready", "review_failed", "review_rerun_requested", "review_interrupted":
 		return rerunPhaseReview
 	}
 	switch event.StateFrom {
@@ -341,6 +411,23 @@ func rerunPhaseFromEvent(event domain.Event) rerunPhase {
 		return rerunPhaseReview
 	}
 	return ""
+}
+
+func interruptedEventType(state domain.JobState) (string, bool) {
+	switch state {
+	case domain.StateDesignRunning:
+		return "design_interrupted", true
+	case domain.StateImplementationRunning:
+		return "implementation_interrupted", true
+	case domain.StateTestRunning:
+		return "test_interrupted", true
+	case domain.StateReviewRunning, domain.StateCollectingContext:
+		return "review_interrupted", true
+	case domain.StatePRCreating:
+		return "pr_interrupted", true
+	default:
+		return "", false
+	}
 }
 
 func makeJobID(repository string, target domain.MonitoredTarget, number int) string {
@@ -408,6 +495,8 @@ func notificationTitle(job domain.Job, event domain.Event) string {
 		return fmt.Sprintf("Issue matched: %s#%d", job.Repository, job.GitHubNumber)
 	case string(domain.DomainEventPRMatched):
 		return fmt.Sprintf("PR matched: %s#%d", job.Repository, job.GitHubNumber)
+	case string(domain.DomainEventPRReviewMatched):
+		return fmt.Sprintf("PR feedback matched: %s#%d", job.Repository, job.GitHubNumber)
 	case "design_ready":
 		return fmt.Sprintf("Design ready: %s#%d", job.Repository, job.GitHubNumber)
 	case "waiting_design_approval":
@@ -422,11 +511,58 @@ func notificationTitle(job domain.Job, event domain.Event) string {
 		return fmt.Sprintf("Review completed: %s#%d", job.Repository, job.GitHubNumber)
 	case "pr_created":
 		return fmt.Sprintf("PR created: %s#%d", job.Repository, job.GitHubNumber)
+	case "pr_updated":
+		return fmt.Sprintf("PR updated: %s#%d", job.Repository, job.GitHubNumber)
 	}
 	if event.StateTo == string(domain.StateFailed) || strings.HasSuffix(event.EventType, "_failed") {
 		return fmt.Sprintf("Job failed: %s#%d", job.Repository, job.GitHubNumber)
 	}
 	return fmt.Sprintf("%s: %s#%d", strings.ReplaceAll(event.EventType, "_", " "), job.Repository, job.GitHubNumber)
+}
+
+func prFeedbackJobBusy(state domain.JobState) bool {
+	switch state {
+	case domain.StateImplementationRunning, domain.StateTestRunning, domain.StatePRCreating:
+		return true
+	default:
+		return false
+	}
+}
+
+func prFeedbackAlreadyIncorporated(events []domain.Event, reviewComments []domain.ReviewComment) bool {
+	if len(reviewComments) == 0 {
+		return false
+	}
+
+	knownCommentIDs := make(map[int64]struct{}, len(reviewComments))
+	for _, event := range events {
+		if event.EventType != string(domain.DomainEventPRReviewMatched) {
+			continue
+		}
+
+		var payload struct {
+			ReviewComments []domain.ReviewComment `json:"reviewComments"`
+		}
+		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			continue
+		}
+		for _, comment := range payload.ReviewComments {
+			if comment.ID == 0 {
+				continue
+			}
+			knownCommentIDs[comment.ID] = struct{}{}
+		}
+	}
+
+	for _, comment := range reviewComments {
+		if comment.ID == 0 {
+			return false
+		}
+		if _, ok := knownCommentIDs[comment.ID]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func notificationMessage(job domain.Job, event domain.Event) string {

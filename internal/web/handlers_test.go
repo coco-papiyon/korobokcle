@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,10 +11,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/mux"
+
 	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
+	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
 )
+
+type recordingReviewSubmitter struct {
+	req ReviewSubmitRequest
+}
+
+func (r *recordingReviewSubmitter) Submit(_ context.Context, req ReviewSubmitRequest) error {
+	r.req = req
+	return nil
+}
 
 func TestAvailableActionsForEvent(t *testing.T) {
 	t.Parallel()
@@ -671,6 +685,32 @@ func TestLoadImplementationArtifactFallsBackToImplementFileName(t *testing.T) {
 	}
 }
 
+func TestLoadImplementationArtifactFallsBackToReviewFixFileName(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	jobID := "job-review-fix"
+	dir := artifacts.WorkerDir(root, "artifacts", jobID, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(implementation) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "review_fix.md"), []byte("review fix content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(review_fix.md) error = %v", err)
+	}
+
+	artifact, err := server.loadImplementationArtifact(jobID)
+	if err != nil {
+		t.Fatalf("loadImplementationArtifact() error = %v", err)
+	}
+	if artifact.Content != "review fix content" {
+		t.Fatalf("expected review fix content, got %q", artifact.Content)
+	}
+}
+
 func TestLoadTestReportPrefersLatestImplementationReport(t *testing.T) {
 	t.Parallel()
 
@@ -809,5 +849,190 @@ func TestHandleSaveWatchRulesUpdatesProjectFilters(t *testing.T) {
 	}
 	if len(saved.ProjectFilters) != 1 || saved.ProjectFilters[0].Field != "Status" {
 		t.Fatalf("unexpected project filters: %+v", saved.ProjectFilters)
+	}
+}
+
+func TestHandleSaveWatchRulesAcceptsPullRequestReviewCommentTarget(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"pull_request_review","branch":"","labels":["ai:fix"],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
+
+	server.handleSaveWatchRules(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+	if got := svc.WatchRules().Rules[0].Target; got != "pull_request_review" {
+		t.Fatalf("expected target pull_request_review, got %q", got)
+	}
+}
+
+func TestHandleSubmitReviewCommentUsesReviewArtifact(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	orch := orchestrator.New(store, nil)
+	submitter := &recordingReviewSubmitter{}
+	server := &Server{config: svc, orchestrator: orch, reviewer: submitter}
+
+	job := domain.Job{
+		ID:           "job-review-1",
+		Type:         domain.JobTypePRReview,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		State:        domain.StateCompleted,
+		Title:        "review job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	reviewDir := artifacts.WorkerDir(root, svc.App().ArtifactsDir, job.ID, artifacts.WorkerReview)
+	if err := os.MkdirAll(reviewDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(reviewDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(reviewDir, "result.md"), []byte("review summary"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	body := []byte(`{"comment":"review from ui"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/reviews/submit", bytes.NewReader(body))
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	recorder := httptest.NewRecorder()
+
+	server.handleSubmitReviewComment(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+	if submitter.req.Repository != "owner/repository" {
+		t.Fatalf("expected repository owner/repository, got %q", submitter.req.Repository)
+	}
+	if submitter.req.PullNumber != 42 {
+		t.Fatalf("expected pull number 42, got %d", submitter.req.PullNumber)
+	}
+	if submitter.req.Body != "review from ui" {
+		t.Fatalf("expected review body from request, got %q", submitter.req.Body)
+	}
+	if submitter.req.ArtifactDir != reviewDir {
+		t.Fatalf("expected artifact dir %q, got %q", reviewDir, submitter.req.ArtifactDir)
+	}
+}
+
+func TestHandleJobDetailForPRFeedbackIncludesReviewCommentsAndSanitizedPayload(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-feedback-1",
+		Type:         domain.JobTypePRFeedback,
+		Repository:   "owner/repository",
+		GitHubNumber: 46,
+		State:        domain.StateWaitingFinalApproval,
+		Title:        "Fix PR feedback",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	payload, err := json.Marshal(map[string]any{
+		"body": "full pr body",
+		"reviewComments": []map[string]any{
+			{
+				"author": "reviewer",
+				"body":   "please rename this",
+				"path":   "internal/app/example.go",
+				"line":   12,
+				"url":    "https://github.com/example/comment/1",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal(payload) error = %v", err)
+	}
+	if err := store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: string(domain.DomainEventPRReviewMatched),
+		StateTo:   string(domain.StateImplementationRunning),
+		Payload:   string(payload),
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	recorder := httptest.NewRecorder()
+
+	server.handleJobDetail(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	var got struct {
+		ReviewComments []struct {
+			Author string `json:"author"`
+			Body   string `json:"body"`
+			Path   string `json:"path"`
+			Line   int    `json:"line"`
+		} `json:"reviewComments"`
+		Events []struct {
+			Payload string `json:"payload"`
+		} `json:"events"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("Decode(response) error = %v", err)
+	}
+	if len(got.ReviewComments) != 1 || got.ReviewComments[0].Body != "please rename this" {
+		t.Fatalf("unexpected review comments: %+v", got.ReviewComments)
+	}
+	if len(got.Events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(got.Events))
+	}
+	var eventPayload map[string]any
+	if err := json.Unmarshal([]byte(got.Events[0].Payload), &eventPayload); err != nil {
+		t.Fatalf("Unmarshal(event payload) error = %v", err)
+	}
+	if _, ok := eventPayload["body"]; ok {
+		t.Fatalf("expected top-level payload body to be omitted, got %s", got.Events[0].Payload)
+	}
+	reviewCommentsRaw, ok := eventPayload["reviewComments"].([]any)
+	if !ok || len(reviewCommentsRaw) != 1 {
+		t.Fatalf("unexpected reviewComments payload: %#v", eventPayload["reviewComments"])
+	}
+	reviewComment, ok := reviewCommentsRaw[0].(map[string]any)
+	if !ok {
+		t.Fatalf("unexpected review comment payload type: %#v", reviewCommentsRaw[0])
+	}
+	if _, ok := reviewComment["body"]; ok {
+		t.Fatalf("expected nested review comment body to be omitted, got %s", got.Events[0].Payload)
 	}
 }

@@ -7,7 +7,7 @@ const props = defineProps<{
 }>()
 
 const toneClass = computed(() => {
-  if (props.state.includes('failed') || props.state.includes('rejected')) {
+  if (props.state.includes('failed') || props.state.includes('rejected') || props.state.includes('interrupted')) {
     return 'state-badge--danger'
   }
   if (props.state.includes('waiting')) {

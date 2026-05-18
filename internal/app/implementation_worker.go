@@ -22,6 +22,7 @@ import (
 const (
 	implementationSkillName = "implement"
 	fixSkillName            = "fix"
+	reviewFixSkillName      = "review_fix"
 )
 
 type implementationRunSpec struct {
@@ -60,7 +61,7 @@ func runPendingImplementations(ctx context.Context, repoRoot string, cfg *config
 	}
 
 	for _, job := range jobs {
-		if job.Type != domain.JobTypeIssue || job.State != domain.StateImplementationRunning {
+		if (job.Type != domain.JobTypeIssue && job.Type != domain.JobTypePRFeedback) || job.State != domain.StateImplementationRunning {
 			continue
 		}
 
@@ -130,6 +131,10 @@ func runPendingImplementations(ctx context.Context, repoRoot string, cfg *config
 }
 
 func buildImplementationContext(cfg *config.Service, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
+	if job.Type == domain.JobTypePRFeedback {
+		return buildPRFeedbackImplementationContext(cfg, job, events, runSpec)
+	}
+
 	designArtifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerDesign)
 	designArtifactRaw, err := readFirstArtifactFile(designArtifactDir, "result.md", "design.md")
 	if err != nil {
@@ -209,7 +214,7 @@ func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []
 		artifactDir = artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerFix)
 	}
 
-	skillName, err := resolveImplementationSkillName(cfg, job.WatchRuleID, isFix)
+	skillName, err := resolveImplementationSkillName(cfg, job, isFix)
 	if err != nil {
 		return implementationRunSpec{}, err
 	}
@@ -220,10 +225,18 @@ func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []
 	}, nil
 }
 
-func resolveImplementationSkillName(cfg *config.Service, watchRuleID string, isFix bool) (string, error) {
-	rule, ok := cfg.WatchRuleByID(watchRuleID)
+func resolveImplementationSkillName(cfg *config.Service, job domain.Job, isFix bool) (string, error) {
+	rule, ok := cfg.WatchRuleByID(job.WatchRuleID)
 	if !ok {
 		return "", os.ErrNotExist
+	}
+
+	if job.Type == domain.JobTypePRFeedback {
+		skillSet := strings.TrimSpace(rule.SkillSet)
+		if skillSet == "" || skillSet == "default" {
+			return reviewFixSkillName, nil
+		}
+		return filepath.ToSlash(filepath.Join(skillSet, reviewFixSkillName)), nil
 	}
 
 	baseName := implementationSkillName
@@ -236,6 +249,62 @@ func resolveImplementationSkillName(cfg *config.Service, watchRuleID string, isF
 		return baseName, nil
 	}
 	return filepath.ToSlash(filepath.Join(skillSet, baseName)), nil
+}
+
+func buildPRFeedbackImplementationContext(cfg *config.Service, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
+	ctxData := skill.ImplementationContext{
+		JobID:       job.ID,
+		Repository:  job.Repository,
+		IssueNumber: job.GitHubNumber,
+		Title:       job.Title,
+		WatchRuleID: job.WatchRuleID,
+		BranchName:  job.BranchName,
+		ArtifactDir: runSpec.ArtifactDir,
+	}
+
+	rerunComment, previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)
+	if err != nil {
+		return skill.ImplementationContext{}, err
+	}
+	ctxData.RerunComment = rerunComment
+	ctxData.PreviousFailure = previousFailure
+	ctxData.PreviousTestReport = previousTestReport
+
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].EventType != string(domain.DomainEventPRReviewMatched) {
+			continue
+		}
+
+		var payload struct {
+			Body           string                 `json:"body"`
+			Author         string                 `json:"author"`
+			Labels         []string               `json:"labels"`
+			Assignees      []string               `json:"assignees"`
+			URL            string                 `json:"url"`
+			ReviewComments []domain.ReviewComment `json:"reviewComments"`
+		}
+		if err := json.Unmarshal([]byte(events[i].Payload), &payload); err != nil {
+			return skill.ImplementationContext{}, err
+		}
+		ctxData.Body = payload.Body
+		ctxData.Author = payload.Author
+		ctxData.Labels = payload.Labels
+		ctxData.Assignees = payload.Assignees
+		ctxData.SourceURL = payload.URL
+		ctxData.ReviewComments = make([]skill.ReviewComment, 0, len(payload.ReviewComments))
+		for _, comment := range payload.ReviewComments {
+			ctxData.ReviewComments = append(ctxData.ReviewComments, skill.ReviewComment{
+				Author: comment.Author,
+				Body:   comment.Body,
+				Path:   comment.Path,
+				Line:   comment.Line,
+				URL:    comment.URL,
+			})
+		}
+		break
+	}
+
+	return ctxData, nil
 }
 
 func latestImplementationRerunSourceEventType(events []domain.Event) (string, error) {

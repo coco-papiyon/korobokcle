@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,21 +47,34 @@ type eventResponse struct {
 }
 
 type jobDetailResponse struct {
-	Job                    jobResponse       `json:"job"`
-	Events                 []eventResponse   `json:"events"`
-	IssueBody              string            `json:"issueBody,omitempty"`
-	DesignArtifact         *artifactResponse `json:"designArtifact,omitempty"`
-	ImplementationArtifact *artifactResponse `json:"implementationArtifact,omitempty"`
-	FixArtifact            *artifactResponse `json:"fixArtifact,omitempty"`
-	ReviewArtifact         *artifactResponse `json:"reviewArtifact,omitempty"`
-	TestReport             *artifactResponse `json:"testReport,omitempty"`
-	PRCreateArtifact       *artifactResponse `json:"prCreateArtifact,omitempty"`
-	Logs                   []logResponse     `json:"logs,omitempty"`
+	Job                    jobResponse             `json:"job"`
+	Events                 []eventResponse         `json:"events"`
+	IssueBody              string                  `json:"issueBody,omitempty"`
+	ReviewComments         []reviewCommentResponse `json:"reviewComments,omitempty"`
+	DesignArtifact         *artifactResponse       `json:"designArtifact,omitempty"`
+	ImplementationArtifact *artifactResponse       `json:"implementationArtifact,omitempty"`
+	FixArtifact            *artifactResponse       `json:"fixArtifact,omitempty"`
+	ReviewArtifact         *artifactResponse       `json:"reviewArtifact,omitempty"`
+	TestReport             *artifactResponse       `json:"testReport,omitempty"`
+	PRCreateArtifact       *artifactResponse       `json:"prCreateArtifact,omitempty"`
+	Logs                   []logResponse           `json:"logs,omitempty"`
+}
+
+type reviewSubmitRequest struct {
+	Comment string `json:"comment"`
 }
 
 type artifactResponse struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
+}
+
+type reviewCommentResponse struct {
+	Author string `json:"author"`
+	Body   string `json:"body"`
+	Path   string `json:"path,omitempty"`
+	Line   int    `json:"line,omitempty"`
+	URL    string `json:"url,omitempty"`
 }
 
 type logResponse struct {
@@ -186,13 +200,16 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		if out.IssueBody == "" && event.EventType == string(domain.DomainEventIssueMatched) {
 			out.IssueBody = extractIssueBody(event.Payload)
 		}
+		if len(out.ReviewComments) == 0 && event.EventType == string(domain.DomainEventPRReviewMatched) {
+			out.ReviewComments = extractReviewComments(event.Payload)
+		}
 		out.Events = append(out.Events, eventResponse{
 			ID:               event.ID,
 			JobID:            event.JobID,
 			EventType:        event.EventType,
 			StateFrom:        event.StateFrom,
 			StateTo:          event.StateTo,
-			Payload:          event.Payload,
+			Payload:          sanitizeEventPayloadForResponse(event.Payload),
 			CreatedAt:        event.CreatedAt.Format(timeFormat),
 			SourceEventType:  sourceEventType,
 			AvailableActions: availableActionsForEvent(event),
@@ -220,7 +237,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	out.Logs = append(out.Logs, s.loadLogResponses("implementation", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("fix", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerFix), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("pr", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerPR), []string{"git-push.log", "gh-pr-create.log"})...)
-	out.Logs = append(out.Logs, s.loadLogResponses("review", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerReview), []string{"stdout.log", "stderr.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("review", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerReview), []string{"stdout.log", "stderr.log", "gh-pr-review.log"})...)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -372,15 +389,65 @@ func (s *Server) handleReviewRerun(w http.ResponseWriter, r *http.Request) {
 	s.handleJobDetail(w, r)
 }
 
+func (s *Server) handleSubmitReviewComment(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	job, _, err := s.orchestrator.JobDetail(r.Context(), jobID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err)
+		return
+	}
+	if job.Type != domain.JobTypePRReview {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("job %q is not a pr review job", jobID))
+		return
+	}
+
+	artifact, err := s.loadReviewArtifact(jobID)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("load review artifact: %w", err))
+		return
+	}
+
+	var payload reviewSubmitRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil && !errors.Is(err, io.EOF) {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode review submit request: %w", err))
+		return
+	}
+
+	comment := strings.TrimSpace(payload.Comment)
+	if comment == "" {
+		comment = strings.TrimSpace(artifact.Content)
+	}
+	if comment == "" {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("review comment is empty"))
+		return
+	}
+
+	if err := s.reviewer.Submit(r.Context(), ReviewSubmitRequest{
+		Repository:  job.Repository,
+		PullNumber:  job.GitHubNumber,
+		Body:        comment,
+		ArtifactDir: filepath.Dir(artifact.Path),
+	}); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	s.handleJobDetail(w, r)
+}
+
 func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 	watchRules := s.config.WatchRules()
 	rules := make([]watchRuleResponse, 0, len(watchRules.Rules))
 	for _, rule := range watchRules.Rules {
+		target := rule.Target
+		if target == "pull_request_review_comment" {
+			target = string(domain.TargetPullRequestReview)
+		}
 		rules = append(rules, watchRuleResponse{
 			ID:             rule.ID,
 			Name:           rule.Name,
 			Repositories:   sliceOrEmpty(rule.Repositories),
-			Target:         rule.Target,
+			Target:         target,
 			Branch:         rule.Branch,
 			ProjectName:    rule.ProjectName,
 			Labels:         sliceOrEmpty(rule.Labels),
@@ -648,7 +715,7 @@ func availableActionsForEvent(event domain.Event) []string {
 		switch event.EventType {
 		case "review_ready", "review_completed":
 			actions = append(actions, actionRetryReview)
-		case "pr_created":
+		case "pr_created", "pr_updated":
 			actions = append(actions, actionRetryPR)
 		}
 	}
@@ -656,11 +723,13 @@ func availableActionsForEvent(event domain.Event) []string {
 	switch event.EventType {
 	case "design_failed", "design_rejected":
 		actions = append(actions, actionRetryDesign)
-	case "implementation_failed", "test_failed", "final_rejected":
+	case "design_interrupted":
+		actions = append(actions, actionRetryDesign)
+	case "implementation_failed", "test_failed", "final_rejected", "implementation_interrupted", "test_interrupted":
 		actions = append(actions, actionRetryImplementation)
-	case "pr_push_failed", "pr_create_failed":
+	case "pr_push_failed", "pr_create_failed", "pr_interrupted":
 		actions = append(actions, actionRetryPR)
-	case "review_failed":
+	case "review_failed", "review_interrupted":
 		actions = append(actions, actionRetryReview)
 	}
 
@@ -729,8 +798,10 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 		}
 		if rule.Target != string(domain.TargetIssue) &&
 			rule.Target != string(domain.TargetIssueProject) &&
-			rule.Target != string(domain.TargetPullRequest) {
-			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].target must be issue, issue_project, or pull_request", index))
+			rule.Target != string(domain.TargetPullRequest) &&
+			rule.Target != string(domain.TargetPullRequestReview) &&
+			rule.Target != "pull_request_review_comment" {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].target must be issue, issue_project, pull_request, or pull_request_review", index))
 			return
 		}
 		provider, err := s.parseOptionalProvider(rule.Provider)
@@ -754,11 +825,15 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		target := rule.Target
+		if target == "pull_request_review_comment" {
+			target = string(domain.TargetPullRequestReview)
+		}
 		file.Rules = append(file.Rules, config.WatchRule{
 			ID:             strings.TrimSpace(rule.ID),
 			Name:           strings.TrimSpace(rule.Name),
 			Repositories:   repositories,
-			Target:         rule.Target,
+			Target:         target,
 			Branch:         strings.TrimSpace(rule.Branch),
 			ProjectName:    strings.TrimSpace(rule.ProjectName),
 			Labels:         compactStrings(rule.Labels),
@@ -1131,7 +1206,7 @@ func (s *Server) loadDesignArtifact(jobID string) (*artifactResponse, error) {
 
 func (s *Server) loadImplementationArtifact(jobID string) (*artifactResponse, error) {
 	dir := artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerImplementation)
-	return s.loadFirstArtifact(dir, "result.md", "implement.md", "summary.md")
+	return s.loadFirstArtifact(dir, "result.md", "review_fix.md", "implement.md", "summary.md")
 }
 
 func (s *Server) loadFixArtifact(jobID string) (*artifactResponse, error) {
@@ -1225,6 +1300,65 @@ func extractIssueBody(payload string) string {
 		return ""
 	}
 	return eventPayload.Body
+}
+
+func extractReviewComments(payload string) []reviewCommentResponse {
+	var eventPayload struct {
+		ReviewComments []domain.ReviewComment `json:"reviewComments"`
+	}
+	if err := json.Unmarshal([]byte(payload), &eventPayload); err != nil {
+		return nil
+	}
+	comments := make([]reviewCommentResponse, 0, len(eventPayload.ReviewComments))
+	for _, comment := range eventPayload.ReviewComments {
+		comments = append(comments, reviewCommentResponse{
+			Author: comment.Author,
+			Body:   comment.Body,
+			Path:   comment.Path,
+			Line:   comment.Line,
+			URL:    comment.URL,
+		})
+	}
+	return comments
+}
+
+func sanitizeEventPayloadForResponse(payload string) string {
+	trimmed := strings.TrimSpace(payload)
+	if trimmed == "" {
+		return payload
+	}
+	var parsed any
+	if err := json.Unmarshal([]byte(payload), &parsed); err != nil {
+		return payload
+	}
+	sanitized := stripBodyFields(parsed)
+	raw, err := json.Marshal(sanitized)
+	if err != nil {
+		return payload
+	}
+	return string(raw)
+}
+
+func stripBodyFields(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
+			if key == "body" {
+				continue
+			}
+			out[key] = stripBodyFields(item)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(v))
+		for _, item := range v {
+			out = append(out, stripBodyFields(item))
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func (s *Server) loadLogResponses(phase string, dir string, names []string) []logResponse {

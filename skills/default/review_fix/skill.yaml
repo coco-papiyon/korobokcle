@@ -1,0 +1,9 @@
+name: review_fix
+provider: mock
+inputs:
+  - pull_request
+  - review_feedback
+outputs:
+  - implementation_summary
+artifacts:
+output_file: result.md
