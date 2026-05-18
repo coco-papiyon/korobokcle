@@ -203,6 +203,12 @@ func TestCopilotCLIProviderUsesAutomationFlagsByDefault(t *testing.T) {
 	if !strings.Contains(result.Output, "-p") {
 		t.Fatalf("expected -p flag, got %q", result.Output)
 	}
+	if !strings.Contains(result.Output, "Read the instructions in") || !strings.Contains(result.Output, "prompt.md") {
+		t.Fatalf("expected prompt to reference artifact prompt.md, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "--add-dir") || !strings.Contains(result.Output, dir) {
+		t.Fatalf("expected add-dir for artifact dir, got %q", result.Output)
+	}
 	if !strings.Contains(result.Output, "--model") || !strings.Contains(result.Output, "gpt-4.5-mini") {
 		t.Fatalf("expected model flags, got %q", result.Output)
 	}
@@ -214,6 +220,9 @@ func TestCopilotCLIProviderUsesAutomationFlagsByDefault(t *testing.T) {
 	}
 	if strings.Contains(result.Output, "--allow-tool=") {
 		t.Fatalf("expected no allow-tool list when default is permissive, got %q", result.Output)
+	}
+	if strings.Contains(result.Output, "automation prompt") {
+		t.Fatalf("expected request prompt to stay out of copilot args, got %q", result.Output)
 	}
 }
 
@@ -243,7 +252,7 @@ func TestCopilotCLIProviderWritesDebugLogsWhenEnabled(t *testing.T) {
 	if !strings.Contains(result.Stderr, "[debug] provider=copilot") {
 		t.Fatalf("expected debug logs in stderr, got %q", result.Stderr)
 	}
-	if !strings.Contains(result.Stderr, "prompt_in_args=true") {
+	if !strings.Contains(result.Stderr, "prompt_in_args=false") {
 		t.Fatalf("expected prompt_in_args in debug logs, got %q", result.Stderr)
 	}
 	if !strings.Contains(result.Stderr, "prompt=debug prompt") {
@@ -273,6 +282,9 @@ func TestCopilotCLIProviderRunsGoTestCommandWithRealCopilot(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(moduleDir, "hello_test.go"), []byte("package hello\n\nimport \"testing\"\n\nfunc TestAddFails(t *testing.T) {\n\tt.Fatal(\"boom\")\n}\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(hello_test.go) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "prompt.md"), []byte("Run go test ./... in the current repository and report the failure output."), 0o644); err != nil {
+		t.Fatalf("WriteFile(prompt.md) error = %v", err)
 	}
 
 	t.Setenv("KOROBOKCLE_COPILOT_BIN", "copilot")

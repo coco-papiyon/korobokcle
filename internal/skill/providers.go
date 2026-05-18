@@ -101,7 +101,7 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		fmt.Fprintf(&stderr, "[debug] provider=%s executable=%s workdir=%s prompt_in_args=%t args=%s\n", p.Name, executable, workDir, promptInArgs, debugArgsForLog(args))
 		fmt.Fprintf(&stderr, "[debug] prompt=%s\n", req.Prompt)
 	}
-	if !promptInArgs {
+	if !promptInArgs && !strings.EqualFold(p.Name, "copilot") {
 		cmd.Stdin = strings.NewReader(req.Prompt)
 	}
 
@@ -224,9 +224,12 @@ func debugArgsForLog(args []string) string {
 
 func copilotDefaultArgs(allowTools []string) []string {
 	args := []string{
-		"-p", "{{prompt}}",
+		"-p", "Read the instructions in {{artifact_dir}}/prompt.md and follow them. Use the repository root as the working directory and modify the repository files directly.",
 		"-s",
 		"{{model_flag}}", "{{model}}",
+		"--add-dir",
+		"{{artifact_dir}}",
+		"--no-custom-instructions",
 	}
 
 	normalized := normalizeCopilotAllowTools(allowTools)
