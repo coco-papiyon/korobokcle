@@ -61,7 +61,7 @@ func (p *CodexCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, er
 		Name:        "codex",
 		EnvPrefix:   "KOROBOKCLE_CODEX",
 		DefaultBin:  "codex",
-		DefaultArgs: []string{"exec", "{{model_flag}}", "{{model}}", "{{prompt}}"},
+		DefaultArgs: []string{"exec", "{{model_flag}}", "{{model}}"},
 	}
 	return provider.Run(ctx, req)
 }
