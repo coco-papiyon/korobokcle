@@ -1,0 +1,111 @@
+# Pull Request Review Fix Request
+
+あなたは熟練のソフトウェアエンジニアです。
+以下の Pull Request とレビューコメントを読み取り、修正計画を立てたうえでソースコードを修正し、変更内容を要約してください。
+
+Repository: {{ .Repository }}
+Pull Request: #{{ .IssueNumber }}
+Title: {{ .Title }}
+Author: {{ .Author }}
+Branch: {{ .BranchName }}
+Watch Rule: {{ .WatchRuleID }}
+{{- if .SourceURL }}
+URL: {{ .SourceURL }}
+{{- end }}
+
+## Labels
+{{- if .Labels }}
+{{- range .Labels }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Assignees
+{{- if .Assignees }}
+{{- range .Assignees }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Pull Request Body
+```
+{{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
+```
+
+## Review Comments
+{{- if .ReviewComments }}
+{{- range .ReviewComments }}
+- Reviewer: {{ .Author }}
+  Path: {{ if .Path }}{{ .Path }}{{ else }}(general){{ end }}
+  Line: {{ if .Line }}{{ .Line }}{{ else }}n/a{{ end }}
+  URL: {{ .URL }}
+  Comment:
+  ```
+  {{ .Body }}
+  ```
+{{- end }}
+{{- else }}
+- No review comments were provided.
+{{- end }}
+
+{{- if .RerunComment }}
+## Rerun Comment
+```
+{{ .RerunComment }}
+```
+{{- end }}
+
+{{- if .PreviousFailure }}
+## Previous Failure
+```
+{{ .PreviousFailure }}
+```
+{{- end }}
+
+{{- if .PreviousTestReport }}
+## Previous Test Report
+```
+{{ .PreviousTestReport }}
+```
+{{- end }}
+
+## 作業方針
+
+- まずレビューコメントを整理し、修正方針を短く決めてから実装してください。
+- リポジトリ直下を作業ディレクトリとして扱い、必要なファイルを直接編集してください。
+- パッチや unified diff を出力するのではなく、実際にコードを修正してください。
+- 変更内容の説明は最後に Markdown で要約してください。
+- 修正後の確認は人手で行う前提です。自動テストは実行してかまいませんが、マージ判断はしません。
+
+## 出力内容
+
+以下の観点で、実装結果を Markdown で整理してください。
+
+### 1. 修正計画
+
+- どのレビューコメントに対応するか
+- どう直すか
+
+### 2. 実装内容の要約
+
+- 何を修正したか
+- 何が変わったか
+
+### 3. 変更した箇所
+
+- 変更したファイル
+- 追加・修正した処理
+
+### 4. 確認内容
+
+- 実行したテスト
+- 手動確認が必要な点
+
+### 5. 懸念点・残課題
+
+- 未解決の課題
+- 追加で見てほしい点
