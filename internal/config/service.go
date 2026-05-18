@@ -119,6 +119,7 @@ func cloneFiles(files Files) Files {
 
 func cloneApp(app App) App {
 	cloned := app
+	cloned.CopilotAllowTools = append([]string(nil), app.CopilotAllowTools...)
 	cloned.Providers = cloneProviderSpecs(app.Providers)
 	return cloned
 }

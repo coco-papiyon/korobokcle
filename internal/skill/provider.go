@@ -3,12 +3,13 @@ package skill
 import "context"
 
 type AIRequest struct {
-	SkillName   string
-	Prompt      string
-	Model       string
-	WorkDir     string
-	ArtifactDir string
-	OutputPath  string
+	SkillName         string
+	Prompt            string
+	Model             string
+	WorkDir           string
+	ArtifactDir       string
+	OutputPath        string
+	CopilotAllowTools []string
 }
 
 type AIResult struct {

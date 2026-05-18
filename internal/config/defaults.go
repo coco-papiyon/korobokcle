@@ -4,18 +4,44 @@ import "time"
 
 const DefaultPollInterval = 2 * time.Minute
 
+var DefaultCopilotAllowTools = []string{
+	"write",
+	"shell(git:*)",
+	"shell(go:*)",
+	"shell(gofmt:*)",
+	"shell(node:*)",
+	"shell(npm:*)",
+	"shell(npx:*)",
+	"shell(pnpm:*)",
+	"shell(yarn:*)",
+	"shell(python:*)",
+	"shell(py:*)",
+	"shell(pip:*)",
+	"shell(pytest:*)",
+	"shell(uv:*)",
+	"shell(cargo:*)",
+	"shell(rustc:*)",
+	"shell(java:*)",
+	"shell(javac:*)",
+	"shell(mvn:*)",
+	"shell(gradle:*)",
+	"shell(gradlew:*)",
+	"shell(dotnet:*)",
+}
+
 func DefaultFiles() Files {
 	return Files{
 		App: App{
-			HTTPPort:        8080,
-			PollInterval:    DefaultPollInterval,
-			DataDir:         "data",
-			ArtifactsDir:    "artifacts",
-			WorkspaceDir:    ".",
-			Provider:        "mock",
-			Model:           "",
-			PRTitleTemplate: "[#{{issue_number}}]{{issue_title}}",
-			BranchTemplate:  "issue_{{issue_number}}",
+			HTTPPort:          8080,
+			PollInterval:      DefaultPollInterval,
+			DataDir:           "data",
+			ArtifactsDir:      "artifacts",
+			WorkspaceDir:      ".",
+			Provider:          "mock",
+			Model:             "",
+			CopilotAllowTools: append([]string(nil), DefaultCopilotAllowTools...),
+			PRTitleTemplate:   "[#{{issue_number}}]{{issue_title}}",
+			BranchTemplate:    "issue_{{issue_number}}",
 			Providers: []ProviderSpec{
 				{
 					Name:   "mock",

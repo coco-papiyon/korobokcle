@@ -96,20 +96,22 @@ type providerSpecResponse struct {
 }
 
 type appConfigResponse struct {
-	Provider        string                 `json:"provider"`
-	Model           string                 `json:"model"`
-	PollInterval    int                    `json:"pollInterval"`
-	PRTitleTemplate string                 `json:"prTitleTemplate"`
-	BranchTemplate  string                 `json:"branchTemplate"`
-	Providers       []providerSpecResponse `json:"providers"`
+	Provider          string                 `json:"provider"`
+	Model             string                 `json:"model"`
+	CopilotAllowTools []string               `json:"copilotAllowTools"`
+	PollInterval      int                    `json:"pollInterval"`
+	PRTitleTemplate   string                 `json:"prTitleTemplate"`
+	BranchTemplate    string                 `json:"branchTemplate"`
+	Providers         []providerSpecResponse `json:"providers"`
 }
 
 type saveAppConfigRequest struct {
-	Provider        *string `json:"provider"`
-	Model           *string `json:"model"`
-	PollInterval    int     `json:"pollInterval"`
-	PRTitleTemplate string  `json:"prTitleTemplate"`
-	BranchTemplate  string  `json:"branchTemplate"`
+	Provider          *string  `json:"provider"`
+	Model             *string  `json:"model"`
+	CopilotAllowTools []string `json:"copilotAllowTools"`
+	PollInterval      int      `json:"pollInterval"`
+	PRTitleTemplate   string   `json:"prTitleTemplate"`
+	BranchTemplate    string   `json:"branchTemplate"`
 }
 
 type notificationChannelResponse struct {
@@ -432,6 +434,7 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		appConfig.Model = modelInput
 	}
+	appConfig.CopilotAllowTools = normalizeStringSlice(payload.CopilotAllowTools)
 	prTitleTemplate := strings.TrimSpace(payload.PRTitleTemplate)
 	if prTitleTemplate == "" {
 		prTitleTemplate = naming.DefaultPRTitleTemplate
@@ -824,6 +827,23 @@ func sliceOrEmpty(values []string) []string {
 	return values
 }
 
+func normalizeStringSlice(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
+}
+
 func toAppConfigResponse(app config.App) appConfigResponse {
 	prTitleTemplate := strings.TrimSpace(app.PRTitleTemplate)
 	if prTitleTemplate == "" {
@@ -834,12 +854,13 @@ func toAppConfigResponse(app config.App) appConfigResponse {
 		branchTemplate = naming.DefaultBranchTemplate
 	}
 	return appConfigResponse{
-		Provider:        app.Provider,
-		Model:           app.Model,
-		PollInterval:    int(effectivePollInterval(app.PollInterval) / time.Second),
-		PRTitleTemplate: prTitleTemplate,
-		BranchTemplate:  branchTemplate,
-		Providers:       toProviderSpecResponses(app.Providers),
+		Provider:          app.Provider,
+		Model:             app.Model,
+		CopilotAllowTools: sliceOrEmpty(app.CopilotAllowTools),
+		PollInterval:      int(effectivePollInterval(app.PollInterval) / time.Second),
+		PRTitleTemplate:   prTitleTemplate,
+		BranchTemplate:    branchTemplate,
+		Providers:         toProviderSpecResponses(app.Providers),
 	}
 }
 

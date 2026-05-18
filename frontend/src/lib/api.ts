@@ -84,7 +84,7 @@ export function fetchAppConfig(): Promise<AppConfig> {
 }
 
 export function saveAppConfig(
-  config: Pick<AppConfig, 'provider' | 'model' | 'pollInterval' | 'prTitleTemplate' | 'branchTemplate'>,
+  config: Pick<AppConfig, 'provider' | 'model' | 'copilotAllowTools' | 'pollInterval' | 'prTitleTemplate' | 'branchTemplate'>,
 ): Promise<AppConfig> {
   return request<AppConfig>('/api/app-config', {
     method: 'PUT',

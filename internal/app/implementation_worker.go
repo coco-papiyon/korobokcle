@@ -30,7 +30,7 @@ type implementationRunSpec struct {
 }
 
 func startImplementationWorker(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
-	runner := skill.NewRunner(root, "")
+	runner := skill.NewRunner(root, "", cfg.App().CopilotAllowTools)
 	testRunner := executor.NewTestRunner()
 
 	go func() {

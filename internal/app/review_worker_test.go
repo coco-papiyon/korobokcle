@@ -86,7 +86,7 @@ func TestRunPendingReviewsCompletesJob(t *testing.T) {
 		t.Fatalf("AppendEvent() error = %v", err)
 	}
 
-	if err := runPendingReviews(context.Background(), cfg, orch, skill.NewRunner(root, "mock"), log.New(io.Discard, "", 0)); err != nil {
+	if err := runPendingReviews(context.Background(), cfg, orch, skill.NewRunner(root, "mock", nil), log.New(io.Discard, "", 0)); err != nil {
 		t.Fatalf("runPendingReviews() error = %v", err)
 	}
 

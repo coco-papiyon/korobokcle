@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/coco-papiyon/korobokcle/internal/config"
 )
 
 type MockProvider struct{}
@@ -45,7 +47,7 @@ func (p *CopilotCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		Name:        "copilot",
 		EnvPrefix:   "KOROBOKCLE_COPILOT",
 		DefaultBin:  "copilot",
-		DefaultArgs: []string{"-p", "{{prompt}}", "-s", "{{model_flag}}", "{{model}}"},
+		DefaultArgs: copilotDefaultArgs(req.CopilotAllowTools),
 	}
 	return provider.Run(ctx, req)
 }
@@ -182,6 +184,41 @@ func modelFlag(model string) string {
 		return ""
 	}
 	return "--model"
+}
+
+func copilotDefaultArgs(allowTools []string) []string {
+	args := []string{
+		"-p", "{{prompt}}",
+		"-s",
+		"{{model_flag}}", "{{model}}",
+	}
+
+	normalized := normalizeCopilotAllowTools(allowTools)
+	if len(normalized) == 0 {
+		normalized = normalizeCopilotAllowTools(config.DefaultCopilotAllowTools)
+	}
+	if len(normalized) > 0 {
+		args = append(args, "--allow-tool="+strings.Join(normalized, ","))
+	}
+	args = append(args, "--no-ask-user")
+	return args
+}
+
+func normalizeCopilotAllowTools(values []string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
 }
 
 func ProviderFor(name string) (AIProvider, error) {

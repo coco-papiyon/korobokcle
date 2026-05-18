@@ -84,6 +84,7 @@ export type WatchRuleForm = WatchRule & {
 export type AppConfig = {
   provider: string
   model: string
+  copilotAllowTools: string[]
   pollInterval: number
   prTitleTemplate: string
   branchTemplate: string

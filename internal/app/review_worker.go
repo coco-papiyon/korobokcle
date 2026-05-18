@@ -17,7 +17,7 @@ import (
 )
 
 func startReviewWorker(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
-	runner := skill.NewRunner(root, "")
+	runner := skill.NewRunner(root, "", cfg.App().CopilotAllowTools)
 
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)

@@ -12,6 +12,7 @@ import (
 type Runner struct {
 	defaultProviderName string
 	root                string
+	copilotAllowTools   []string
 }
 
 type ExecutionConfig struct {
@@ -19,8 +20,12 @@ type ExecutionConfig struct {
 	Model    string
 }
 
-func NewRunner(root string, defaultProviderName string) *Runner {
-	return &Runner{defaultProviderName: defaultProviderName, root: root}
+func NewRunner(root string, defaultProviderName string, copilotAllowTools []string) *Runner {
+	return &Runner{
+		defaultProviderName: defaultProviderName,
+		root:                root,
+		copilotAllowTools:   append([]string(nil), copilotAllowTools...),
+	}
 }
 
 func (r *Runner) Run(ctx context.Context, req AIRequest) (AIResult, error) {
@@ -63,12 +68,13 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 
 	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
 	result, err := provider.Run(ctx, AIRequest{
-		SkillName:   definition.Name,
-		Prompt:      prompt,
-		Model:       execution.Model,
-		WorkDir:     workDir,
-		ArtifactDir: contextData.ArtifactDir,
-		OutputPath:  outputPath,
+		SkillName:         definition.Name,
+		Prompt:            prompt,
+		Model:             execution.Model,
+		WorkDir:           workDir,
+		ArtifactDir:       contextData.ArtifactDir,
+		OutputPath:        outputPath,
+		CopilotAllowTools: r.copilotAllowTools,
 	})
 	if err != nil {
 		return AIResult{}, err
@@ -122,12 +128,13 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 
 	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
 	result, err := provider.Run(ctx, AIRequest{
-		SkillName:   definition.Name,
-		Prompt:      prompt,
-		Model:       execution.Model,
-		WorkDir:     workDir,
-		ArtifactDir: contextData.ArtifactDir,
-		OutputPath:  outputPath,
+		SkillName:         definition.Name,
+		Prompt:            prompt,
+		Model:             execution.Model,
+		WorkDir:           workDir,
+		ArtifactDir:       contextData.ArtifactDir,
+		OutputPath:        outputPath,
+		CopilotAllowTools: r.copilotAllowTools,
 	})
 	if err != nil {
 		return AIResult{}, err
@@ -181,12 +188,13 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 
 	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
 	result, err := provider.Run(ctx, AIRequest{
-		SkillName:   definition.Name,
-		Prompt:      prompt,
-		Model:       execution.Model,
-		WorkDir:     workDir,
-		ArtifactDir: contextData.ArtifactDir,
-		OutputPath:  outputPath,
+		SkillName:         definition.Name,
+		Prompt:            prompt,
+		Model:             execution.Model,
+		WorkDir:           workDir,
+		ArtifactDir:       contextData.ArtifactDir,
+		OutputPath:        outputPath,
+		CopilotAllowTools: r.copilotAllowTools,
 	})
 	if err != nil {
 		return AIResult{}, err
@@ -224,7 +232,8 @@ func (r *Runner) providerNameForDefinition(definition Definition, execution Exec
 }
 
 func (r *Runner) executionWorkDir(definition Definition, execution ExecutionConfig, artifactDir string) string {
-	if strings.EqualFold(r.providerNameForDefinition(definition, execution), "codex") {
+	providerName := r.providerNameForDefinition(definition, execution)
+	if strings.EqualFold(providerName, "codex") || strings.EqualFold(providerName, "copilot") {
 		return r.root
 	}
 	return artifactDir

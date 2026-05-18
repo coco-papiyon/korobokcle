@@ -134,3 +134,39 @@ func TestExternalCLIProviderExpandsModelArgument(t *testing.T) {
 		t.Fatalf("expected model arguments, got %q", result.Output)
 	}
 }
+
+func TestCopilotCLIProviderUsesAutomationFlagsByDefault(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "echo-copilot.cmd")
+	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %*\r\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	t.Setenv("KOROBOKCLE_COPILOT_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_COPILOT_ARGS_JSON", "")
+
+	provider := NewCopilotCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:            "automation prompt",
+		Model:             "gpt-4.5-mini",
+		WorkDir:           dir,
+		ArtifactDir:       dir,
+		OutputPath:        filepath.Join(dir, "out.txt"),
+		CopilotAllowTools: []string{"write", "shell(go:*)", "shell(git:*)"},
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(result.Output, "-p") {
+		t.Fatalf("expected -p flag, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "--model") || !strings.Contains(result.Output, "gpt-4.5-mini") {
+		t.Fatalf("expected model flags, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "--no-ask-user") {
+		t.Fatalf("expected --no-ask-user flag, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "--allow-tool=write,shell(go:*),shell(git:*)") {
+		t.Fatalf("expected --allow-tool flag, got %q", result.Output)
+	}
+}

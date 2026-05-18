@@ -11,6 +11,7 @@ const { data, isLoading, error, reload } = useAsyncData(fetchAppConfig)
 const { data: notificationData, reload: reloadNotificationData } = useAsyncData(fetchNotificationConfig)
 const provider = ref('mock')
 const model = ref('')
+const copilotAllowToolsText = ref('')
 const pollInterval = ref(120)
 const prTitleTemplate = ref('')
 const branchTemplate = ref('')
@@ -38,6 +39,7 @@ watch(
   (config) => {
     provider.value = config?.provider ?? 'mock'
     model.value = config?.model ?? ''
+    copilotAllowToolsText.value = (config?.copilotAllowTools ?? []).join('\n')
     pollInterval.value = config?.pollInterval ?? 120
     prTitleTemplate.value = config?.prTitleTemplate ?? ''
     branchTemplate.value = config?.branchTemplate ?? ''
@@ -71,12 +73,14 @@ async function persistConfig() {
     const saved = await saveAppConfig({
       provider: provider.value,
       model: model.value,
+      copilotAllowTools: parseCopilotAllowTools(copilotAllowToolsText.value),
       pollInterval: interval,
       prTitleTemplate: prTitleTemplate.value,
       branchTemplate: branchTemplate.value,
     })
     provider.value = saved.provider
     model.value = saved.model
+    copilotAllowToolsText.value = (saved.copilotAllowTools ?? []).join('\n')
     pollInterval.value = saved.pollInterval
     prTitleTemplate.value = saved.prTitleTemplate
     branchTemplate.value = saved.branchTemplate
@@ -120,6 +124,13 @@ async function persistNotificationConfig() {
     notificationSaveError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
+
+function parseCopilotAllowTools(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter((item, index, items) => item.length > 0 && items.indexOf(item) === index)
+}
 </script>
 
 <template>
@@ -155,6 +166,17 @@ async function persistNotificationConfig() {
               {{ option.label }}
             </option>
           </select>
+        </label>
+
+        <label v-if="provider === 'copilot'" class="field">
+          <span class="field__label">Copilot Allow Tools</span>
+          <textarea
+            v-model="copilotAllowToolsText"
+            class="field__control"
+            rows="6"
+            spellcheck="false"
+          />
+          <p class="text-muted">One tool per line. Example: <code>write</code>, <code>shell(go:*)</code>, <code>shell(git:*)</code>.</p>
         </label>
 
         <label class="field">

@@ -241,6 +241,37 @@ func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
 	}
 }
 
+func TestHandleSaveAppConfigUpdatesCopilotAllowTools(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"copilot","model":"","copilotAllowTools":["write","shell(go:*)","shell(git:*)"],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := svc.App().CopilotAllowTools; len(got) != 3 || got[0] != "write" || got[1] != "shell(go:*)" || got[2] != "shell(git:*)" {
+		t.Fatalf("unexpected copilot allow tools: %#v", got)
+	}
+
+	savedConfigPath := filepath.Join(root, "config", "app.yaml")
+	raw, err := os.ReadFile(savedConfigPath)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if !bytes.Contains(raw, []byte("copilotAllowTools:")) || !bytes.Contains(raw, []byte("- shell(go:*)")) {
+		t.Fatalf("expected saved config to contain copilotAllowTools, got %s", string(raw))
+	}
+}
+
 func TestHandleSaveAppConfigClearsModelWhenProviderChanges(t *testing.T) {
 	t.Parallel()
 
