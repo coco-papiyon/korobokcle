@@ -1,15 +1,23 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/notification"
+	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
+	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
 )
 
 func TestCloneRepositoryWorkspaceClonesLocalRepository(t *testing.T) {
@@ -24,7 +32,7 @@ func TestCloneRepositoryWorkspaceClonesLocalRepository(t *testing.T) {
 	if err := os.MkdirAll(source, 0o755); err != nil {
 		t.Fatalf("MkdirAll(source) error = %v", err)
 	}
-	if err := runGit(t, source, "init"); err != nil {
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
 		t.Fatalf("git init error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("clone test"), 0o644); err != nil {
@@ -48,8 +56,320 @@ func TestCloneRepositoryWorkspaceClonesLocalRepository(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(workerDir, "README.md")); err != nil {
 		t.Fatalf("expected cloned file: %v", err)
 	}
-	if workerDir != artifacts.RepositoryWorkerDir(root, cfg.App().ArtifactsDir, source, 0) {
+	if workerDir != artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, source, 0) {
 		t.Fatalf("unexpected worker dir: %s", workerDir)
+	}
+}
+
+func TestSyncRepositoryWorkspaceResetsToBaseBranchAndPulls(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "base"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	workerDir, err := cloneRepositoryWorkspace(context.Background(), cfg, source, 0)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
+	}
+
+	if err := runGit(t, workerDir, "checkout", "-b", "feature/test"); err != nil {
+		t.Fatalf("git checkout feature error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "README.md"), []byte("worker change\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile worker README error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "TEMP.txt"), []byte("temp\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile TEMP.txt error = %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("remote update\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile source README error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add updated README error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "update"); err != nil {
+		t.Fatalf("git commit update error = %v", err)
+	}
+
+	job := domain.Job{ID: "job-1"}
+	if err := syncRepositoryWorkspace(context.Background(), cfg, job, workerDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("syncRepositoryWorkspace() error = %v", err)
+	}
+
+	currentBranch, err := runGitCommand(context.Background(), workerDir, "git", "branch", "--show-current")
+	if err != nil {
+		t.Fatalf("git branch --show-current error = %v", err)
+	}
+	if strings.TrimSpace(currentBranch) != "main" {
+		t.Fatalf("expected main branch, got %q", currentBranch)
+	}
+
+	readmeRaw, err := os.ReadFile(filepath.Join(workerDir, "README.md"))
+	if err != nil {
+		t.Fatalf("ReadFile README.md error = %v", err)
+	}
+	if string(readmeRaw) != "remote update\n" {
+		t.Fatalf("expected synced README, got %q", string(readmeRaw))
+	}
+	if _, err := os.Stat(filepath.Join(workerDir, "TEMP.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected TEMP.txt removed, stat err = %v", err)
+	}
+}
+
+func TestSyncRepositoryWorkspaceUsesPullRequestBranchForPRFeedback(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile README main error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "-b", "feature/review-42"); err != nil {
+		t.Fatalf("git checkout feature error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("feature remote\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile README feature error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add feature error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "feature"); err != nil {
+		t.Fatalf("git commit feature error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "main"); err != nil {
+		t.Fatalf("git checkout main error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	workerDir, err := cloneRepositoryWorkspace(context.Background(), cfg, source, 0)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
+	}
+	if err := runGit(t, workerDir, "checkout", "main"); err != nil {
+		t.Fatalf("git checkout worker main error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workerDir, "LOCAL.txt"), []byte("local\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile LOCAL error = %v", err)
+	}
+
+	job := domain.Job{
+		ID:         "job-feedback",
+		Type:       domain.JobTypePRFeedback,
+		BranchName: "feature/review-42",
+	}
+	if err := syncRepositoryWorkspace(context.Background(), cfg, job, workerDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("syncRepositoryWorkspace() error = %v", err)
+	}
+
+	currentBranch, err := runGitCommand(context.Background(), workerDir, "git", "branch", "--show-current")
+	if err != nil {
+		t.Fatalf("git branch --show-current error = %v", err)
+	}
+	if strings.TrimSpace(currentBranch) != "feature/review-42" {
+		t.Fatalf("expected feature/review-42 branch, got %q", currentBranch)
+	}
+
+	readmeRaw, err := os.ReadFile(filepath.Join(workerDir, "README.md"))
+	if err != nil {
+		t.Fatalf("ReadFile README error = %v", err)
+	}
+	if string(readmeRaw) != "feature remote\n" {
+		t.Fatalf("expected feature branch content, got %q", string(readmeRaw))
+	}
+	if _, err := os.Stat(filepath.Join(workerDir, "LOCAL.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected LOCAL.txt removed, stat err = %v", err)
+	}
+}
+
+func TestRepositoryWorkerDirUsesOwnerRepoName(t *testing.T) {
+	t.Parallel()
+
+	got := artifacts.RepositoryWorkerDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
+	want := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2")
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestRepositoryWorkerSourceAndLogPaths(t *testing.T) {
+	t.Parallel()
+
+	sourceDir := artifacts.RepositoryWorkerSourceDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
+	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "source")
+	if sourceDir != wantSourceDir {
+		t.Fatalf("expected source dir %q, got %q", wantSourceDir, sourceDir)
+	}
+
+	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
+	wantLogPath := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "logs", "worker.log")
+	if logPath != wantLogPath {
+		t.Fatalf("expected log path %q, got %q", wantLogPath, logPath)
+	}
+}
+
+func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := config.NewService(root, config.DefaultFiles())
+	var fallback bytes.Buffer
+	fallbackLogger := log.New(&fallback, "", 0)
+
+	logger, cleanup, err := newRepositoryWorkerLogger(cfg, fallbackLogger, "https://github.com/coco-papiyon/korobokcle.git", 2)
+	if err != nil {
+		t.Fatalf("newRepositoryWorkerLogger() error = %v", err)
+	}
+	defer cleanup()
+
+	logger.Printf("worker only log")
+
+	if fallback.Len() != 0 {
+		t.Fatalf("expected no fallback log output, got %q", fallback.String())
+	}
+
+	data, err := os.ReadFile(artifacts.RepositoryWorkerLogPath(root, cfg.App().ArtifactsDir, "https://github.com/coco-papiyon/korobokcle.git", 2))
+	if err != nil {
+		t.Fatalf("ReadFile(worker log) error = %v", err)
+	}
+	if !bytes.Contains(data, []byte("worker only log")) {
+		t.Fatalf("expected worker log file to contain message, got %q", string(data))
+	}
+}
+
+func TestRepositoryMatchesNormalizesRepositoryFormats(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		jobRepo    string
+		configRepo string
+		want       bool
+	}{
+		{
+			name:       "https and owner repo",
+			jobRepo:    "coco-papiyon/korobokcle",
+			configRepo: "https://github.com/coco-papiyon/korobokcle",
+			want:       true,
+		},
+		{
+			name:       "git and owner repo",
+			jobRepo:    "coco-papiyon/korobokcle",
+			configRepo: "git@github.com:coco-papiyon/korobokcle.git",
+			want:       true,
+		},
+		{
+			name:       "different repository",
+			jobRepo:    "coco-papiyon/korobokcle",
+			configRepo: "coco-papiyon/another",
+			want:       false,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := repositoryMatches(tt.jobRepo, tt.configRepo); got != tt.want {
+				t.Fatalf("repositoryMatches(%q, %q) = %v, want %v", tt.jobRepo, tt.configRepo, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestJobAssignedToWorkerUsesCanonicalRepositoryID(t *testing.T) {
+	t.Parallel()
+
+	job := domain.Job{ID: "issue-owner-repository-1"}
+	if got, want := jobAssignedToWorker(job, "https://github.com/owner/repository", 0, 2), jobAssignedToWorker(job, "owner/repository", 0, 2); got != want {
+		t.Fatalf("expected canonical repository hashing, got %v and %v", got, want)
+	}
+}
+
+func TestJobsForRepositoryWorkerBlocksOtherJobsDuringReservedStates(t *testing.T) {
+	t.Parallel()
+
+	jobs := []domain.Job{
+		{
+			ID:         "issue-owner-repository-2",
+			Type:       domain.JobTypeIssue,
+			Repository: "owner/repository",
+			State:      domain.StateWaitingFinalApproval,
+		},
+		{
+			ID:         "issue-owner-repository-1",
+			Type:       domain.JobTypeIssue,
+			Repository: "owner/repository",
+			State:      domain.StateDetected,
+		},
+	}
+
+	selected := jobsForRepositoryWorker(jobs, "https://github.com/owner/repository", 0, 1)
+	if len(selected) != 1 {
+		t.Fatalf("expected exactly one selected job, got %d", len(selected))
+	}
+	if selected[0].ID != "issue-owner-repository-2" {
+		t.Fatalf("expected reserved job to block the worker, got %q", selected[0].ID)
+	}
+}
+
+func TestJobsForRepositoryWorkerKeepsNonReservedQueueWhenUnlocked(t *testing.T) {
+	t.Parallel()
+
+	jobs := []domain.Job{
+		{
+			ID:         "issue-owner-repository-1",
+			Type:       domain.JobTypeIssue,
+			Repository: "owner/repository",
+			State:      domain.StateDetected,
+		},
+		{
+			ID:         "pull_request-owner-repository-2",
+			Type:       domain.JobTypePRReview,
+			Repository: "owner/repository",
+			State:      domain.StateCollectingContext,
+		},
+	}
+
+	selected := jobsForRepositoryWorker(jobs, "owner/repository", 0, 1)
+	if len(selected) != 2 {
+		t.Fatalf("expected unlocked worker to see both jobs, got %d", len(selected))
 	}
 }
 
@@ -66,6 +386,123 @@ func TestJobAssignedToWorkerDeterministic(t *testing.T) {
 	if first == other {
 		t.Fatalf("expected job to map to a single worker index, got duplicate assignment")
 	}
+}
+
+func TestProcessPRJobForPRFeedbackPushesAndCommentsWithoutCreatingPR(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := config.NewService(root, config.DefaultFiles())
+	ctx := context.Background()
+
+	store, err := sqlite.Open(filepath.Join(root, "test.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	orch := orchestrator.New(store, notification.NewNopNotifier())
+	job := domain.Job{
+		ID:           "job-pr-feedback",
+		Type:         domain.JobTypePRFeedback,
+		Repository:   "owner/repository",
+		GitHubNumber: 46,
+		State:        domain.StatePRCreating,
+		Title:        "Address review",
+		BranchName:   "feature/review-46",
+		WatchRuleID:  "review",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(ctx, job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	artifactDir := artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	wantBody := "# Fix Summary\n\n- update behavior\n"
+	if err := os.WriteFile(filepath.Join(artifactDir, "review_fix.md"), []byte(wantBody), 0o644); err != nil {
+		t.Fatalf("WriteFile(review_fix.md) error = %v", err)
+	}
+
+	pusher := &recordingBranchPusher{}
+	creator := &recordingPRCreator{}
+	commenter := &recordingPRCommentSubmitter{}
+
+	if err := processPRJob(ctx, cfg, orch, pusher, creator, commenter, job, root, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("processPRJob() error = %v", err)
+	}
+
+	if !pusher.called {
+		t.Fatalf("expected branch push to be called")
+	}
+	if creator.called {
+		t.Fatalf("expected PR creator not to be called for pr_feedback")
+	}
+	if !commenter.called {
+		t.Fatalf("expected review comment submitter to be called")
+	}
+	if commenter.req.Repository != job.Repository {
+		t.Fatalf("comment repository = %q, want %q", commenter.req.Repository, job.Repository)
+	}
+	if commenter.req.PullNumber != job.GitHubNumber {
+		t.Fatalf("comment pull number = %d, want %d", commenter.req.PullNumber, job.GitHubNumber)
+	}
+	if commenter.req.Body != strings.TrimSpace(wantBody) {
+		t.Fatalf("comment body = %q, want %q", commenter.req.Body, strings.TrimSpace(wantBody))
+	}
+
+	updatedJob, err := store.GetJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("GetJob() error = %v", err)
+	}
+	if updatedJob.State != domain.StateCompleted {
+		t.Fatalf("job state = %s, want %s", updatedJob.State, domain.StateCompleted)
+	}
+
+	events, err := store.ListEvents(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("event count = %d, want 1", len(events))
+	}
+	if events[0].EventType != "pr_updated" {
+		t.Fatalf("event type = %q, want pr_updated", events[0].EventType)
+	}
+}
+
+type recordingBranchPusher struct {
+	called bool
+	req    PRCreateRequest
+}
+
+func (r *recordingBranchPusher) Push(_ context.Context, req PRCreateRequest) error {
+	r.called = true
+	r.req = req
+	return nil
+}
+
+type recordingPRCreator struct {
+	called bool
+}
+
+func (r *recordingPRCreator) Create(_ context.Context, _ PRCreateRequest) (string, error) {
+	r.called = true
+	return "https://example.invalid/pull/1", nil
+}
+
+type recordingPRCommentSubmitter struct {
+	called bool
+	req    PRCommentSubmitRequest
+}
+
+func (r *recordingPRCommentSubmitter) Submit(_ context.Context, req PRCommentSubmitRequest) error {
+	r.called = true
+	r.req = req
+	return nil
 }
 
 func runGit(t *testing.T, dir string, args ...string) error {

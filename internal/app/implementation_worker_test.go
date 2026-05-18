@@ -254,7 +254,7 @@ func TestResolveImplementationSkillNameDefault(t *testing.T) {
 		},
 	})
 
-	got, err := resolveImplementationSkillName(cfg, "rule-1", false)
+	got, err := resolveImplementationSkillName(cfg, domain.Job{WatchRuleID: "rule-1", Type: domain.JobTypeIssue}, false)
 	if err != nil {
 		t.Fatalf("resolveImplementationSkillName() error = %v", err)
 	}
@@ -274,7 +274,7 @@ func TestResolveImplementationSkillNameFromSkillSet(t *testing.T) {
 		},
 	})
 
-	got, err := resolveImplementationSkillName(cfg, "rule-1", false)
+	got, err := resolveImplementationSkillName(cfg, domain.Job{WatchRuleID: "rule-1", Type: domain.JobTypeIssue}, false)
 	if err != nil {
 		t.Fatalf("resolveImplementationSkillName() error = %v", err)
 	}
@@ -294,11 +294,31 @@ func TestResolveImplementationSkillNameFixFromSkillSet(t *testing.T) {
 		},
 	})
 
-	got, err := resolveImplementationSkillName(cfg, "rule-1", true)
+	got, err := resolveImplementationSkillName(cfg, domain.Job{WatchRuleID: "rule-1", Type: domain.JobTypeIssue}, true)
 	if err != nil {
 		t.Fatalf("resolveImplementationSkillName() error = %v", err)
 	}
 	if got != "team-a/fix" {
 		t.Fatalf("expected team-a/fix, got %q", got)
+	}
+}
+
+func TestResolveImplementationSkillNameUsesReviewFixForPRFeedback(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{ID: "rule-1", SkillSet: "team-a"},
+			},
+		},
+	})
+
+	got, err := resolveImplementationSkillName(cfg, domain.Job{WatchRuleID: "rule-1", Type: domain.JobTypePRFeedback}, false)
+	if err != nil {
+		t.Fatalf("resolveImplementationSkillName() error = %v", err)
+	}
+	if got != "team-a/review_fix" {
+		t.Fatalf("expected team-a/review_fix, got %q", got)
 	}
 }

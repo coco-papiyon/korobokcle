@@ -24,6 +24,9 @@ func EvaluateWatchRule(rule config.WatchRule, item RepositoryItem) MatchResult {
 	if rule.ExcludeDraftPR && item.Target == TargetPullRequest && item.Draft {
 		return MatchResult{Status: MatchStatusIgnored, Reason: "draft_pull_request"}
 	}
+	if rule.ExcludeDraftPR && item.Target == TargetPullRequestReview && item.Draft {
+		return MatchResult{Status: MatchStatusIgnored, Reason: "draft_pull_request"}
+	}
 
 	if rule.TitlePattern != "" {
 		matched, err := regexp.MatchString(rule.TitlePattern, item.Title)
@@ -60,6 +63,8 @@ func targetMatches(ruleTarget string, itemTarget MonitoredTarget) bool {
 		return itemTarget == TargetIssueProject
 	case string(TargetPullRequest):
 		return itemTarget == TargetPullRequest
+	case string(TargetPullRequestReview), "pull_request_review_comment":
+		return itemTarget == TargetPullRequestReview
 	default:
 		return false
 	}

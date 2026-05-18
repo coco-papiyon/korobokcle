@@ -51,6 +51,7 @@ function toForm(rule: WatchRule): WatchRuleForm {
   const normalizedProjectFilters = normalizeProjectFilters(rule.projectFilters)
   return {
     ...rule,
+    target: normalizeTarget(rule.target),
     repositories: rule.repositories ?? [],
     projectName: rule.projectName ?? '',
     projectFilters: normalizedProjectFilters,
@@ -70,7 +71,7 @@ function fromForm(rule: WatchRuleForm): WatchRule {
     id: rule.id.trim(),
     name: rule.name.trim(),
     repositories: [...(rule.repositories ?? [])],
-    target: rule.target,
+    target: normalizeTarget(rule.target),
     branch: rule.branch.trim(),
     projectName: rule.projectName.trim(),
     labels: splitCSV(rule.labelsText),
@@ -85,6 +86,17 @@ function fromForm(rule: WatchRuleForm): WatchRule {
     testProfile: rule.testProfile.trim(),
     enabled: rule.enabled,
   }
+}
+
+function normalizeTarget(value: string): string {
+  const target = value.trim()
+  if (target === 'pull_request_review_comment') {
+    return 'pull_request_review'
+  }
+  if (!target) {
+    return 'issue'
+  }
+  return target
 }
 
 function parseProjectFilters(value: string): ProjectFieldFilter[] {
@@ -302,6 +314,7 @@ async function persistRules() {
                   <option value="issue">Issue</option>
                   <option value="issue_project">Issue (Project)</option>
                   <option value="pull_request">Pull Request</option>
+                  <option value="pull_request_review">PR Review</option>
                 </select>
               </label>
 

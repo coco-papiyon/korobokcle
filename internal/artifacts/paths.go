@@ -4,6 +4,8 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -29,8 +31,20 @@ func WorkersDir(root string, artifactsDir string) string {
 }
 
 func RepositoryWorkerDir(root string, artifactsDir string, repository string, workerIndex int) string {
-	sanitized := sanitizePathComponent(repository)
+	sanitized := repositoryWorkerComponent(repository)
 	return filepath.Join(WorkersDir(root, artifactsDir), sanitized, workerName(workerIndex))
+}
+
+func RepositoryWorkerSourceDir(root string, artifactsDir string, repository string, workerIndex int) string {
+	return filepath.Join(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), "source")
+}
+
+func RepositoryWorkerLogsDir(root string, artifactsDir string, repository string, workerIndex int) string {
+	return filepath.Join(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), "logs")
+}
+
+func RepositoryWorkerLogPath(root string, artifactsDir string, repository string, workerIndex int) string {
+	return filepath.Join(RepositoryWorkerLogsDir(root, artifactsDir, repository, workerIndex), "worker.log")
 }
 
 func workerName(index int) string {
@@ -49,4 +63,65 @@ func sanitizePathComponent(value string) string {
 	}
 	sum := sha1.Sum([]byte(trimmed))
 	return sanitized[:48] + "-" + hex.EncodeToString(sum[:4])
+}
+
+func repositoryWorkerComponent(repository string) string {
+	trimmed := strings.TrimSpace(repository)
+	if trimmed == "" {
+		return "repository"
+	}
+	trimmed = strings.TrimSuffix(trimmed, ".git")
+
+	if parsed, err := url.Parse(trimmed); err == nil && parsed.Scheme != "" {
+		if component := ownerRepoComponent(strings.Trim(parsed.Path, "/")); component != "" {
+			return sanitizePathComponent(component)
+		}
+	}
+
+	if component := ownerRepoComponent(trimmed); component != "" {
+		return sanitizePathComponent(component)
+	}
+
+	if component := ownerRepoComponent(extractRepositoryPath(trimmed)); component != "" {
+		return sanitizePathComponent(component)
+	}
+
+	return sanitizePathComponent(trimmed)
+}
+
+func ownerRepoComponent(value string) string {
+	trimmed := strings.Trim(strings.TrimSpace(value), "/")
+	if trimmed == "" {
+		return ""
+	}
+	parts := strings.FieldsFunc(trimmed, func(r rune) bool { return r == '/' || r == '\\' })
+	if len(parts) == 0 {
+		return ""
+	}
+	if len(parts) == 1 {
+		return parts[0]
+	}
+	return strings.Join(parts[len(parts)-2:], "-")
+}
+
+func extractRepositoryPath(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ""
+	}
+	trimmed = strings.TrimSuffix(trimmed, ".git")
+	if strings.HasPrefix(trimmed, "git@") {
+		if idx := strings.LastIndex(trimmed, ":"); idx >= 0 && idx+1 < len(trimmed) {
+			candidate := trimmed[idx+1:]
+			return strings.TrimSuffix(candidate, ".git")
+		}
+	}
+	if strings.Contains(trimmed, "://") {
+		if parsed, err := url.Parse(trimmed); err == nil {
+			return strings.TrimSuffix(strings.Trim(parsed.Path, "/"), ".git")
+		}
+	}
+	cleaned := path.Clean(trimmed)
+	cleaned = strings.TrimSuffix(cleaned, ".git")
+	return strings.Trim(cleaned, "/")
 }

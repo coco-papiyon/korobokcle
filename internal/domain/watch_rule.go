@@ -13,9 +13,10 @@ const (
 type MonitoredTarget string
 
 const (
-	TargetIssue        MonitoredTarget = "issue"
-	TargetIssueProject MonitoredTarget = "issue_project"
-	TargetPullRequest  MonitoredTarget = "pull_request"
+	TargetIssue             MonitoredTarget = "issue"
+	TargetIssueProject      MonitoredTarget = "issue_project"
+	TargetPullRequest       MonitoredTarget = "pull_request"
+	TargetPullRequestReview MonitoredTarget = "pull_request_review"
 )
 
 type ProjectField struct {
@@ -29,19 +30,33 @@ type ProjectCard struct {
 }
 
 type RepositoryItem struct {
-	Repository   string
-	Number       int
-	Title        string
-	Body         string
-	Author       string
-	Assignees    []string
-	Labels       []string
-	Draft        bool
-	URL          string
-	UpdatedAt    time.Time
-	Target       MonitoredTarget
-	ProjectCards []ProjectCard
-	DefaultState JobState
+	Repository     string
+	Number         int
+	Title          string
+	Body           string
+	Author         string
+	Assignees      []string
+	Labels         []string
+	Draft          bool
+	URL            string
+	UpdatedAt      time.Time
+	Target         MonitoredTarget
+	BranchName     string
+	BaseBranch     string
+	ReviewComments []ReviewComment
+	ProjectCards   []ProjectCard
+	DefaultState   JobState
+}
+
+type ReviewComment struct {
+	ID        int64     `json:"id"`
+	Author    string    `json:"author"`
+	Body      string    `json:"body"`
+	Path      string    `json:"path"`
+	Line      int       `json:"line"`
+	URL       string    `json:"url"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type MatchResult struct {
@@ -52,8 +67,9 @@ type MatchResult struct {
 type DomainEventType string
 
 const (
-	DomainEventIssueMatched DomainEventType = "issue_matched"
-	DomainEventPRMatched    DomainEventType = "pull_request_matched"
+	DomainEventIssueMatched    DomainEventType = "issue_matched"
+	DomainEventPRMatched       DomainEventType = "pull_request_matched"
+	DomainEventPRReviewMatched DomainEventType = "pull_request_review_matched"
 )
 
 type DomainEvent struct {

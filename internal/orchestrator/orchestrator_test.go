@@ -2,15 +2,190 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	"github.com/coco-papiyon/korobokcle/internal/notification"
 	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
 )
+
+func TestProcessMatchCreatesPRFeedbackJob(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	appConfig := config.DefaultFiles().App
+	rule := config.WatchRule{
+		ID:   "rule-feedback",
+		Name: "PR feedback",
+	}
+	event := domain.DomainEvent{
+		Type:   domain.DomainEventPRReviewMatched,
+		RuleID: rule.ID,
+		Item: domain.RepositoryItem{
+			Repository: "owner/repo",
+			Number:     42,
+			Title:      "Refactor API",
+			Target:     domain.TargetPullRequestReview,
+			BranchName: "feature/pr-42",
+			ReviewComments: []domain.ReviewComment{
+				{ID: 1, Author: "reviewer", Body: "rename this"},
+			},
+		},
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("ProcessMatch() error = %v", err)
+	}
+
+	jobs, err := orch.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs() error = %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if jobs[0].Type != domain.JobTypePRFeedback {
+		t.Fatalf("expected pr_feedback, got %s", jobs[0].Type)
+	}
+	if jobs[0].State != domain.StateImplementationRunning {
+		t.Fatalf("expected implementation_running, got %s", jobs[0].State)
+	}
+	if jobs[0].BranchName != "feature/pr-42" {
+		t.Fatalf("expected branch feature/pr-42, got %q", jobs[0].BranchName)
+	}
+
+	_, events, err := orch.JobDetail(context.Background(), jobs[0].ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if len(events) != 1 || events[0].EventType != string(domain.DomainEventPRReviewMatched) {
+		t.Fatalf("unexpected events: %+v", events)
+	}
+
+	var payload struct {
+		ReviewComments []domain.ReviewComment `json:"reviewComments"`
+	}
+	if err := json.Unmarshal([]byte(events[0].Payload), &payload); err != nil {
+		t.Fatalf("Unmarshal(payload) error = %v", err)
+	}
+	if len(payload.ReviewComments) != 1 || payload.ReviewComments[0].Body != "rename this" {
+		t.Fatalf("unexpected review comments payload: %+v", payload.ReviewComments)
+	}
+}
+
+func TestProcessMatchRestartsIdlePRFeedbackJob(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-feedback-1",
+		Type:         domain.JobTypePRFeedback,
+		Repository:   "owner/repo",
+		GitHubNumber: 42,
+		State:        domain.StateWaitingFinalApproval,
+		Title:        "old title",
+		BranchName:   "old-branch",
+		WatchRuleID:  "old-rule",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	appConfig := config.DefaultFiles().App
+	rule := config.WatchRule{ID: "rule-feedback", Name: "PR feedback"}
+	event := domain.DomainEvent{
+		Type: domain.DomainEventPRReviewMatched,
+		Item: domain.RepositoryItem{
+			Repository: "owner/repo",
+			Number:     42,
+			Title:      "new title",
+			Target:     domain.TargetPullRequestReview,
+			BranchName: "feature/pr-42",
+		},
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("ProcessMatch() error = %v", err)
+	}
+
+	saved, events, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StateImplementationRunning {
+		t.Fatalf("expected implementation_running, got %s", saved.State)
+	}
+	if saved.Title != "new title" || saved.BranchName != "feature/pr-42" || saved.WatchRuleID != "rule-feedback" {
+		t.Fatalf("unexpected updated job: %+v", saved)
+	}
+	if len(events) != 1 || events[0].StateTo != string(domain.StateImplementationRunning) {
+		t.Fatalf("unexpected events: %+v", events)
+	}
+}
+
+func TestProcessMatchSkipsDuplicatePRFeedbackEvent(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	appConfig := config.DefaultFiles().App
+	rule := config.WatchRule{ID: "rule-feedback", Name: "PR feedback"}
+	event := domain.DomainEvent{
+		Type: domain.DomainEventPRReviewMatched,
+		Item: domain.RepositoryItem{
+			Repository: "owner/repo",
+			Number:     42,
+			Title:      "Refactor API",
+			Target:     domain.TargetPullRequestReview,
+			BranchName: "feature/pr-42",
+			ReviewComments: []domain.ReviewComment{
+				{ID: 1001, Author: "reviewer", Body: "rename this"},
+			},
+		},
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("first ProcessMatch() error = %v", err)
+	}
+
+	jobs, err := orch.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs() error = %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	jobID := jobs[0].ID
+
+	_, eventsBefore, err := orch.JobDetail(context.Background(), jobID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if len(eventsBefore) != 1 {
+		t.Fatalf("expected 1 event before duplicate, got %d", len(eventsBefore))
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("second ProcessMatch() error = %v", err)
+	}
+
+	savedAfter, eventsAfter, err := orch.JobDetail(context.Background(), jobID)
+	if err != nil {
+		t.Fatalf("JobDetail() after duplicate error = %v", err)
+	}
+	if savedAfter.State != domain.StateImplementationRunning {
+		t.Fatalf("expected implementation_running after duplicate, got %s", savedAfter.State)
+	}
+	if len(eventsAfter) != 1 {
+		t.Fatalf("expected duplicate event to be skipped, got %d events", len(eventsAfter))
+	}
+}
 
 func TestRerunDesignAllowedFromWaitingDesignApproval(t *testing.T) {
 	t.Parallel()
@@ -190,6 +365,47 @@ func TestRerunImplementationUsesLatestEventWhenFailed(t *testing.T) {
 		StateFrom: string(domain.StateImplementationRunning),
 		StateTo:   string(domain.StateFailed),
 		Payload:   "{}",
+		CreatedAt: nowUTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	if err := orch.RerunImplementation(context.Background(), job.ID, "retry"); err != nil {
+		t.Fatalf("RerunImplementation() error = %v", err)
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StateImplementationRunning {
+		t.Fatalf("expected implementation_running, got %s", saved.State)
+	}
+}
+
+func TestRerunImplementationUsesLatestEventWhenInterrupted(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-6-interrupted",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 66,
+		State:        domain.StateInterrupted,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := orch.store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "implementation_interrupted",
+		StateFrom: string(domain.StateImplementationRunning),
+		StateTo:   string(domain.StateInterrupted),
+		Payload:   `{"reason":"startup_recovery"}`,
 		CreatedAt: nowUTC(),
 	}); err != nil {
 		t.Fatalf("AppendEvent() error = %v", err)
@@ -409,6 +625,90 @@ func TestApproveFinalRejectedFromOtherFailedStates(t *testing.T) {
 	err := orch.ApproveFinal(context.Background(), job.ID, "should fail")
 	if !errors.Is(err, ErrInvalidStateTransition) {
 		t.Fatalf("expected ErrInvalidStateTransition, got %v", err)
+	}
+}
+
+func TestRecoverInterruptedJobs(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	jobs := []domain.Job{
+		{
+			ID:           "job-design-running",
+			Type:         domain.JobTypeIssue,
+			Repository:   "owner/repo",
+			GitHubNumber: 21,
+			State:        domain.StateDesignRunning,
+			Title:        "design",
+			CreatedAt:    nowUTC(),
+			UpdatedAt:    nowUTC(),
+		},
+		{
+			ID:           "job-pr-creating",
+			Type:         domain.JobTypeIssue,
+			Repository:   "owner/repo",
+			GitHubNumber: 22,
+			State:        domain.StatePRCreating,
+			Title:        "pr",
+			CreatedAt:    nowUTC(),
+			UpdatedAt:    nowUTC(),
+		},
+		{
+			ID:           "job-waiting-final",
+			Type:         domain.JobTypeIssue,
+			Repository:   "owner/repo",
+			GitHubNumber: 23,
+			State:        domain.StateWaitingFinalApproval,
+			Title:        "waiting",
+			CreatedAt:    nowUTC(),
+			UpdatedAt:    nowUTC(),
+		},
+	}
+	for _, job := range jobs {
+		if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+			t.Fatalf("UpsertJob() error = %v", err)
+		}
+	}
+
+	recovered, err := orch.RecoverInterruptedJobs(context.Background())
+	if err != nil {
+		t.Fatalf("RecoverInterruptedJobs() error = %v", err)
+	}
+	if recovered != 2 {
+		t.Fatalf("expected 2 recovered jobs, got %d", recovered)
+	}
+
+	designJob, designEvents, err := orch.JobDetail(context.Background(), "job-design-running")
+	if err != nil {
+		t.Fatalf("JobDetail(design) error = %v", err)
+	}
+	if designJob.State != domain.StateInterrupted {
+		t.Fatalf("expected interrupted state, got %s", designJob.State)
+	}
+	if len(designEvents) == 0 || designEvents[len(designEvents)-1].EventType != "design_interrupted" {
+		t.Fatalf("expected design_interrupted event, got %+v", designEvents)
+	}
+
+	prJob, prEvents, err := orch.JobDetail(context.Background(), "job-pr-creating")
+	if err != nil {
+		t.Fatalf("JobDetail(pr) error = %v", err)
+	}
+	if prJob.State != domain.StateInterrupted {
+		t.Fatalf("expected interrupted state, got %s", prJob.State)
+	}
+	if len(prEvents) == 0 || prEvents[len(prEvents)-1].EventType != "pr_interrupted" {
+		t.Fatalf("expected pr_interrupted event, got %+v", prEvents)
+	}
+
+	waitingJob, waitingEvents, err := orch.JobDetail(context.Background(), "job-waiting-final")
+	if err != nil {
+		t.Fatalf("JobDetail(waiting) error = %v", err)
+	}
+	if waitingJob.State != domain.StateWaitingFinalApproval {
+		t.Fatalf("expected waiting_final_approval state, got %s", waitingJob.State)
+	}
+	if len(waitingEvents) != 0 {
+		t.Fatalf("expected no recovery event for waiting job, got %+v", waitingEvents)
 	}
 }
 

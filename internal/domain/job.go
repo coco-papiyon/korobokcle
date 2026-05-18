@@ -9,8 +9,9 @@ type JobType string
 type JobState string
 
 const (
-	JobTypeIssue    JobType = "issue"
-	JobTypePRReview JobType = "pr_review"
+	JobTypeIssue      JobType = "issue"
+	JobTypePRReview   JobType = "pr_review"
+	JobTypePRFeedback JobType = "pr_feedback"
 )
 
 const (
@@ -29,6 +30,7 @@ const (
 	StateReviewReady           JobState = "review_ready"
 	StateCompleted             JobState = "completed"
 	StateFailed                JobState = "failed"
+	StateInterrupted           JobState = "interrupted"
 	StateDesignRejected        JobState = "design_rejected"
 	StateFinalRejected         JobState = "final_rejected"
 )

@@ -50,6 +50,11 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 		infoLogger.Printf("notification setup warning: %v", notifierErr)
 	}
 	orch := orchestrator.New(store, notifier)
+	if recovered, err := orch.RecoverInterruptedJobs(ctx); err != nil {
+		return fmt.Errorf("recover interrupted jobs: %w", err)
+	} else if recovered > 0 {
+		infoLogger.Printf("recovered interrupted jobs: %d", recovered)
+	}
 	startWatcher(ctx, configService, orch, infoLogger, debugLogger)
 	if err := startRepositoryWorkers(ctx, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start repository workers: %w", err)

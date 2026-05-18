@@ -14,6 +14,7 @@ type RepositoryLister interface {
 	ListIssues(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
 	ListProjectIssues(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
 	ListPullRequests(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
+	ListPullRequestReviews(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
 }
 
 type WatchRuleProvider func() []config.WatchRule
@@ -190,6 +191,8 @@ func (p *Poller) listItems(ctx context.Context, repository string, target string
 		return p.client.ListProjectIssues(ctx, repository, since)
 	case string(domain.TargetPullRequest):
 		return p.client.ListPullRequests(ctx, repository, since)
+	case string(domain.TargetPullRequestReview), "pull_request_review_comment":
+		return p.client.ListPullRequestReviews(ctx, repository, since)
 	default:
 		return nil, nil
 	}
@@ -208,6 +211,9 @@ func latestUpdatedAt(items []domain.RepositoryItem) time.Time {
 func eventTypeFor(target domain.MonitoredTarget) domain.DomainEventType {
 	if target == domain.TargetPullRequest {
 		return domain.DomainEventPRMatched
+	}
+	if target == domain.TargetPullRequestReview {
+		return domain.DomainEventPRReviewMatched
 	}
 	return domain.DomainEventIssueMatched
 }
