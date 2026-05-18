@@ -29,8 +29,8 @@ type implementationRunSpec struct {
 	ArtifactDir string
 }
 
-func startImplementationWorker(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
-	runner := skill.NewRunner(root, "", cfg.App().CopilotAllowTools)
+func startImplementationWorker(ctx context.Context, repoRoot string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
+	runner := skill.NewRunner(repoRoot, cfg.Root(), "", cfg.App().CopilotAllowTools)
 	testRunner := executor.NewTestRunner()
 
 	go func() {
@@ -38,7 +38,7 @@ func startImplementationWorker(ctx context.Context, root string, cfg *config.Ser
 		defer ticker.Stop()
 
 		for {
-			if err := runPendingImplementations(ctx, root, cfg, orch, runner, testRunner, logger); err != nil && ctx.Err() == nil {
+			if err := runPendingImplementations(ctx, repoRoot, cfg, orch, runner, testRunner, logger); err != nil && ctx.Err() == nil {
 				logger.Printf("implementation worker error: %v", err)
 			}
 
@@ -53,7 +53,7 @@ func startImplementationWorker(ctx context.Context, root string, cfg *config.Ser
 	return nil
 }
 
-func runPendingImplementations(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, testRunner *executor.TestRunner, logger *log.Logger) error {
+func runPendingImplementations(ctx context.Context, repoRoot string, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, testRunner *executor.TestRunner, logger *log.Logger) error {
 	jobs, err := orch.ListJobs(ctx)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ func runPendingImplementations(ctx context.Context, root string, cfg *config.Ser
 			continue
 		}
 
-		report, err := runTestsForJob(ctx, cfg, testRunner, job, contextData.ArtifactDir)
+		report, err := runTestsForJob(ctx, cfg, testRunner, job, contextData.ArtifactDir, repoRoot)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "test_failed", map[string]any{"error": err.Error()})
 			continue
@@ -333,7 +333,7 @@ func resolveImplementationRetryArtifactDir(cfg *config.Service, job domain.Job, 
 	return artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
 }
 
-func runTestsForJob(ctx context.Context, cfg *config.Service, testRunner *executor.TestRunner, job domain.Job, artifactDir string) (executor.TestReport, error) {
+func runTestsForJob(ctx context.Context, cfg *config.Service, testRunner *executor.TestRunner, job domain.Job, artifactDir string, repoRoot string) (executor.TestReport, error) {
 	rule, ok := cfg.WatchRuleByID(job.WatchRuleID)
 	if !ok {
 		return executor.TestReport{}, os.ErrNotExist
@@ -355,7 +355,7 @@ func runTestsForJob(ctx context.Context, cfg *config.Service, testRunner *execut
 	report := testRunner.Run(ctx, executor.TestProfile{
 		Name:     profile.Name,
 		Commands: profile.Commands,
-	}, cfg.Root())
+	}, repoRoot)
 
 	raw, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {

@@ -11,7 +11,8 @@ import (
 
 type Runner struct {
 	defaultProviderName string
-	root                string
+	repoRoot            string
+	toolRoot            string
 	copilotAllowTools   []string
 }
 
@@ -20,10 +21,11 @@ type ExecutionConfig struct {
 	Model    string
 }
 
-func NewRunner(root string, defaultProviderName string, copilotAllowTools []string) *Runner {
+func NewRunner(repoRoot string, toolRoot string, defaultProviderName string, copilotAllowTools []string) *Runner {
 	return &Runner{
 		defaultProviderName: defaultProviderName,
-		root:                root,
+		repoRoot:            repoRoot,
+		toolRoot:            toolRoot,
 		copilotAllowTools:   append([]string(nil), copilotAllowTools...),
 	}
 }
@@ -33,7 +35,7 @@ func (r *Runner) Run(ctx context.Context, req AIRequest) (AIResult, error) {
 }
 
 func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData DesignContext, execution ExecutionConfig) (AIResult, error) {
-	definition, err := LoadDefinition(r.root, skillName)
+	definition, err := LoadDefinition(r.toolRoot, skillName)
 	if err != nil {
 		return AIResult{}, err
 	}
@@ -93,7 +95,7 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 }
 
 func (r *Runner) RunImplementation(ctx context.Context, skillName string, contextData ImplementationContext, execution ExecutionConfig) (AIResult, error) {
-	definition, err := LoadDefinition(r.root, skillName)
+	definition, err := LoadDefinition(r.toolRoot, skillName)
 	if err != nil {
 		return AIResult{}, err
 	}
@@ -153,7 +155,7 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 }
 
 func (r *Runner) RunReview(ctx context.Context, skillName string, contextData ReviewContext, execution ExecutionConfig) (AIResult, error) {
-	definition, err := LoadDefinition(r.root, skillName)
+	definition, err := LoadDefinition(r.toolRoot, skillName)
 	if err != nil {
 		return AIResult{}, err
 	}
@@ -234,7 +236,7 @@ func (r *Runner) providerNameForDefinition(definition Definition, execution Exec
 func (r *Runner) executionWorkDir(definition Definition, execution ExecutionConfig, artifactDir string) string {
 	providerName := r.providerNameForDefinition(definition, execution)
 	if strings.EqualFold(providerName, "codex") || strings.EqualFold(providerName, "copilot") {
-		return r.root
+		return r.repoRoot
 	}
 	return artifactDir
 }

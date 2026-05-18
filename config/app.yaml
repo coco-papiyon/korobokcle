@@ -3,8 +3,8 @@ pollInterval: 2m0s
 dataDir: data
 artifactsDir: artifacts
 workspaceDir: .
-provider: copilot
-model: ""
+provider: codex
+model: gpt-5.4-mini
 copilotAllowTools: []
 prTitleTemplate: '[#{{issue_number}}]{{issue_title}}'
 branchTemplate: issue_{{issue_number}}

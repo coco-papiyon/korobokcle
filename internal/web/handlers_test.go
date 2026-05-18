@@ -44,6 +44,26 @@ func TestAvailableActionsForEvent(t *testing.T) {
 			expect: []string{actionRetryImplementation},
 		},
 		{
+			name: "test failed",
+			event: domain.Event{
+				EventType: "test_failed",
+				StateFrom: string(domain.StateTestRunning),
+				StateTo:   string(domain.StateFailed),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{actionRetryImplementation},
+		},
+		{
+			name: "design failed",
+			event: domain.Event{
+				EventType: "design_failed",
+				StateFrom: string(domain.StateDesignRunning),
+				StateTo:   string(domain.StateFailed),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{actionRetryDesign},
+		},
+		{
 			name: "review ready",
 			event: domain.Event{
 				EventType: "review_ready",
@@ -92,6 +112,46 @@ func TestAvailableActionsForEvent(t *testing.T) {
 				CreatedAt: time.Now(),
 			},
 			expect: []string{actionRetryPR},
+		},
+		{
+			name: "design started has no actions",
+			event: domain.Event{
+				EventType: "design_started",
+				StateFrom: string(domain.StateDetected),
+				StateTo:   string(domain.StateDesignRunning),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{},
+		},
+		{
+			name: "implementation started has no actions",
+			event: domain.Event{
+				EventType: "implementation_started",
+				StateFrom: string(domain.StateImplementationRunning),
+				StateTo:   string(domain.StateImplementationRunning),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{},
+		},
+		{
+			name: "review started has no actions",
+			event: domain.Event{
+				EventType: "review_started",
+				StateFrom: string(domain.StateCollectingContext),
+				StateTo:   string(domain.StateReviewRunning),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{},
+		},
+		{
+			name: "pr creating started has no actions",
+			event: domain.Event{
+				EventType: "pr_creating_started",
+				StateFrom: string(domain.StatePRCreating),
+				StateTo:   string(domain.StatePRCreating),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{},
 		},
 	}
 

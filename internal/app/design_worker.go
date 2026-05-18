@@ -16,8 +16,8 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
 
-func startDesignWorker(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
-	runner := skill.NewRunner(root, "", cfg.App().CopilotAllowTools)
+func startDesignWorker(ctx context.Context, repoRoot string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
+	runner := skill.NewRunner(repoRoot, cfg.Root(), "", cfg.App().CopilotAllowTools)
 
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -124,7 +124,7 @@ func buildDesignContext(cfg *config.Service, job domain.Job, events []domain.Eve
 		Title:       job.Title,
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
-		ArtifactDir: artifacts.WorkerDir(cfg.App().WorkspaceDir, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerDesign),
+		ArtifactDir: artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerDesign),
 	}
 
 	for _, event := range events {

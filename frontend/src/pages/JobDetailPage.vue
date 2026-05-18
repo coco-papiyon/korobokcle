@@ -17,6 +17,7 @@ import {
   submitReviewRerun,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
+import { rerunActionFromEvent, rerunButtonLabel, type RerunAction } from '@/lib/rerun-actions'
 import type { JobEvent } from '@/types'
 
 const route = useRoute()
@@ -82,8 +83,6 @@ const implementationRerunError = ref<string | null>(null)
 const prRerunError = ref<string | null>(null)
 const reviewRerunError = ref<string | null>(null)
 
-type RerunAction = 'retry_design' | 'retry_implementation' | 'retry_pr' | 'retry_review'
-
 const prCreateInfo = computed(() => {
   const raw = data.value?.prCreateArtifact?.content
   if (!raw) {
@@ -109,12 +108,7 @@ const canReviewImplementation = computed(() => {
   }
   return state === 'failed' && latestEvent.value?.eventType === 'test_failed'
 })
-const flowRerunAction = computed<RerunAction | null>(() => {
-  // Only determine rerun/fix actions based on event history (latestEvent).
-  // This keeps Flow button visibility consistent with the event history view.
-  const event = latestEvent.value
-  return flowRerunActionFromEvent(event)
-})
+const flowRerunAction = computed<RerunAction | null>(() => rerunActionFromEvent(latestEvent.value))
 const finalApprovalWarning = computed(() => {
   if (data.value?.job.state === 'failed' && latestEvent.value?.eventType === 'test_failed') {
     return 'Tests failed, but you can still approve and continue to PR creation.'
@@ -190,94 +184,6 @@ function rerunErrorLabel(action: RerunAction) {
     return 'Review rerun'
   }
   return 'PR rerun'
-}
-
-function flowRerunActionFromEvent(event?: JobEvent | null): RerunAction | null {
-  if (!event) {
-    return null
-  }
-
-  switch (event.eventType) {
-    case 'design_started':
-    case 'design_ready':
-    case 'waiting_design_approval':
-    case 'design_rejected':
-    case 'design_failed':
-    case 'design_rerun_requested':
-    case 'issue_matched':
-      return 'retry_design'
-    case 'design_approved':
-    case 'implementation_started':
-    case 'implementation_ready':
-    case 'waiting_final_approval':
-    case 'final_rejected':
-    case 'implementation_failed':
-    case 'test_failed':
-    case 'implementation_rerun_requested':
-      return 'retry_implementation'
-    case 'final_approved':
-    case 'pr_creating_started':
-    case 'pr_create_failed':
-    case 'pr_created':
-    case 'pr_rerun_requested':
-      return 'retry_pr'
-    case 'review_started':
-    case 'review_ready':
-    case 'review_failed':
-    case 'review_rerun_requested':
-      return 'retry_review'
-  }
-
-  switch (event.stateFrom) {
-    case 'design_running':
-    case 'detected':
-      return 'retry_design'
-    case 'implementation_running':
-    case 'test_running':
-    case 'waiting_final_approval':
-    case 'implementation_ready':
-      return 'retry_implementation'
-    case 'pr_creating':
-      return 'retry_pr'
-    case 'collecting_context':
-    case 'review_running':
-    case 'review_ready':
-      return 'retry_review'
-    default:
-      return null
-  }
-}
-
-function flowRerunButtonLabel(action: RerunAction, eventType?: string) {
-  if (action === 'retry_implementation' && eventType === 'test_failed') {
-    return 'Fix Implementation'
-  }
-  if (action === 'retry_design') {
-    return 'Rerun Design'
-  }
-  if (action === 'retry_implementation') {
-    return 'Rerun Implementation'
-  }
-  if (action === 'retry_review') {
-    return 'Rerun Review'
-  }
-  return 'Rerun PR'
-}
-
-function actionButtonLabel(action: RerunAction, eventType: string, sourceEventType?: string) {
-  if (action === 'retry_implementation' && (eventType === 'test_failed' || sourceEventType === 'test_failed')) {
-    return 'Fix Implementation'
-  }
-  if (action === 'retry_design') {
-    return 'Rerun Design'
-  }
-  if (action === 'retry_implementation') {
-    return 'Rerun Implementation'
-  }
-  if (action === 'retry_review') {
-    return 'Rerun Review'
-  }
-  return 'Retry PR'
 }
 
 function formatPayloadPreview(payload: string) {
@@ -473,7 +379,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="approvalState === 'saving' || finalApprovalState === 'saving' || rerunState(flowRerunAction) === 'saving'"
                   @click="submitRerun(flowRerunAction)"
                 >
-                  {{ flowRerunButtonLabel(flowRerunAction, latestEvent?.eventType) }}
+                  {{ rerunButtonLabel(flowRerunAction, latestEvent?.eventType, latestEvent?.sourceEventType) }}
                 </button>
                 <template v-if="canReviewDesign">
                   <button class="button button-secondary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('rejected')">
@@ -630,7 +536,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="designRerunState === 'saving'"
                   @click="submitRerun('retry_design', event.id)"
                 >
-                  {{ actionButtonLabel('retry_design', event.eventType, event.sourceEventType) }}
+                  {{ rerunButtonLabel('retry_design', event.eventType, event.sourceEventType) }}
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_implementation')"
@@ -639,7 +545,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="implementationRerunState === 'saving'"
                   @click="submitRerun('retry_implementation', event.id)"
                 >
-                  {{ actionButtonLabel('retry_implementation', event.eventType, event.sourceEventType) }}
+                  {{ rerunButtonLabel('retry_implementation', event.eventType, event.sourceEventType) }}
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_review')"
@@ -648,7 +554,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="reviewRerunState === 'saving'"
                   @click="submitRerun('retry_review', event.id)"
                 >
-                  {{ actionButtonLabel('retry_review', event.eventType, event.sourceEventType) }}
+                  {{ rerunButtonLabel('retry_review', event.eventType, event.sourceEventType) }}
                 </button>
                 <button
                   v-if="event.availableActions.includes('retry_pr')"
@@ -657,7 +563,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   :disabled="prRerunState === 'saving'"
                   @click="submitRerun('retry_pr', event.id)"
                 >
-                  {{ actionButtonLabel('retry_pr', event.eventType, event.sourceEventType) }}
+                  {{ rerunButtonLabel('retry_pr', event.eventType, event.sourceEventType) }}
                 </button>
               </div>
               <span v-else>-</span>
