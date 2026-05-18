@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -19,6 +17,8 @@ import {
 import { formatDateTime } from '@/lib/format'
 import { rerunActionFromEvent, rerunButtonLabel, type RerunAction } from '@/lib/rerun-actions'
 import type { JobEvent } from '@/types'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const jobID = computed(() => String(route.params.id))
