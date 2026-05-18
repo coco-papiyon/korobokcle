@@ -279,7 +279,7 @@ func TestHandleSaveAppConfigUpdatesPollInterval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read saved config: %v", err)
 	}
-	if !bytes.Contains(raw, []byte("pollInterval: 1m30s")) {
+	if !bytes.Contains(raw, []byte("pollInterval: 90")) {
 		t.Fatalf("expected saved config to contain updated poll interval, got %s", string(raw))
 	}
 	if bytes.Contains(raw, []byte("provider:")) && !bytes.Contains(raw, []byte("provider: mock")) {
@@ -321,7 +321,7 @@ func TestHandleSaveAppConfigUpdatesScreenRefreshInterval(t *testing.T) {
 	if !bytes.Contains(raw, []byte("screenRefreshInterval: 0s")) {
 		t.Fatalf("expected saved config to contain screen refresh interval, got %s", string(raw))
 	}
-	if !bytes.Contains(raw, []byte("pollInterval: 45s")) {
+	if !bytes.Contains(raw, []byte("pollInterval: 45")) {
 		t.Fatalf("expected saved config to keep watcher poll interval, got %s", string(raw))
 	}
 }

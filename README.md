@@ -173,14 +173,14 @@ go run ./cmd/korobokcle --debug
 SQLite ファイルはデフォルトで `data/korobokcle.db` に作成されます。
 
 `config/app.yaml` の `provider` は `mock` / `copilot` / `codex` を指定できます。
-`config/app.yaml` の `providers` に、選択可能な provider と model の一覧を定義します。
+provider と model の候補はコード内の provider catalog を参照します。
 `model` は省略可能で、未指定ならツールの既定モデルを使います。
 Web UI の `Settings` 画面からも切り替え可能です。
-`config/app.yaml` の `pollInterval` は watcher のポーリング間隔です。画面更新用の `screenRefreshInterval` とは別設定です。
+`config/app.yaml` の `pollInterval` は watcher のポーリング間隔です。秒数で保存され、画面更新用の `screenRefreshInterval` とは別設定です。
 `config/app.yaml` の `screenRefreshInterval` で、Dashboard と Job Detail の自動更新間隔を `0 / 5 / 10 / 20 / 30` 秒から選べます。`0` は自動更新なしです。
 
 `config/watch-rules.yaml` の各ルールでも `provider` / `model` を指定でき、未指定時は `config/app.yaml` の設定を使います。
-watch rule 側の provider / model の候補も、`config/app.yaml` の `providers` を元に表示されます。
+watch rule 側の provider / model の候補も、コード内の provider catalog を元に表示されます。
 
 `copilot` と `codex` は外部 CLI を実行します。
 デフォルトでは `copilot -p ... -s --allow-all-tools --no-ask-user` と `codex exec` を呼びますが、

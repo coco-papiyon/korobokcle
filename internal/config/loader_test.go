@@ -38,6 +38,9 @@ func TestLoadOrInitCreatesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read app.yaml: %v", err)
 	}
+	if !bytes.Contains(raw, []byte("pollInterval: 120")) {
+		t.Fatalf("expected default app config to store pollInterval as seconds, got %s", string(raw))
+	}
 	if bytes.Contains(raw, []byte("providers:")) {
 		t.Fatalf("expected default app config to omit providers, got %s", string(raw))
 	}

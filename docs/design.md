@@ -734,11 +734,13 @@ config/
   - HTTP ポート
   - ポーリング間隔
   - ワークスペース配下の各種ディレクトリ
-  - 利用 Provider
+  - 利用中の provider / model
+  - provider / model の候補はコード内 catalog を参照する
 - `watch-rules.yaml`
   - Issue / PR の監視条件
   - 対象リポジトリ
   - 実行スキルセット
+  - provider / model の候補は設定ファイルではなくコード側定義を使う
 - `notifications.yaml`
   - 有効な通知方式
   - 通知タイミング
