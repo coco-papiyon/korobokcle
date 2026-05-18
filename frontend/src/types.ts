@@ -86,6 +86,7 @@ export type AppConfig = {
   model: string
   copilotAllowTools: string[]
   pollInterval: number
+  screenRefreshInterval: number
   prTitleTemplate: string
   branchTemplate: string
   providers: ProviderSpec[]

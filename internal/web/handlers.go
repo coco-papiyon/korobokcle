@@ -96,22 +96,24 @@ type providerSpecResponse struct {
 }
 
 type appConfigResponse struct {
-	Provider          string                 `json:"provider"`
-	Model             string                 `json:"model"`
-	CopilotAllowTools []string               `json:"copilotAllowTools"`
-	PollInterval      int                    `json:"pollInterval"`
-	PRTitleTemplate   string                 `json:"prTitleTemplate"`
-	BranchTemplate    string                 `json:"branchTemplate"`
-	Providers         []providerSpecResponse `json:"providers"`
+	Provider              string                 `json:"provider"`
+	Model                 string                 `json:"model"`
+	CopilotAllowTools     []string               `json:"copilotAllowTools"`
+	PollInterval          int                    `json:"pollInterval"`
+	ScreenRefreshInterval int                    `json:"screenRefreshInterval"`
+	PRTitleTemplate       string                 `json:"prTitleTemplate"`
+	BranchTemplate        string                 `json:"branchTemplate"`
+	Providers             []providerSpecResponse `json:"providers"`
 }
 
 type saveAppConfigRequest struct {
-	Provider          *string  `json:"provider"`
-	Model             *string  `json:"model"`
-	CopilotAllowTools []string `json:"copilotAllowTools"`
-	PollInterval      int      `json:"pollInterval"`
-	PRTitleTemplate   string   `json:"prTitleTemplate"`
-	BranchTemplate    string   `json:"branchTemplate"`
+	Provider              *string  `json:"provider"`
+	Model                 *string  `json:"model"`
+	CopilotAllowTools     []string `json:"copilotAllowTools"`
+	PollInterval          *int     `json:"pollInterval"`
+	ScreenRefreshInterval *int     `json:"screenRefreshInterval"`
+	PRTitleTemplate       string   `json:"prTitleTemplate"`
+	BranchTemplate        string   `json:"branchTemplate"`
 }
 
 type notificationChannelResponse struct {
@@ -446,15 +448,24 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 		branchTemplate = naming.DefaultBranchTemplate
 	}
 	appConfig.BranchTemplate = branchTemplate
-	if payload.PollInterval < 1 {
-		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be a positive whole number of seconds"))
-		return
+	if payload.PollInterval != nil {
+		if *payload.PollInterval < 1 {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be a positive whole number of seconds"))
+			return
+		}
+		if *payload.PollInterval > 24*60*60 {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be no more than 86400 seconds"))
+			return
+		}
+		appConfig.PollInterval = time.Duration(*payload.PollInterval) * time.Second
 	}
-	if payload.PollInterval > 24*60*60 {
-		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be no more than 86400 seconds"))
-		return
+	if payload.ScreenRefreshInterval != nil {
+		if !allowedScreenRefreshInterval(*payload.ScreenRefreshInterval) {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("screenRefreshInterval must be one of 0, 5, 10, 20, or 30 seconds"))
+			return
+		}
+		appConfig.ScreenRefreshInterval = time.Duration(*payload.ScreenRefreshInterval) * time.Second
 	}
-	appConfig.PollInterval = time.Duration(payload.PollInterval) * time.Second
 	if err := s.config.UpdateApp(appConfig); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
@@ -862,13 +873,14 @@ func toAppConfigResponse(app config.App) appConfigResponse {
 		branchTemplate = naming.DefaultBranchTemplate
 	}
 	return appConfigResponse{
-		Provider:          app.Provider,
-		Model:             normalizeDefaultModelValue(app.Model),
-		CopilotAllowTools: sliceOrEmpty(app.CopilotAllowTools),
-		PollInterval:      int(effectivePollInterval(app.PollInterval) / time.Second),
-		PRTitleTemplate:   prTitleTemplate,
-		BranchTemplate:    branchTemplate,
-		Providers:         toProviderSpecResponses(app.Providers),
+		Provider:              app.Provider,
+		Model:                 normalizeDefaultModelValue(app.Model),
+		CopilotAllowTools:     sliceOrEmpty(app.CopilotAllowTools),
+		PollInterval:          int(effectivePollInterval(app.PollInterval) / time.Second),
+		ScreenRefreshInterval: durationSeconds(app.ScreenRefreshInterval),
+		PRTitleTemplate:       prTitleTemplate,
+		BranchTemplate:        branchTemplate,
+		Providers:             toProviderSpecResponses(app.Providers),
 	}
 }
 
@@ -921,6 +933,22 @@ func effectivePollInterval(value time.Duration) time.Duration {
 		return config.DefaultPollInterval
 	}
 	return value
+}
+
+func durationSeconds(value time.Duration) int {
+	if value <= 0 {
+		return 0
+	}
+	return int(value / time.Second)
+}
+
+func allowedScreenRefreshInterval(seconds int) bool {
+	switch seconds {
+	case 0, 5, 10, 20, 30:
+		return true
+	default:
+		return false
+	}
 }
 
 func toProviderSpecResponses(providers []config.ProviderSpec) []providerSpecResponse {

@@ -193,11 +193,12 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 
 	var got struct {
-		Provider        string `json:"provider"`
-		Model           string `json:"model"`
-		PollInterval    int    `json:"pollInterval"`
-		PRTitleTemplate string `json:"prTitleTemplate"`
-		BranchTemplate  string `json:"branchTemplate"`
+		Provider              string `json:"provider"`
+		Model                 string `json:"model"`
+		PollInterval          int    `json:"pollInterval"`
+		ScreenRefreshInterval int    `json:"screenRefreshInterval"`
+		PRTitleTemplate       string `json:"prTitleTemplate"`
+		BranchTemplate        string `json:"branchTemplate"`
 	}
 	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -205,6 +206,9 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 
 	if got.PollInterval != 45 {
 		t.Fatalf("expected poll interval 45, got %d", got.PollInterval)
+	}
+	if got.ScreenRefreshInterval != 5 {
+		t.Fatalf("expected screen refresh interval 5, got %d", got.ScreenRefreshInterval)
 	}
 	if got.PRTitleTemplate != "[#{{issue_number}}]{{issue_title}}" {
 		t.Fatalf("unexpected pr title template %q", got.PRTitleTemplate)
@@ -252,6 +256,45 @@ func TestHandleSaveAppConfigUpdatesPollInterval(t *testing.T) {
 	}
 	if bytes.Contains(raw, []byte("provider:")) && !bytes.Contains(raw, []byte("provider: mock")) {
 		t.Fatalf("expected saved config provider to remain unchanged, got %s", string(raw))
+	}
+}
+
+func TestHandleSaveAppConfigUpdatesScreenRefreshInterval(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.PollInterval = 45 * time.Second
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"screenRefreshInterval":0,"prTitleTemplate":"[#{{issue_number}}]{{issue_title}}","branchTemplate":"issue_{{issue_number}}"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	if got := svc.App().PollInterval; got != 45*time.Second {
+		t.Fatalf("expected watcher poll interval to remain 45s, got %s", got)
+	}
+	if got := svc.App().ScreenRefreshInterval; got != 0 {
+		t.Fatalf("expected screen refresh interval to be disabled, got %s", got)
+	}
+
+	savedConfigPath := filepath.Join(root, "config", "app.yaml")
+	raw, err := os.ReadFile(savedConfigPath)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if !bytes.Contains(raw, []byte("screenRefreshInterval: 0s")) {
+		t.Fatalf("expected saved config to contain screen refresh interval, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("pollInterval: 45s")) {
+		t.Fatalf("expected saved config to keep watcher poll interval, got %s", string(raw))
 	}
 }
 
@@ -387,7 +430,7 @@ func TestHandleSaveAppConfigClearsModelWhenDefaultSelected(t *testing.T) {
 	}
 }
 
-func TestHandleSaveAppConfigRejectsInvalidPollInterval(t *testing.T) {
+func TestHandleSaveAppConfigRejectsInvalidScreenRefreshInterval(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -395,7 +438,7 @@ func TestHandleSaveAppConfigRejectsInvalidPollInterval(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"pollInterval":0}`)
+	body := []byte(`{"screenRefreshInterval":1}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 

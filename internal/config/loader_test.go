@@ -18,6 +18,9 @@ func TestLoadOrInitCreatesDefaults(t *testing.T) {
 	if files.App.HTTPPort == 0 {
 		t.Fatal("expected default http port")
 	}
+	if files.App.ScreenRefreshInterval != DefaultScreenRefreshInterval {
+		t.Fatalf("expected default screen refresh interval %s, got %s", DefaultScreenRefreshInterval, files.App.ScreenRefreshInterval)
+	}
 
 	for _, path := range []string{
 		"config/app.yaml",

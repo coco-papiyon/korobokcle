@@ -1,7 +1,7 @@
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, unref, watch } from 'vue'
 
 type UseAsyncDataOptions<T> = {
-  pollIntervalMs?: number
+  pollIntervalMs?: number | { value: number | null | undefined } | (() => number | null | undefined)
   mergeData?: (current: T | null, incoming: T) => T
 }
 
@@ -15,6 +15,13 @@ export function useAsyncData<T>(loader: () => Promise<T>, options: UseAsyncDataO
   const isRefreshing = ref(false)
   const error = ref<string | null>(null)
   let pollTimer: number | null = null
+
+  function clearPollTimer() {
+    if (pollTimer !== null) {
+      window.clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
 
   async function reload(reloadOptions: ReloadOptions = {}) {
     const silent = reloadOptions.silent ?? data.value !== null
@@ -43,18 +50,25 @@ export function useAsyncData<T>(loader: () => Promise<T>, options: UseAsyncDataO
 
   onMounted(reload)
 
-  if (options.pollIntervalMs && options.pollIntervalMs > 0) {
-    onMounted(() => {
-      pollTimer = window.setInterval(() => {
-        void reload({ silent: true })
-      }, options.pollIntervalMs)
-    })
-    onUnmounted(() => {
-      if (pollTimer !== null) {
-        window.clearInterval(pollTimer)
+  watch(
+    () => {
+      if (typeof options.pollIntervalMs === 'function') {
+        return options.pollIntervalMs()
       }
-    })
-  }
+      return unref(options.pollIntervalMs)
+    },
+    (intervalMs) => {
+      clearPollTimer()
+      if (intervalMs && intervalMs > 0) {
+        pollTimer = window.setInterval(() => {
+          void reload({ silent: true })
+        }, intervalMs)
+      }
+    },
+    { immediate: true },
+  )
+
+  onUnmounted(clearPollTimer)
 
   return {
     data,
