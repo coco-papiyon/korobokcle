@@ -294,11 +294,6 @@
   color: var(--danger-ink);
 }
 
-.field__control-textarea {
-  min-height: 7rem;
-  resize: vertical;
-}
-
 .artifact-view {
   margin: 0;
   padding: var(--space-4);
