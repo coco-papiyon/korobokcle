@@ -21,6 +21,12 @@
 - npm `10` 系推奨
 - GitHub CLI `gh`
 
+`copilot` provider を使う場合は GitHub Copilot CLI も必要です。
+
+```powershell
+npm install -g @github/copilot
+```
+
 ## Directory Layout
 
 ```text
@@ -157,7 +163,7 @@ Web UI の `Settings` 画面からも切り替え可能です。
 watch rule 側の provider / model の候補も、`config/app.yaml` の `providers` を元に表示されます。
 
 `copilot` と `codex` は外部 CLI を実行します。
-デフォルトでは `copilot suggest -t general ...` と `codex exec ...` を呼びますが、
+デフォルトでは `copilot -p ... -s ...` と `codex exec ...` を呼びますが、
 model を指定した場合は `--model` を付けて実行します。
 環境に応じて `KOROBOKCLE_COPILOT_BIN` / `KOROBOKCLE_COPILOT_ARGS_JSON`、
 `KOROBOKCLE_CODEX_BIN` / `KOROBOKCLE_CODEX_ARGS_JSON` で上書きできます。

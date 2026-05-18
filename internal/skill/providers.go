@@ -45,7 +45,7 @@ func (p *CopilotCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		Name:        "copilot",
 		EnvPrefix:   "KOROBOKCLE_COPILOT",
 		DefaultBin:  "copilot",
-		DefaultArgs: []string{"suggest", "-t", "general", "{{model_flag}}", "{{model}}", "{{prompt}}"},
+		DefaultArgs: []string{"-p", "{{prompt}}", "-s", "{{model_flag}}", "{{model}}"},
 	}
 	return provider.Run(ctx, req)
 }
