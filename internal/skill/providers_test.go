@@ -34,6 +34,35 @@ func TestExternalCLIProviderReadsStdout(t *testing.T) {
 	}
 }
 
+func TestCodexCLIProviderUsesWritableSandboxByDefault(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "echo-codex.cmd")
+	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %*\r\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", "")
+
+	provider := NewCodexCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:      "codex prompt",
+		Model:       "default",
+		WorkDir:     dir,
+		ArtifactDir: dir,
+		OutputPath:  filepath.Join(dir, "out.txt"),
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(result.Output, "--sandbox") || !strings.Contains(result.Output, "workspace-write") {
+		t.Fatalf("expected writable sandbox flags, got %q", result.Output)
+	}
+	if strings.Contains(result.Output, "--ask-for-approval") {
+		t.Fatalf("unexpected approval flag in %q", result.Output)
+	}
+}
+
 func TestExternalCLIProviderReadsOutputFileFallback(t *testing.T) {
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "file-provider.cmd")

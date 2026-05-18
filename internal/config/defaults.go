@@ -18,6 +18,7 @@ func DefaultFiles() Files {
 			DataDir:               "data",
 			ArtifactsDir:          "artifacts",
 			WorkspaceDir:          ".",
+			MonitoredRepositories: []MonitoredRepository{{Repository: "owner/repository", Workers: 1}},
 			Provider:              "mock",
 			Model:                 "",
 			CopilotAllowTools:     append([]string(nil), DefaultCopilotAllowTools...),

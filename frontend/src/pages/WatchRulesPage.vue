@@ -28,11 +28,23 @@ watch(
 )
 
 const selectedRule = computed(() => forms.value.find((rule) => rule.id === selectedRuleId.value) ?? null)
+const availableRepositoryEntries = computed(() => appConfig.value?.monitoredRepositories ?? [])
+const availableRepositories = computed(() =>
+  availableRepositoryEntries.value.map((entry) => entry.repository.trim()).filter(Boolean),
+)
 const availableModelOptions = computed(() => {
   const config = appConfig.value as AppConfig | null | undefined
   const providerCatalog = config?.providers ?? []
   const selectedProvider = selectedRule.value?.provider?.trim() || config?.provider || ''
   return modelOptionsForProvider(providerCatalog, selectedProvider, selectedRule.value?.model ?? '', 'Use setting')
+})
+const selectedRuleInvalidRepositories = computed(() => {
+  const rule = selectedRule.value
+  if (!rule) {
+    return []
+  }
+  const allowed = new Set(availableRepositories.value)
+  return (rule.repositories ?? []).filter((repository) => !allowed.has(repository))
 })
 
 function toForm(rule: WatchRule): WatchRuleForm {
@@ -57,7 +69,7 @@ function fromForm(rule: WatchRuleForm): WatchRule {
   return {
     id: rule.id.trim(),
     name: rule.name.trim(),
-    repositories: splitCSV(rule.repositoriesText),
+    repositories: [...(rule.repositories ?? [])],
     target: rule.target,
     branch: rule.branch.trim(),
     projectName: rule.projectName.trim(),
@@ -146,12 +158,13 @@ function selectRule(ruleID: string) {
 }
 
 function addRule() {
+  const defaultRepositories = availableRepositories.value.slice(0, 1)
   const suffix = forms.value.length + 1
   const rule: WatchRuleForm = {
     id: `rule-${suffix}`,
     name: `New Rule ${suffix}`,
-    repositories: [],
-    repositoriesText: '',
+    repositories: [...defaultRepositories],
+    repositoriesText: defaultRepositories.join(', '),
     target: 'issue',
     branch: '',
     projectName: '',
@@ -175,6 +188,22 @@ function addRule() {
   selectedRuleId.value = rule.id
   saveState.value = 'idle'
   saveError.value = null
+}
+
+function toggleRepository(repository: string, enabled: boolean) {
+  if (!selectedRule.value) {
+    return
+  }
+  const current = selectedRule.value.repositories ?? []
+  if (enabled) {
+    if (current.includes(repository)) {
+      return
+    }
+    selectedRule.value.repositories = [...current, repository]
+  } else {
+    selectedRule.value.repositories = current.filter((item) => item !== repository)
+  }
+  selectedRule.value.repositoriesText = (selectedRule.value.repositories ?? []).join(', ')
 }
 
 function removeSelectedRule() {
@@ -283,12 +312,24 @@ async function persistRules() {
 
               <label class="field field-full">
                 <span class="field__label">Repositories</span>
-                <input
-                  v-model="selectedRule.repositoriesText"
-                  class="field__control"
-                  type="text"
-                  placeholder="owner/repo-a, owner/repo-b"
-                />
+                <div v-if="availableRepositories.length" class="stack-sm">
+                  <label
+                    v-for="entry in availableRepositoryEntries"
+                    :key="entry.repository"
+                    class="field field--inline"
+                  >
+                    <span class="field__label">{{ entry.repository }} ({{ entry.workers }})</span>
+                    <input
+                      :checked="(selectedRule.repositories ?? []).includes(entry.repository)"
+                      type="checkbox"
+                      @change="toggleRepository(entry.repository, ($event.target as HTMLInputElement).checked)"
+                    />
+                  </label>
+                </div>
+                <p v-else class="text-muted">Settings で監視対象リポジトリを追加してください。</p>
+                <p v-if="selectedRuleInvalidRepositories.length" class="notice notice-danger">
+                  未登録のリポジトリが含まれています: {{ selectedRuleInvalidRepositories.join(', ') }}
+                </p>
               </label>
 
               <label class="field field-full">

@@ -199,6 +199,10 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 		ScreenRefreshInterval int    `json:"screenRefreshInterval"`
 		PRTitleTemplate       string `json:"prTitleTemplate"`
 		BranchTemplate        string `json:"branchTemplate"`
+		MonitoredRepositories []struct {
+			Repository string `json:"repository"`
+			Workers    int    `json:"workers"`
+		} `json:"monitoredRepositories"`
 	}
 	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
@@ -218,6 +222,9 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 	if got.Model != "" {
 		t.Fatalf("expected default model to be normalized away, got %q", got.Model)
+	}
+	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].Workers != 1 {
+		t.Fatalf("unexpected monitored repositories: %#v", got.MonitoredRepositories)
 	}
 }
 
@@ -379,6 +386,56 @@ func TestHandleSaveAppConfigUpdatesCopilotAllowTools(t *testing.T) {
 	}
 }
 
+func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","workers":1},{"repository":"owner/other","workers":3}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := svc.App().MonitoredRepositories; len(got) != 2 || got[0].Repository != "owner/repository" || got[0].Workers != 1 || got[1].Repository != "owner/other" || got[1].Workers != 3 {
+		t.Fatalf("unexpected monitored repositories: %#v", got)
+	}
+
+	savedConfigPath := filepath.Join(root, "config", "app.yaml")
+	raw, err := os.ReadFile(savedConfigPath)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if !bytes.Contains(raw, []byte("monitoredRepositories:")) || !bytes.Contains(raw, []byte("repository: owner/other")) || !bytes.Contains(raw, []byte("workers: 3")) {
+		t.Fatalf("expected saved config to contain monitoredRepositories, got %s", string(raw))
+	}
+}
+
+func TestHandleSaveAppConfigRejectsInvalidMonitoredRepositoryWorkers(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","workers":0}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
+	}
+}
+
 func TestHandleSaveAppConfigClearsModelWhenProviderChanges(t *testing.T) {
 	t.Parallel()
 
@@ -443,6 +500,25 @@ func TestHandleSaveAppConfigRejectsInvalidScreenRefreshInterval(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
 	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
+	}
+}
+
+func TestHandleSaveWatchRulesRejectsUnregisteredRepository(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/not-registered"],"target":"issue","branch":"release/1.x","labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
+
+	server.handleSaveWatchRules(recorder, request)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
@@ -693,7 +769,7 @@ func TestHandleSaveWatchRulesUpdatesBranch(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repo"],"target":"issue","branch":"release/1.x","labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"release/1.x","labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 
@@ -715,7 +791,7 @@ func TestHandleSaveWatchRulesUpdatesProjectFilters(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repo"],"target":"issue_project","branch":"","projectName":"Roadmap","projectFilters":[{"field":"Status","values":["Ready","In Progress"]}],"labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue_project","branch":"","projectName":"Roadmap","projectFilters":[{"field":"Status","values":["Ready","In Progress"]}],"labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 

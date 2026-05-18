@@ -95,25 +95,32 @@ type providerSpecResponse struct {
 	Models []string `json:"models"`
 }
 
+type monitoredRepositoryResponse struct {
+	Repository string `json:"repository"`
+	Workers    int    `json:"workers"`
+}
+
 type appConfigResponse struct {
-	Provider              string                 `json:"provider"`
-	Model                 string                 `json:"model"`
-	CopilotAllowTools     []string               `json:"copilotAllowTools"`
-	PollInterval          int                    `json:"pollInterval"`
-	ScreenRefreshInterval int                    `json:"screenRefreshInterval"`
-	PRTitleTemplate       string                 `json:"prTitleTemplate"`
-	BranchTemplate        string                 `json:"branchTemplate"`
-	Providers             []providerSpecResponse `json:"providers"`
+	Provider              string                        `json:"provider"`
+	Model                 string                        `json:"model"`
+	CopilotAllowTools     []string                      `json:"copilotAllowTools"`
+	PollInterval          int                           `json:"pollInterval"`
+	ScreenRefreshInterval int                           `json:"screenRefreshInterval"`
+	PRTitleTemplate       string                        `json:"prTitleTemplate"`
+	BranchTemplate        string                        `json:"branchTemplate"`
+	MonitoredRepositories []monitoredRepositoryResponse `json:"monitoredRepositories"`
+	Providers             []providerSpecResponse        `json:"providers"`
 }
 
 type saveAppConfigRequest struct {
-	Provider              *string  `json:"provider"`
-	Model                 *string  `json:"model"`
-	CopilotAllowTools     []string `json:"copilotAllowTools"`
-	PollInterval          *int     `json:"pollInterval"`
-	ScreenRefreshInterval *int     `json:"screenRefreshInterval"`
-	PRTitleTemplate       string   `json:"prTitleTemplate"`
-	BranchTemplate        string   `json:"branchTemplate"`
+	Provider              *string                        `json:"provider"`
+	Model                 *string                        `json:"model"`
+	CopilotAllowTools     []string                       `json:"copilotAllowTools"`
+	PollInterval          *int                           `json:"pollInterval"`
+	ScreenRefreshInterval *int                           `json:"screenRefreshInterval"`
+	PRTitleTemplate       string                         `json:"prTitleTemplate"`
+	BranchTemplate        string                         `json:"branchTemplate"`
+	MonitoredRepositories *[]monitoredRepositoryResponse `json:"monitoredRepositories"`
 }
 
 type notificationChannelResponse struct {
@@ -437,6 +444,14 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 		appConfig.Model = modelInput
 	}
 	appConfig.CopilotAllowTools = normalizeStringSlice(payload.CopilotAllowTools)
+	if payload.MonitoredRepositories != nil {
+		repos, err := normalizeMonitoredRepositoryResponses(*payload.MonitoredRepositories)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("monitoredRepositories: %w", err))
+			return
+		}
+		appConfig.MonitoredRepositories = repos
+	}
 	prTitleTemplate := strings.TrimSpace(payload.PRTitleTemplate)
 	if prTitleTemplate == "" {
 		prTitleTemplate = naming.DefaultPRTitleTemplate
@@ -691,6 +706,15 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allowedRepositories := make(map[string]struct{})
+	for _, repository := range s.config.App().MonitoredRepositories {
+		trimmed := strings.TrimSpace(repository.Repository)
+		if trimmed == "" {
+			continue
+		}
+		allowedRepositories[trimmed] = struct{}{}
+	}
+
 	file := config.WatchRulesFile{
 		Rules: make([]config.WatchRule, 0, len(payload)),
 	}
@@ -719,10 +743,21 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].model: %w", index, err))
 			return
 		}
+		repositories := compactStrings(rule.Repositories)
+		if len(repositories) == 0 {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].repositories must include at least one monitored repository", index))
+			return
+		}
+		for _, repository := range repositories {
+			if _, ok := allowedRepositories[repository]; !ok {
+				writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].repositories includes unregistered repository %q", index, repository))
+				return
+			}
+		}
 		file.Rules = append(file.Rules, config.WatchRule{
 			ID:             strings.TrimSpace(rule.ID),
 			Name:           strings.TrimSpace(rule.Name),
-			Repositories:   compactStrings(rule.Repositories),
+			Repositories:   repositories,
 			Target:         rule.Target,
 			Branch:         strings.TrimSpace(rule.Branch),
 			ProjectName:    strings.TrimSpace(rule.ProjectName),
@@ -880,8 +915,57 @@ func toAppConfigResponse(app config.App) appConfigResponse {
 		ScreenRefreshInterval: durationSeconds(app.ScreenRefreshInterval),
 		PRTitleTemplate:       prTitleTemplate,
 		BranchTemplate:        branchTemplate,
+		MonitoredRepositories: toMonitoredRepositoryResponses(app.MonitoredRepositories),
 		Providers:             toProviderSpecResponses(app.Providers),
 	}
+}
+
+func toMonitoredRepositoryResponses(values []config.MonitoredRepository) []monitoredRepositoryResponse {
+	out := make([]monitoredRepositoryResponse, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		repository := strings.TrimSpace(value.Repository)
+		if repository == "" {
+			continue
+		}
+		if _, ok := seen[repository]; ok {
+			continue
+		}
+		seen[repository] = struct{}{}
+		workers := value.Workers
+		if workers < 1 {
+			workers = 1
+		}
+		out = append(out, monitoredRepositoryResponse{
+			Repository: repository,
+			Workers:    workers,
+		})
+	}
+	return out
+}
+
+func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse) ([]config.MonitoredRepository, error) {
+	out := make([]config.MonitoredRepository, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for index, value := range values {
+		repository := strings.TrimSpace(value.Repository)
+		if repository == "" {
+			return nil, fmt.Errorf("item[%d].repository is required", index)
+		}
+		if _, ok := seen[repository]; ok {
+			continue
+		}
+		workers := value.Workers
+		if workers < 1 {
+			return nil, fmt.Errorf("item[%d].workers must be at least 1", index)
+		}
+		seen[repository] = struct{}{}
+		out = append(out, config.MonitoredRepository{
+			Repository: repository,
+			Workers:    workers,
+		})
+	}
+	return out, nil
 }
 
 func toNotificationConfigResponse(notifications config.Notifications) notificationConfigResponse {

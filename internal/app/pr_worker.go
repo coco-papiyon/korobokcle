@@ -193,7 +193,7 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 			continue
 		}
 
-		req, err := buildPRCreateRequest(cfg, job)
+		req, err := buildPRCreateRequest(cfg, job, root)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 			continue
@@ -229,7 +229,7 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 	return nil
 }
 
-func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest, error) {
+func buildPRCreateRequest(cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
 	artifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerPR)
 	summaryDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
 	summaryRaw, err := readFirstArtifactFile(summaryDir, "result.md", "implement.md", "summary.md")
@@ -252,6 +252,7 @@ func buildPRCreateRequest(cfg *config.Service, job domain.Job) (PRCreateRequest,
 		Title:       title,
 		Body:        body,
 		ArtifactDir: artifactDir,
+		WorkDir:     workDir,
 	}, nil
 }
 

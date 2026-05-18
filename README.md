@@ -189,6 +189,7 @@ model を指定した場合は `--model` を付けて実行します。
 `copilot` は監視対象リポジトリを作業ディレクトリとして実行し、`artifacts/.../prompt.md` を読んでその指示に従います。
 設定・成果物・スキル定義はツール配置ディレクトリの `config/`、`artifacts/`、`skills/` を参照します。
 `copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定できます。必要ならここで制限できます。
+`codex` は `codex exec --sandbox workspace-write --ask-for-approval never` で実行し、標準入力にプロンプト本文を渡します。
 環境に応じて `KOROBOKCLE_COPILOT_BIN` / `KOROBOKCLE_COPILOT_ARGS_JSON`、
 `KOROBOKCLE_CODEX_BIN` / `KOROBOKCLE_CODEX_ARGS_JSON` で上書きできます。
 `KOROBOKCLE_TOOL_ROOT` を指定すると、ツール配置ディレクトリを明示できます。

@@ -133,6 +133,7 @@ function parseCopilotAllowTools(value: string) {
     .map((item) => item.trim())
     .filter((item, index, items) => item.length > 0 && items.indexOf(item) === index)
 }
+
 </script>
 
 <template>

@@ -60,10 +60,16 @@ func NewCodexCLIProvider() *CodexCLIProvider {
 
 func (p *CodexCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, error) {
 	provider := ExternalCLIProvider{
-		Name:        "codex",
-		EnvPrefix:   "KOROBOKCLE_CODEX",
-		DefaultBin:  "codex",
-		DefaultArgs: []string{"exec", "{{model_flag}}", "{{model}}"},
+		Name:       "codex",
+		EnvPrefix:  "KOROBOKCLE_CODEX",
+		DefaultBin: "codex",
+		DefaultArgs: []string{
+			"exec",
+			"--sandbox",
+			"workspace-write",
+			"{{model_flag}}",
+			"{{model}}",
+		},
 	}
 	return provider.Run(ctx, req)
 }

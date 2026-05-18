@@ -51,17 +51,8 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 	}
 	orch := orchestrator.New(store, notifier)
 	startWatcher(ctx, configService, orch, infoLogger, debugLogger)
-	if err := startDesignWorker(ctx, repoRoot, configService, orch, infoLogger); err != nil {
-		return fmt.Errorf("start design worker: %w", err)
-	}
-	if err := startImplementationWorker(ctx, repoRoot, configService, orch, infoLogger); err != nil {
-		return fmt.Errorf("start implementation worker: %w", err)
-	}
-	if err := startReviewWorker(ctx, repoRoot, configService, orch, infoLogger); err != nil {
-		return fmt.Errorf("start review worker: %w", err)
-	}
-	if err := startPRWorker(ctx, repoRoot, configService, orch, infoLogger); err != nil {
-		return fmt.Errorf("start pr worker: %w", err)
+	if err := startRepositoryWorkers(ctx, configService, orch, infoLogger); err != nil {
+		return fmt.Errorf("start repository workers: %w", err)
 	}
 
 	server, err := web.New(configService, orch)

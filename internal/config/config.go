@@ -3,20 +3,26 @@ package config
 import "time"
 
 type App struct {
-	HTTPPort              int            `yaml:"httpPort"`
-	PollInterval          time.Duration  `yaml:"pollInterval"`
-	ScreenRefreshInterval time.Duration  `yaml:"screenRefreshInterval"`
-	DataDir               string         `yaml:"dataDir"`
-	ArtifactsDir          string         `yaml:"artifactsDir"`
-	WorkspaceDir          string         `yaml:"workspaceDir"`
-	Provider              string         `yaml:"provider"`
-	Model                 string         `yaml:"model"`
-	CopilotAllowTools     []string       `yaml:"copilotAllowTools"`
-	PRTitleTemplate       string         `yaml:"prTitleTemplate"`
-	BranchTemplate        string         `yaml:"branchTemplate"`
-	Providers             []ProviderSpec `yaml:"providers"`
-	SQLitePath            string         `yaml:"sqlitePath"`
-	ShutdownTimeout       time.Duration  `yaml:"shutdownTimeout"`
+	HTTPPort              int                   `yaml:"httpPort"`
+	PollInterval          time.Duration         `yaml:"pollInterval"`
+	ScreenRefreshInterval time.Duration         `yaml:"screenRefreshInterval"`
+	DataDir               string                `yaml:"dataDir"`
+	ArtifactsDir          string                `yaml:"artifactsDir"`
+	WorkspaceDir          string                `yaml:"workspaceDir"`
+	MonitoredRepositories []MonitoredRepository `yaml:"monitoredRepositories"`
+	Provider              string                `yaml:"provider"`
+	Model                 string                `yaml:"model"`
+	CopilotAllowTools     []string              `yaml:"copilotAllowTools"`
+	PRTitleTemplate       string                `yaml:"prTitleTemplate"`
+	BranchTemplate        string                `yaml:"branchTemplate"`
+	Providers             []ProviderSpec        `yaml:"providers"`
+	SQLitePath            string                `yaml:"sqlitePath"`
+	ShutdownTimeout       time.Duration         `yaml:"shutdownTimeout"`
+}
+
+type MonitoredRepository struct {
+	Repository string `yaml:"repository"`
+	Workers    int    `yaml:"workers"`
 }
 
 type ProviderSpec struct {

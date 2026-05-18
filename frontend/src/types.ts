@@ -89,7 +89,13 @@ export type AppConfig = {
   screenRefreshInterval: number
   prTitleTemplate: string
   branchTemplate: string
+  monitoredRepositories: MonitoredRepository[]
   providers: ProviderSpec[]
+}
+
+export type MonitoredRepository = {
+  repository: string
+  workers: number
 }
 
 export type ProviderSpec = {

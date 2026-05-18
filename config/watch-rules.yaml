@@ -3,7 +3,7 @@ rules:
       name: issue
       repositories:
         - https://github.com/coco-papiyon/korobokcle
-      target: issue_project
+      target: issue
       branch: ""
       projectName: ""
       labels: []
@@ -17,7 +17,7 @@ rules:
       model: ""
       skillSet: default
       testProfile: go-default
-      enabled: false
+      enabled: true
     - id: rule-2
       name: PR
       repositories:
@@ -57,4 +57,4 @@ rules:
       model: ""
       skillSet: default
       testProfile: go-default
-      enabled: true
+      enabled: false

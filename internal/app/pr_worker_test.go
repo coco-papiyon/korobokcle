@@ -98,7 +98,7 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 		t.Fatalf("write result.md: %v", err)
 	}
 
-	req, err := buildPRCreateRequest(cfg, job)
+	req, err := buildPRCreateRequest(cfg, job, root)
 	if err != nil {
 		t.Fatalf("buildPRCreateRequest() error = %v", err)
 	}

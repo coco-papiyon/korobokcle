@@ -84,9 +84,12 @@ export function fetchAppConfig(): Promise<AppConfig> {
 }
 
 export function saveAppConfig(
-  config: Pick<AppConfig, 'provider' | 'model' | 'copilotAllowTools' | 'screenRefreshInterval' | 'prTitleTemplate' | 'branchTemplate'> & {
-    pollInterval?: number
-  },
+  config: Partial<
+    Pick<
+      AppConfig,
+      'provider' | 'model' | 'copilotAllowTools' | 'pollInterval' | 'prTitleTemplate' | 'branchTemplate' | 'monitoredRepositories'
+    >
+  >,
 ): Promise<AppConfig> {
   return request<AppConfig>('/api/app-config', {
     method: 'PUT',

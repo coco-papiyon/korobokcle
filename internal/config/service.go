@@ -119,8 +119,20 @@ func cloneFiles(files Files) Files {
 
 func cloneApp(app App) App {
 	cloned := app
+	cloned.MonitoredRepositories = cloneMonitoredRepositories(app.MonitoredRepositories)
 	cloned.CopilotAllowTools = append([]string(nil), app.CopilotAllowTools...)
 	cloned.Providers = cloneProviderSpecs(app.Providers)
+	return cloned
+}
+
+func cloneMonitoredRepositories(values []MonitoredRepository) []MonitoredRepository {
+	cloned := make([]MonitoredRepository, 0, len(values))
+	for _, repository := range values {
+		cloned = append(cloned, MonitoredRepository{
+			Repository: repository.Repository,
+			Workers:    repository.Workers,
+		})
+	}
 	return cloned
 }
 

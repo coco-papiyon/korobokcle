@@ -14,6 +14,7 @@ defineProps<{
       <nav class="nav-tabs" aria-label="Main">
         <RouterLink class="nav-tabs__link" to="/">Dashboard</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings">Settings</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/settings/workers">Workers</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings/watch-rules">Watch Rules</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings/skillsets">Skill Sets</RouterLink>
       </nav>
