@@ -1,17 +1,18 @@
 package skill
 
 type DesignContext struct {
-	JobID       string   `json:"jobId"`
-	Repository  string   `json:"repository"`
-	IssueNumber int      `json:"issueNumber"`
-	Title       string   `json:"title"`
-	Body        string   `json:"body"`
-	Author      string   `json:"author"`
-	Labels      []string `json:"labels"`
-	Assignees   []string `json:"assignees"`
-	WatchRuleID string   `json:"watchRuleId"`
-	BranchName  string   `json:"branchName"`
-	ArtifactDir string   `json:"artifactDir"`
+	JobID        string   `json:"jobId"`
+	Repository   string   `json:"repository"`
+	IssueNumber  int      `json:"issueNumber"`
+	Title        string   `json:"title"`
+	Body         string   `json:"body"`
+	Author       string   `json:"author"`
+	Labels       []string `json:"labels"`
+	Assignees    []string `json:"assignees"`
+	RerunComment string   `json:"rerunComment,omitempty"`
+	WatchRuleID  string   `json:"watchRuleId"`
+	BranchName   string   `json:"branchName"`
+	ArtifactDir  string   `json:"artifactDir"`
 }
 
 type ImplementationContext struct {

@@ -74,6 +74,7 @@ const approvalState = ref<'idle' | 'saving' | 'error'>('idle')
 const finalApprovalState = ref<'idle' | 'saving' | 'error'>('idle')
 const approvalError = ref<string | null>(null)
 const finalApprovalError = ref<string | null>(null)
+const flowRerunComment = ref('')
 const designRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const prRerunState = ref<'idle' | 'saving' | 'error'>('idle')
@@ -298,7 +299,7 @@ function formatIssueBody(body?: string) {
   return body && body.trim().length > 0 ? body : 'Issue body is empty.'
 }
 
-function rerunCommentForEvent(action: RerunAction, event?: JobEvent | null) {
+function defaultRerunCommentForEvent(action: RerunAction, event?: JobEvent | null) {
   if (!event || action !== 'retry_implementation') {
     return ''
   }
@@ -316,15 +317,16 @@ async function submitRerun(action: RerunAction, eventId?: number) {
   try {
     const event =
       eventId === undefined ? latestEvent.value : data.value?.events.find((candidate) => candidate.id === eventId)
-    const comment = rerunCommentForEvent(action, event)
+    const typedComment = flowRerunComment.value.trim()
+    const comment = typedComment.length > 0 ? flowRerunComment.value : defaultRerunCommentForEvent(action, event)
     if (action === 'retry_design') {
-      data.value = await submitDesignRerun(jobID.value, '', eventId)
+      data.value = await submitDesignRerun(jobID.value, comment, eventId)
     } else if (action === 'retry_implementation') {
       data.value = await submitImplementationRerun(jobID.value, comment, eventId)
     } else if (action === 'retry_review') {
-      data.value = await submitReviewRerun(jobID.value, '', eventId)
+      data.value = await submitReviewRerun(jobID.value, comment, eventId)
     } else {
-      data.value = await submitPRRerun(jobID.value, '', eventId)
+      data.value = await submitPRRerun(jobID.value, comment, eventId)
     }
     rerunState(action).value = 'idle'
     await reload()
@@ -382,33 +384,46 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
           <PanelCard title="Flow" description="設計承認、実装成果物確認、最終承認をここから行えます。">
             <div class="stack-sm">
               <p class="text-muted">Current state: <code>{{ data.job.state }}</code></p>
-              <div v-if="flowRerunAction || canReviewDesign || canReviewImplementation" class="button-row">
-                <button
-                  v-if="flowRerunAction"
-                  class="button button-secondary"
-                  type="button"
-                  :disabled="approvalState === 'saving' || finalApprovalState === 'saving' || rerunState(flowRerunAction) === 'saving'"
-                  @click="submitRerun(flowRerunAction, flowRerunEvent?.id)"
-                >
-                  {{ rerunButtonLabel(flowRerunAction, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
-                </button>
-                <template v-if="canReviewDesign">
-                  <button class="button button-secondary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('rejected')">
-                    Reject Design
+              <template v-if="flowRerunAction || canReviewDesign || canReviewImplementation">
+                <label v-if="flowRerunAction" class="field field-full">
+                  <span class="field__label">Rerun Comment</span>
+                  <textarea
+                    v-model="flowRerunComment"
+                    class="field__control field__control--textarea"
+                    rows="4"
+                    placeholder="再実行時に AI へ伝えたい指示を入力してください。"
+                    spellcheck="false"
+                  />
+                  <p class="text-muted">入力したコメントは rerun の prompt に渡されます。未入力なら従来通りの挙動です。</p>
+                </label>
+                <div class="button-row">
+                  <button
+                    v-if="flowRerunAction"
+                    class="button button-secondary"
+                    type="button"
+                    :disabled="approvalState === 'saving' || finalApprovalState === 'saving' || rerunState(flowRerunAction) === 'saving'"
+                    @click="submitRerun(flowRerunAction, flowRerunEvent?.id)"
+                  >
+                    {{ rerunButtonLabel(flowRerunAction, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
                   </button>
-                  <button class="button button-primary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('approved')">
-                    Approve Design
-                  </button>
-                </template>
-                <template v-if="canReviewImplementation">
-                  <button class="button button-secondary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('rejected')">
-                    Reject Final
-                  </button>
-                  <button class="button button-primary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('approved')">
-                    Approve Final
-                  </button>
-                </template>
-              </div>
+                  <template v-if="canReviewDesign">
+                    <button class="button button-secondary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('rejected')">
+                      Reject Design
+                    </button>
+                    <button class="button button-primary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('approved')">
+                      Approve Design
+                    </button>
+                  </template>
+                  <template v-if="canReviewImplementation">
+                    <button class="button button-secondary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('rejected')">
+                      Reject Final
+                    </button>
+                    <button class="button button-primary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('approved')">
+                      Approve Final
+                    </button>
+                  </template>
+                </div>
+              </template>
               <p v-if="approvalState === 'error'" class="notice notice-danger">{{ approvalError }}</p>
               <template v-if="canReviewImplementation">
                 <p v-if="finalApprovalWarning" class="notice notice-danger">{{ finalApprovalWarning }}</p>

@@ -128,24 +128,30 @@ func buildDesignContext(cfg *config.Service, job domain.Job, events []domain.Eve
 	}
 
 	for _, event := range events {
-		if event.EventType != string(domain.DomainEventIssueMatched) {
-			continue
+		switch event.EventType {
+		case string(domain.DomainEventIssueMatched):
+			var payload struct {
+				Body      string   `json:"body"`
+				Author    string   `json:"author"`
+				Labels    []string `json:"labels"`
+				Assignees []string `json:"assignees"`
+			}
+			if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+				return skill.DesignContext{}, err
+			}
+			ctxData.Body = payload.Body
+			ctxData.Author = payload.Author
+			ctxData.Labels = payload.Labels
+			ctxData.Assignees = payload.Assignees
+		case "design_rerun_requested":
+			var payload struct {
+				Comment string `json:"comment"`
+			}
+			if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+				return skill.DesignContext{}, err
+			}
+			ctxData.RerunComment = strings.TrimSpace(payload.Comment)
 		}
-
-		var payload struct {
-			Body      string   `json:"body"`
-			Author    string   `json:"author"`
-			Labels    []string `json:"labels"`
-			Assignees []string `json:"assignees"`
-		}
-		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
-			return skill.DesignContext{}, err
-		}
-		ctxData.Body = payload.Body
-		ctxData.Author = payload.Author
-		ctxData.Labels = payload.Labels
-		ctxData.Assignees = payload.Assignees
-		break
 	}
 
 	return ctxData, nil
