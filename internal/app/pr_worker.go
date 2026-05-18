@@ -152,7 +152,7 @@ func (c *GHPRCreator) Create(ctx context.Context, req PRCreateRequest) (string, 
 	return output, nil
 }
 
-func startPRWorker(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
+func startPRWorker(ctx context.Context, repoRoot string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
 	pusher, creator := newPRPublisher(cfg.App().Provider)
 
 	go func() {
@@ -160,7 +160,7 @@ func startPRWorker(ctx context.Context, root string, cfg *config.Service, orch *
 		defer ticker.Stop()
 
 		for {
-			if err := runPendingPRCreations(ctx, cfg, orch, pusher, creator, root, logger); err != nil && ctx.Err() == nil {
+			if err := runPendingPRCreations(ctx, cfg, orch, pusher, creator, repoRoot, logger); err != nil && ctx.Err() == nil {
 				logger.Printf("pr worker error: %v", err)
 			}
 

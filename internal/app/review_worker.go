@@ -16,15 +16,15 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
 
-func startReviewWorker(ctx context.Context, root string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
-	runner := skill.NewRunner(root, "", cfg.App().CopilotAllowTools)
+func startReviewWorker(ctx context.Context, repoRoot string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
+	runner := skill.NewRunner(repoRoot, cfg.Root(), "", cfg.App().CopilotAllowTools)
 
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 
 		for {
-			if err := runPendingReviews(ctx, cfg, orch, runner, logger); err != nil && ctx.Err() == nil {
+			if err := runPendingReviews(ctx, repoRoot, cfg, orch, runner, logger); err != nil && ctx.Err() == nil {
 				logger.Printf("review worker error: %v", err)
 			}
 
@@ -39,7 +39,7 @@ func startReviewWorker(ctx context.Context, root string, cfg *config.Service, or
 	return nil
 }
 
-func runPendingReviews(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, logger *log.Logger) error {
+func runPendingReviews(ctx context.Context, repoRoot string, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, logger *log.Logger) error {
 	jobs, err := orch.ListJobs(ctx)
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func buildReviewContext(cfg *config.Service, job domain.Job, events []domain.Eve
 		Title:       job.Title,
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
-		ArtifactDir: artifacts.WorkerDir(cfg.App().WorkspaceDir, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerReview),
+		ArtifactDir: artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerReview),
 	}
 
 	for _, event := range events {

@@ -71,6 +71,22 @@ Windows で実行ファイルを明示して出したい場合:
 go build -o korobokcle.exe ./cmd/korobokcle
 ```
 
+### 配布用 zip を作る
+
+PowerShell で以下を実行すると、フロントエンドと Go バイナリをビルドし、実行に必要な最小ファイルだけを zip にまとめます。
+
+```powershell
+.\scripts\package.ps1
+```
+
+出力先は `release/korobokcle-windows-amd64.zip` です。zip の中身は次の通りです。
+
+- `korobokcle.exe`
+- `frontend/dist/`
+- `skills/default/`
+
+`config/app.yaml`、`config/watch-rules.yaml`、`config/notifications.yaml`、`config/test-profiles.yaml` は初回起動時に不足分を自動生成するため、配布物には含めていません。
+
 ## Run
 
 ### GitHub 認証の前提
@@ -143,7 +159,9 @@ go run ./cmd/korobokcle --debug
 
 ## Configuration
 
-初期設定ファイルは `config/` にあります。
+初期設定ファイルと実行時の成果物はツール配置ディレクトリ配下にあります。
+
+`config/` 配下の YAML は、ファイルがなければ初回起動時にデフォルト値で自動生成されます。
 
 - `config/app.yaml`
 - `config/watch-rules.yaml`
@@ -166,10 +184,11 @@ watch rule 側の provider / model の候補も、`config/app.yaml` の `provide
 デフォルトでは `copilot -p ... -s --allow-all-tools --no-ask-user` と `codex exec` を呼びますが、
 model を指定した場合は `--model` を付けて実行します。
 `codex` の prompt はデフォルトで標準入力から渡します。
-`copilot` はリポジトリのルートディレクトリを作業ディレクトリとして実行し、既定のパス権限（作業ディレクトリ配下と system temp）を使います。
-`copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定でき、既定では `--allow-all-tools` を使います。必要ならここで制限できます。
+`copilot` は監視対象リポジトリを作業ディレクトリとして実行し、設定・成果物・スキル定義はツール配置ディレクトリの `config/`、`artifacts/`、`skills/` を参照します。
+`copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定できます。必要ならここで制限できます。
 環境に応じて `KOROBOKCLE_COPILOT_BIN` / `KOROBOKCLE_COPILOT_ARGS_JSON`、
 `KOROBOKCLE_CODEX_BIN` / `KOROBOKCLE_CODEX_ARGS_JSON` で上書きできます。
+`KOROBOKCLE_TOOL_ROOT` を指定すると、ツール配置ディレクトリを明示できます。
 `*_ARGS_JSON` は JSON 配列で、`{{prompt}}`, `{{model_flag}}`, `{{model}}`, `{{work_dir}}`, `{{artifact_dir}}`, `{{output_path}}`, `{{skill_name}}` を使えます。
 
 `config/watch-rules.yaml` の `repositories` は `owner/repo` 形式を推奨します。

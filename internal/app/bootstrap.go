@@ -17,12 +17,12 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/web"
 )
 
-func Run(ctx context.Context, root string, options Options) error {
-	cfg, err := config.LoadOrInit(root)
+func Run(ctx context.Context, repoRoot string, toolRoot string, options Options) error {
+	cfg, err := config.LoadOrInit(toolRoot)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	configService := config.NewService(root, cfg)
+	configService := config.NewService(toolRoot, cfg)
 	infoLogger := log.New(os.Stdout, "", log.LstdFlags)
 	debugWriter := io.Discard
 	if options.Debug {
@@ -31,7 +31,7 @@ func Run(ctx context.Context, root string, options Options) error {
 	}
 	debugLogger := log.New(debugWriter, "DEBUG ", log.LstdFlags)
 
-	store, err := sqlite.Open(filepath.Join(root, configService.App().SQLitePath))
+	store, err := sqlite.Open(filepath.Join(toolRoot, configService.App().SQLitePath))
 	if err != nil {
 		return fmt.Errorf("open sqlite store: %w", err)
 	}
@@ -51,16 +51,16 @@ func Run(ctx context.Context, root string, options Options) error {
 	}
 	orch := orchestrator.New(store, notifier)
 	startWatcher(ctx, configService, orch, infoLogger, debugLogger)
-	if err := startDesignWorker(ctx, root, configService, orch, infoLogger); err != nil {
+	if err := startDesignWorker(ctx, repoRoot, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start design worker: %w", err)
 	}
-	if err := startImplementationWorker(ctx, root, configService, orch, infoLogger); err != nil {
+	if err := startImplementationWorker(ctx, repoRoot, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start implementation worker: %w", err)
 	}
-	if err := startReviewWorker(ctx, root, configService, orch, infoLogger); err != nil {
+	if err := startReviewWorker(ctx, repoRoot, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start review worker: %w", err)
 	}
-	if err := startPRWorker(ctx, root, configService, orch, infoLogger); err != nil {
+	if err := startPRWorker(ctx, repoRoot, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start pr worker: %w", err)
 	}
 

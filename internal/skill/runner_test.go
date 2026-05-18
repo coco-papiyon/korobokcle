@@ -25,7 +25,7 @@ func TestRunDesignWritesArtifacts(t *testing.T) {
 		t.Fatalf("WriteFile(prompt) error = %v", err)
 	}
 
-	runner := NewRunner(root, "mock", nil)
+	runner := NewRunner(root, root, "mock", nil)
 	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-1", artifacts.WorkerDesign)
 	_, err := runner.RunDesign(context.Background(), "design", DesignContext{
 		Title:       "My Issue",
@@ -60,7 +60,7 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 		t.Fatalf("WriteFile(prompt) error = %v", err)
 	}
 
-	runner := NewRunner(root, "mock", nil)
+	runner := NewRunner(root, root, "mock", nil)
 	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-2", artifacts.WorkerDesign)
 	_, err := runner.RunDesign(context.Background(), "design", DesignContext{
 		Title:       "My Issue",
@@ -99,7 +99,7 @@ func TestRunImplementationUsesRootAsWorkDirForCodex(t *testing.T) {
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `[]`)
 
-	runner := NewRunner(root, "", nil)
+	runner := NewRunner(root, root, "", nil)
 	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-1", artifacts.WorkerImplementation)
 	result, err := runner.RunImplementation(context.Background(), "implement", ImplementationContext{
 		Title:             "My Issue",
@@ -136,7 +136,7 @@ func TestRunImplementationUsesRootAsWorkDirForCopilot(t *testing.T) {
 	t.Setenv("KOROBOKCLE_COPILOT_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_COPILOT_ARGS_JSON", `[]`)
 
-	runner := NewRunner(root, "", nil)
+	runner := NewRunner(root, root, "", nil)
 	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-1", artifacts.WorkerImplementation)
 	result, err := runner.RunImplementation(context.Background(), "implement", ImplementationContext{
 		Title:             "My Issue",
