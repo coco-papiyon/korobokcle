@@ -84,6 +84,31 @@ func TestExternalCLIProviderExpandsPromptArgument(t *testing.T) {
 	}
 }
 
+func TestCodexCLIProviderSendsPromptViaStdinByDefault(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := filepath.Join(dir, "stdin-provider.cmd")
+	if err := os.WriteFile(scriptPath, []byte("@echo off\r\nset /p INPUT=\r\necho %INPUT%\r\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", "")
+
+	provider := NewCodexCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:      "stdin-output",
+		WorkDir:     dir,
+		ArtifactDir: dir,
+		OutputPath:  filepath.Join(dir, "out.txt"),
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(result.Output, "stdin-output") {
+		t.Fatalf("expected stdin output, got %q", result.Output)
+	}
+}
+
 func TestExternalCLIProviderExpandsModelArgument(t *testing.T) {
 	dir := t.TempDir()
 	scriptPath := filepath.Join(dir, "echo-model.cmd")
