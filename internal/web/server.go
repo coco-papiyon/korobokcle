@@ -26,7 +26,7 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) 
 		orchestrator: orch,
 		config:       cfg,
 	}
-	s.staticDir = filepath.Join(cfg.App().WorkspaceDir, "frontend", "dist")
+	s.staticDir = filepath.Join(cfg.Root(), "frontend", "dist")
 
 	router := mux.NewRouter()
 	api := router.PathPrefix("/api").Subrouter()

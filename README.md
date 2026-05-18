@@ -184,7 +184,8 @@ watch rule 側の provider / model の候補も、`config/app.yaml` の `provide
 デフォルトでは `copilot -p ... -s --allow-all-tools --no-ask-user` と `codex exec` を呼びますが、
 model を指定した場合は `--model` を付けて実行します。
 `codex` の prompt はデフォルトで標準入力から渡します。
-`copilot` は監視対象リポジトリを作業ディレクトリとして実行し、設定・成果物・スキル定義はツール配置ディレクトリの `config/`、`artifacts/`、`skills/` を参照します。
+`copilot` は監視対象リポジトリを作業ディレクトリとして実行し、`artifacts/.../prompt.md` を読んでその指示に従います。
+設定・成果物・スキル定義はツール配置ディレクトリの `config/`、`artifacts/`、`skills/` を参照します。
 `copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定できます。必要ならここで制限できます。
 環境に応じて `KOROBOKCLE_COPILOT_BIN` / `KOROBOKCLE_COPILOT_ARGS_JSON`、
 `KOROBOKCLE_CODEX_BIN` / `KOROBOKCLE_CODEX_ARGS_JSON` で上書きできます。

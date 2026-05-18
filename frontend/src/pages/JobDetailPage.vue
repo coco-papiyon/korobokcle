@@ -100,6 +100,17 @@ const latestEvent = computed(() => {
   return events.length > 0 ? events[events.length - 1] : null
 })
 
+const flowRerunEvent = computed<JobEvent | null>(() => {
+  const events = data.value?.events ?? []
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i]
+    if (ev.availableActions && ev.availableActions.length > 0) {
+      return ev
+    }
+  }
+  return null
+})
+
 const canReviewDesign = computed(() => data.value?.job.state === 'waiting_design_approval')
 const canReviewImplementation = computed(() => {
   const state = data.value?.job.state
@@ -108,7 +119,7 @@ const canReviewImplementation = computed(() => {
   }
   return state === 'failed' && latestEvent.value?.eventType === 'test_failed'
 })
-const flowRerunAction = computed<RerunAction | null>(() => rerunActionFromEvent(latestEvent.value))
+const flowRerunAction = computed<RerunAction | null>(() => rerunActionFromEvent(flowRerunEvent.value))
 const finalApprovalWarning = computed(() => {
   if (data.value?.job.state === 'failed' && latestEvent.value?.eventType === 'test_failed') {
     return 'Tests failed, but you can still approve and continue to PR creation.'
@@ -377,9 +388,9 @@ async function sendFinalApproval(status: 'approved' | 'rejected') {
                   class="button button-secondary"
                   type="button"
                   :disabled="approvalState === 'saving' || finalApprovalState === 'saving' || rerunState(flowRerunAction) === 'saving'"
-                  @click="submitRerun(flowRerunAction)"
+                  @click="submitRerun(flowRerunAction, flowRerunEvent?.id)"
                 >
-                  {{ rerunButtonLabel(flowRerunAction, latestEvent?.eventType, latestEvent?.sourceEventType) }}
+                  {{ rerunButtonLabel(flowRerunAction, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
                 </button>
                 <template v-if="canReviewDesign">
                   <button class="button button-secondary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('rejected')">
