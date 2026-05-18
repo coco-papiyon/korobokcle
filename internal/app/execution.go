@@ -22,20 +22,11 @@ func resolveExecutionConfig(cfg *config.Service, watchRuleID string) (skill.Exec
 
 	model := firstNonEmpty(rule.Model, cfg.App().Model)
 	if trimmedModel := strings.TrimSpace(model); trimmedModel != "" {
-		if len(spec.Models) == 0 {
-			return skill.ExecutionConfig{}, fmt.Errorf("model %q is not valid for provider %q", trimmedModel, spec.Name)
+		validatedModel, err := config.ValidateModelForProvider(spec, trimmedModel)
+		if err != nil {
+			return skill.ExecutionConfig{}, fmt.Errorf("%w", err)
 		}
-		allowed := false
-		for _, candidate := range spec.Models {
-			if candidate == trimmedModel {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return skill.ExecutionConfig{}, fmt.Errorf("model %q is not valid for provider %q", trimmedModel, spec.Name)
-		}
-		model = trimmedModel
+		model = validatedModel
 	}
 	return skill.ExecutionConfig{
 		Provider: strings.ToLower(strings.TrimSpace(provider)),

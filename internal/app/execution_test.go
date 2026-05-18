@@ -86,3 +86,23 @@ func TestResolveExecutionConfigUsesEmptyModelWhenAppModelEmpty(t *testing.T) {
 		t.Fatalf("expected empty model, got %q", got.Model)
 	}
 }
+
+func TestResolveExecutionConfigRejectsInvalidModelForMockProvider(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		App: config.App{
+			Provider: "mock",
+			Model:    "gpt-5.4",
+		},
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{ID: "rule-1"},
+			},
+		},
+	})
+
+	if _, err := resolveExecutionConfig(cfg, "rule-1"); err == nil {
+		t.Fatalf("expected resolveExecutionConfig() to reject invalid mock model")
+	}
+}

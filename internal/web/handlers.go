@@ -412,37 +412,41 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 
 	appConfig := s.config.App()
 	provider := appConfig.Provider
+	providerChanged := false
 	if payload.Provider != nil {
 		provider = strings.ToLower(strings.TrimSpace(*payload.Provider))
 		if provider == "" {
 			provider = appConfig.Provider
 		}
-	}
-	if payload.Provider != nil && (provider != appConfig.Provider || strings.TrimSpace(*payload.Provider) != "") {
 		if _, err := s.providerSpecByName(provider); err != nil {
 			writeJSONError(w, http.StatusBadRequest, err)
 			return
 		}
+		providerChanged = provider != appConfig.Provider
 		appConfig.Provider = provider
 	}
 
 	modelInput := appConfig.Model
+	modelChanged := payload.Model != nil
 	if payload.Model != nil {
 		modelInput = normalizeDefaultModelValue(*payload.Model)
 	}
-	if payload.Model != nil && modelInput == "" {
-		appConfig.Model = ""
-	} else {
-		if payload.Model != nil {
-			model, err := s.validateModelForProvider(provider, modelInput)
-			if err != nil {
+	if modelInput != "" {
+		model, err := s.validateModelForProvider(provider, modelInput)
+		if err != nil {
+			if providerChanged && !modelChanged {
+				modelInput = ""
+			} else {
 				writeJSONError(w, http.StatusBadRequest, err)
 				return
 			}
+		} else {
 			modelInput = model
 		}
-		appConfig.Model = modelInput
+	} else if modelChanged {
+		modelInput = ""
 	}
+	appConfig.Model = modelInput
 	appConfig.CopilotAllowTools = normalizeStringSlice(payload.CopilotAllowTools)
 	if payload.MonitoredRepositories != nil {
 		repos, err := normalizeMonitoredRepositoryResponses(*payload.MonitoredRepositories)
@@ -1069,23 +1073,11 @@ func (s *Server) parseOptionalProvider(provider string) (string, error) {
 }
 
 func (s *Server) validateModelForProvider(provider string, model string) (string, error) {
-	trimmedModel := strings.TrimSpace(model)
 	spec, err := s.providerSpecByName(provider)
 	if err != nil {
 		return "", err
 	}
-	if trimmedModel == "" {
-		return "", nil
-	}
-	if len(spec.Models) == 0 {
-		return "", fmt.Errorf("model must be empty for provider %q", spec.Name)
-	}
-	for _, candidate := range spec.Models {
-		if candidate == trimmedModel {
-			return trimmedModel, nil
-		}
-	}
-	return "", fmt.Errorf("model must be one of %s", strings.Join(modelNames(spec), ", "))
+	return config.ValidateModelForProvider(spec, model)
 }
 
 func (s *Server) validateRuleModel(provider string, model string) (string, error) {
@@ -1094,18 +1086,6 @@ func (s *Server) validateRuleModel(provider string, model string) (string, error
 		effectiveProvider = s.config.App().Provider
 	}
 	return s.validateModelForProvider(effectiveProvider, model)
-}
-
-func modelNames(provider config.ProviderSpec) []string {
-	names := []string{}
-	for _, model := range provider.Models {
-		trimmed := strings.TrimSpace(model)
-		if trimmed == "" || containsString(names, trimmed) {
-			continue
-		}
-		names = append(names, trimmed)
-	}
-	return names
 }
 
 func containsString(values []string, target string) bool {

@@ -472,7 +472,7 @@ func TestHandleSaveAppConfigClearsModelWhenProviderChanges(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"copilot","model":"","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	body := []byte(`{"provider":"copilot","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -486,6 +486,33 @@ func TestHandleSaveAppConfigClearsModelWhenProviderChanges(t *testing.T) {
 	}
 	if got := svc.App().Model; got != "" {
 		t.Fatalf("expected model to be cleared, got %q", got)
+	}
+}
+
+func TestHandleSaveAppConfigKeepsValidModelWhenProviderChanges(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.Provider = "mock"
+	files.App.Model = ""
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"codex","model":"gpt-5.4","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := svc.App().Provider; got != "codex" {
+		t.Fatalf("expected saved provider codex, got %q", got)
+	}
+	if got := svc.App().Model; got != "gpt-5.4" {
+		t.Fatalf("expected model to stay gpt-5.4, got %q", got)
 	}
 }
 
