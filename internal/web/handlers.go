@@ -104,6 +104,14 @@ type appConfigResponse struct {
 	Providers       []providerSpecResponse `json:"providers"`
 }
 
+type saveAppConfigRequest struct {
+	Provider        *string `json:"provider"`
+	Model           *string `json:"model"`
+	PollInterval    int     `json:"pollInterval"`
+	PRTitleTemplate string  `json:"prTitleTemplate"`
+	BranchTemplate  string  `json:"branchTemplate"`
+}
+
 type notificationChannelResponse struct {
 	Name    string   `json:"name"`
 	Type    string   `json:"type"`
@@ -385,18 +393,21 @@ func (s *Server) handleAppConfig(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
-	var payload appConfigResponse
+	var payload saveAppConfigRequest
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode app config: %w", err))
 		return
 	}
 
 	appConfig := s.config.App()
-	provider := strings.ToLower(strings.TrimSpace(payload.Provider))
-	if provider == "" {
-		provider = appConfig.Provider
+	provider := appConfig.Provider
+	if payload.Provider != nil {
+		provider = strings.ToLower(strings.TrimSpace(*payload.Provider))
+		if provider == "" {
+			provider = appConfig.Provider
+		}
 	}
-	if provider != appConfig.Provider || strings.TrimSpace(payload.Provider) != "" {
+	if payload.Provider != nil && (provider != appConfig.Provider || strings.TrimSpace(*payload.Provider) != "") {
 		if _, err := s.providerSpecByName(provider); err != nil {
 			writeJSONError(w, http.StatusBadRequest, err)
 			return
@@ -404,18 +415,23 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 		appConfig.Provider = provider
 	}
 
-	modelInput := strings.TrimSpace(payload.Model)
-	if modelInput == "" {
-		modelInput = appConfig.Model
-	} else {
-		model, err := s.validateModelForProvider(provider, modelInput)
-		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, err)
-			return
-		}
-		modelInput = model
+	modelInput := appConfig.Model
+	if payload.Model != nil {
+		modelInput = strings.TrimSpace(*payload.Model)
 	}
-	appConfig.Model = modelInput
+	if payload.Model != nil && modelInput == "" {
+		appConfig.Model = ""
+	} else {
+		if payload.Model != nil {
+			model, err := s.validateModelForProvider(provider, modelInput)
+			if err != nil {
+				writeJSONError(w, http.StatusBadRequest, err)
+				return
+			}
+			modelInput = model
+		}
+		appConfig.Model = modelInput
+	}
 	prTitleTemplate := strings.TrimSpace(payload.PRTitleTemplate)
 	if prTitleTemplate == "" {
 		prTitleTemplate = naming.DefaultPRTitleTemplate
