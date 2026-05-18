@@ -33,6 +33,13 @@ Watch Rule: {{ .WatchRuleID }}
 {{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
 ```
 
+{{- if .RerunComment }}
+## Rerun Comment
+```
+{{ .RerunComment }}
+```
+{{- end }}
+
 ## 出力内容  
 
 以下の観点で、実装方針を Markdown で整理してください。
