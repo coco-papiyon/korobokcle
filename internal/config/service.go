@@ -49,20 +49,11 @@ func (s *Service) Notifications() Notifications {
 }
 
 func (s *Service) Providers() []ProviderSpec {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return cloneProviderSpecs(s.files.App.Providers)
+	return ProviderCatalog()
 }
 
 func (s *Service) ProviderByName(name string) (ProviderSpec, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, provider := range s.files.App.Providers {
-		if provider.Name == name {
-			return cloneProviderSpec(provider), true
-		}
-	}
-	return ProviderSpec{}, false
+	return ProviderSpecByName(name)
 }
 
 func (s *Service) WatchRuleByID(id string) (WatchRule, bool) {
@@ -121,7 +112,6 @@ func cloneApp(app App) App {
 	cloned := app
 	cloned.MonitoredRepositories = cloneMonitoredRepositories(app.MonitoredRepositories)
 	cloned.CopilotAllowTools = append([]string(nil), app.CopilotAllowTools...)
-	cloned.Providers = cloneProviderSpecs(app.Providers)
 	return cloned
 }
 
@@ -172,7 +162,8 @@ func cloneProviderSpecs(values []ProviderSpec) []ProviderSpec {
 
 func cloneProviderSpec(provider ProviderSpec) ProviderSpec {
 	cloned := provider
-	cloned.Models = append([]string(nil), provider.Models...)
+	cloned.Models = make([]string, 0, len(provider.Models))
+	cloned.Models = append(cloned.Models, provider.Models...)
 	return cloned
 }
 

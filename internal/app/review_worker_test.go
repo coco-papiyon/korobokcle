@@ -43,12 +43,6 @@ func TestRunPendingReviewsCompletesJob(t *testing.T) {
 			WorkspaceDir: root,
 			ArtifactsDir: "artifacts",
 			Provider:     "mock",
-			Providers: []config.ProviderSpec{
-				{
-					Name:   "mock",
-					Models: []string{},
-				},
-			},
 		},
 		WatchRules: config.WatchRulesFile{
 			Rules: []config.WatchRule{

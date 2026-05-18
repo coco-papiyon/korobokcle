@@ -213,6 +213,10 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 		ScreenRefreshInterval int    `json:"screenRefreshInterval"`
 		PRTitleTemplate       string `json:"prTitleTemplate"`
 		BranchTemplate        string `json:"branchTemplate"`
+		Providers             []struct {
+			Name   string   `json:"name"`
+			Models []string `json:"models"`
+		} `json:"providers"`
 		MonitoredRepositories []struct {
 			Repository string `json:"repository"`
 			Workers    int    `json:"workers"`
@@ -236,6 +240,9 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 	if got.Model != "" {
 		t.Fatalf("expected default model to be normalized away, got %q", got.Model)
+	}
+	if len(got.Providers) != 3 || got.Providers[0].Name != "copilot" || len(got.Providers[0].Models) != 1 || got.Providers[0].Models[0] != "gpt-4.1" {
+		t.Fatalf("unexpected provider catalog: %#v", got.Providers)
 	}
 	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].Workers != 1 {
 		t.Fatalf("unexpected monitored repositories: %#v", got.MonitoredRepositories)
@@ -327,7 +334,7 @@ func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"codex","model":"gpt-4.1","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	body := []byte(`{"provider":"codex","model":"gpt-5.4-mini","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -340,8 +347,8 @@ func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
 	if got := svc.App().Provider; got != "codex" {
 		t.Fatalf("expected saved provider codex, got %q", got)
 	}
-	if got := svc.App().Model; got != "gpt-4.1" {
-		t.Fatalf("expected saved model gpt-4.1, got %q", got)
+	if got := svc.App().Model; got != "gpt-5.4-mini" {
+		t.Fatalf("expected saved model gpt-5.4-mini, got %q", got)
 	}
 	if got := svc.App().PRTitleTemplate; got != "PR {{issue_number}}: {{issue_title}}" {
 		t.Fatalf("expected saved pr title template, got %q", got)
@@ -358,7 +365,7 @@ func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
 	if !bytes.Contains(raw, []byte("provider: codex")) {
 		t.Fatalf("expected saved config to contain updated provider, got %s", string(raw))
 	}
-	if !bytes.Contains(raw, []byte("model: gpt-4.1")) {
+	if !bytes.Contains(raw, []byte("model: gpt-5.4-mini")) {
 		t.Fatalf("expected saved config to contain updated model, got %s", string(raw))
 	}
 	if !bytes.Contains(raw, []byte("prTitleTemplate: 'PR {{issue_number}}: {{issue_title}}'")) {
@@ -366,6 +373,25 @@ func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
 	}
 	if !bytes.Contains(raw, []byte("branchTemplate: feature_{{issue_number}}")) {
 		t.Fatalf("expected saved config to contain branchTemplate, got %s", string(raw))
+	}
+}
+
+func TestHandleSaveAppConfigRejectsInvalidModelForProvider(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"copilot","model":"gpt-5.4"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
 	}
 }
 
@@ -460,7 +486,7 @@ func TestHandleSaveAppConfigClearsModelWhenProviderChanges(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"copilot","model":"","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	body := []byte(`{"provider":"copilot","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -474,6 +500,33 @@ func TestHandleSaveAppConfigClearsModelWhenProviderChanges(t *testing.T) {
 	}
 	if got := svc.App().Model; got != "" {
 		t.Fatalf("expected model to be cleared, got %q", got)
+	}
+}
+
+func TestHandleSaveAppConfigKeepsValidModelWhenProviderChanges(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.Provider = "mock"
+	files.App.Model = ""
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"codex","model":"gpt-5.4","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := svc.App().Provider; got != "codex" {
+		t.Fatalf("expected saved provider codex, got %q", got)
+	}
+	if got := svc.App().Model; got != "gpt-5.4" {
+		t.Fatalf("expected model to stay gpt-5.4, got %q", got)
 	}
 }
 
@@ -849,6 +902,25 @@ func TestHandleSaveWatchRulesUpdatesProjectFilters(t *testing.T) {
 	}
 	if len(saved.ProjectFilters) != 1 || saved.ProjectFilters[0].Field != "Status" {
 		t.Fatalf("unexpected project filters: %+v", saved.ProjectFilters)
+	}
+}
+
+func TestHandleSaveWatchRulesRejectsInvalidModelForProvider(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"","labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"copilot","model":"gpt-5.4","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
+
+	server.handleSaveWatchRules(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
 	}
 }
 

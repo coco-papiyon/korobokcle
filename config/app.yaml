@@ -12,18 +12,5 @@ model: gpt-5.4-mini
 copilotAllowTools: []
 prTitleTemplate: '[#{{issue_number}}]{{issue_title}}'
 branchTemplate: issue_{{issue_number}}
-providers:
-    - name: copilot
-      models:
-        - gpt-4.1
-    - name: codex
-      models:
-        - gpt-5.5
-        - gpt-5.4
-        - gpt-5.4-mini
-        - gpt-5.3-codex
-        - gpt-5.2
-    - name: mock
-      models: []
 sqlitePath: data/korobokcle.db
 shutdownTimeout: 10s
