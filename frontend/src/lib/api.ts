@@ -1,4 +1,4 @@
-import type { AppConfig, Job, JobDetail, NotificationConfig, SkillSet, SkillSetSummary, WatchRule } from '@/types'
+import type { AppConfig, Job, JobDetail, NotificationConfig, SkillSet, SkillSetSummary, TestProfile, WatchRule } from '@/types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -101,6 +101,17 @@ export function saveWatchRules(rules: WatchRule[]): Promise<WatchRule[]> {
   return request<WatchRule[]>('/api/watch-rules', {
     method: 'PUT',
     body: JSON.stringify(rules),
+  })
+}
+
+export function fetchTestProfiles(): Promise<TestProfile[]> {
+  return request<TestProfile[]>('/api/test-profiles')
+}
+
+export function saveTestProfiles(profiles: TestProfile[]): Promise<TestProfile[]> {
+  return request<TestProfile[]>('/api/test-profiles', {
+    method: 'PUT',
+    body: JSON.stringify(profiles),
   })
 }
 
