@@ -5,7 +5,7 @@ import "strings"
 var providerCatalog = []ProviderSpec{
 	{
 		Name:   "copilot",
-		Models: []string{"gpt-4.1"},
+		Models: []string{"claude-sonnet-4.6", "claude-opus-4.6", "gpt-5.4", "gpt-5-mini", "gpt-4.1"},
 	},
 	{
 		Name:   "codex",
