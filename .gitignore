@@ -2,6 +2,7 @@
 gocache-local/
 gocache-notify/
 .gocache-*/
+.cache/
 
 data/
 /artifacts/
