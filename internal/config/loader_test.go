@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadOrInitCreatesDefaults(t *testing.T) {
@@ -21,6 +22,9 @@ func TestLoadOrInitCreatesDefaults(t *testing.T) {
 	}
 	if files.App.ScreenRefreshInterval != DefaultScreenRefreshInterval {
 		t.Fatalf("expected default screen refresh interval %s, got %s", DefaultScreenRefreshInterval, files.App.ScreenRefreshInterval)
+	}
+	if files.App.ShutdownTimeout != 10*time.Second {
+		t.Fatalf("expected default shutdown timeout 10s, got %s", files.App.ShutdownTimeout)
 	}
 
 	for _, path := range []string{
@@ -40,6 +44,12 @@ func TestLoadOrInitCreatesDefaults(t *testing.T) {
 	}
 	if !bytes.Contains(raw, []byte("pollInterval: 120")) {
 		t.Fatalf("expected default app config to store pollInterval as seconds, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("screenRefreshInterval: 5")) {
+		t.Fatalf("expected default app config to store screenRefreshInterval as seconds, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("shutdownTimeout: 10")) {
+		t.Fatalf("expected default app config to store shutdownTimeout as seconds, got %s", string(raw))
 	}
 	if bytes.Contains(raw, []byte("providers:")) {
 		t.Fatalf("expected default app config to omit providers, got %s", string(raw))

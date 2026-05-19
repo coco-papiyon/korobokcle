@@ -99,6 +99,7 @@ export type AppConfig = {
   copilotAllowTools: string[]
   pollInterval: number
   screenRefreshInterval: number
+  shutdownTimeout: number
   prTitleTemplate: string
   branchTemplate: string
   monitoredRepositories: MonitoredRepository[]

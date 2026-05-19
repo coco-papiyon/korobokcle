@@ -112,7 +112,15 @@ export function saveAppConfig(
   config: Partial<
     Pick<
       AppConfig,
-      'provider' | 'model' | 'copilotAllowTools' | 'pollInterval' | 'prTitleTemplate' | 'branchTemplate' | 'monitoredRepositories'
+      | 'provider'
+      | 'model'
+      | 'copilotAllowTools'
+      | 'pollInterval'
+      | 'screenRefreshInterval'
+      | 'shutdownTimeout'
+      | 'prTitleTemplate'
+      | 'branchTemplate'
+      | 'monitoredRepositories'
     >
   >,
 ): Promise<AppConfig> {

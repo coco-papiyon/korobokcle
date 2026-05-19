@@ -104,13 +104,18 @@ func NewWatcher(poller *Poller, intervalProvider func() time.Duration, logger *l
 
 func (w *Watcher) Start(ctx context.Context, out chan<- domain.DomainEvent) error {
 	w.debugf("watcher started interval=%s", w.interval())
-	if err := w.pollOnce(ctx, out); err != nil {
-		return err
+	if interval := w.interval(); interval > 0 {
+		if err := w.pollOnce(ctx, out); err != nil {
+			return err
+		}
 	}
 
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	lastPollAt := time.Now()
+	lastPollAt := time.Time{}
+	if interval := w.interval(); interval > 0 {
+		lastPollAt = time.Now()
+	}
 
 	for {
 		select {
@@ -119,7 +124,10 @@ func (w *Watcher) Start(ctx context.Context, out chan<- domain.DomainEvent) erro
 			return nil
 		case <-ticker.C:
 			interval := w.interval()
-			if time.Since(lastPollAt) < interval {
+			if interval <= 0 {
+				continue
+			}
+			if !lastPollAt.IsZero() && time.Since(lastPollAt) < interval {
 				continue
 			}
 			w.debugf("watcher ticker fired interval=%s", interval)
@@ -169,11 +177,7 @@ func (w *Watcher) interval() time.Duration {
 	if w.intervalProvider == nil {
 		return config.DefaultPollInterval
 	}
-	value := w.intervalProvider()
-	if value <= 0 {
-		return config.DefaultPollInterval
-	}
-	return value
+	return w.intervalProvider()
 }
 
 func formatSince(value time.Time) string {
