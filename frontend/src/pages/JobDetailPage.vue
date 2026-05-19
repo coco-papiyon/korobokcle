@@ -9,6 +9,7 @@ import {
   deleteJob,
   fetchAppConfig,
   fetchJobDetail,
+  purgeJob,
   restoreJob,
   submitDesignApproval,
   submitDesignRerun,
@@ -22,9 +23,10 @@ import { formatDateTime } from '@/lib/format'
 import { rerunActionFromEvent, rerunButtonLabel, type RerunAction } from '@/lib/rerun-actions'
 import type { JobEvent } from '@/types'
 import { computed, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
+const router = useRouter()
 const jobID = computed(() => String(route.params.id))
 const { data: appConfig } = useAsyncData(fetchAppConfig)
 const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetchJobDetail(jobID.value))
@@ -75,9 +77,11 @@ onUnmounted(() => {
 const approvalState = ref<'idle' | 'saving' | 'error'>('idle')
 const finalApprovalState = ref<'idle' | 'saving' | 'error'>('idle')
 const jobArchiveState = ref<'idle' | 'saving' | 'error'>('idle')
+const jobPurgeState = ref<'idle' | 'saving' | 'error'>('idle')
 const approvalError = ref<string | null>(null)
 const finalApprovalError = ref<string | null>(null)
 const jobArchiveError = ref<string | null>(null)
+const jobPurgeError = ref<string | null>(null)
 const flowRerunComment = ref('')
 const designRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
@@ -430,6 +434,22 @@ async function unarchiveJob() {
     jobArchiveError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
+
+async function purgeArchivedJob() {
+  if (!window.confirm('このジョブをDBから完全削除しますか？復元できません。アーティファクトは残ります。')) {
+    return
+  }
+  jobPurgeState.value = 'saving'
+  jobPurgeError.value = null
+  try {
+    await purgeJob(jobID.value)
+    jobPurgeState.value = 'idle'
+    await router.push('/')
+  } catch (err) {
+    jobPurgeState.value = 'error'
+    jobPurgeError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
 </script>
 
 <template>
@@ -464,15 +484,24 @@ async function unarchiveJob() {
                 >
                   削除
                 </button>
-                <button
-                  v-else
-                  class="button button-primary"
-                  type="button"
-                  :disabled="jobArchiveState === 'saving'"
-                  @click="unarchiveJob"
-                >
-                  再登録
-                </button>
+                <template v-else>
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    :disabled="jobArchiveState === 'saving'"
+                    @click="unarchiveJob"
+                  >
+                    復元
+                  </button>
+                  <button
+                    class="button button-danger"
+                    type="button"
+                    :disabled="jobPurgeState === 'saving'"
+                    @click="purgeArchivedJob"
+                  >
+                    完全削除
+                  </button>
+                </template>
               </div>
               <template v-if="!isDeletedJob && (flowRerunAction || canReviewDesign || canReviewImplementation)">
                 <label v-if="flowRerunAction" class="field field-full">
@@ -515,6 +544,7 @@ async function unarchiveJob() {
                 </div>
               </template>
               <p v-if="jobArchiveState === 'error'" class="notice notice-danger">{{ jobArchiveError }}</p>
+              <p v-if="jobPurgeState === 'error'" class="notice notice-danger">{{ jobPurgeError }}</p>
               <p v-if="approvalState === 'error'" class="notice notice-danger">{{ approvalError }}</p>
               <template v-if="canReviewImplementation">
                 <p v-if="finalApprovalWarning" class="notice notice-danger">{{ finalApprovalWarning }}</p>

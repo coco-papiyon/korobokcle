@@ -1253,3 +1253,164 @@ func TestHandleDeleteAndRestoreJob(t *testing.T) {
 		t.Fatalf("expected deletedAt to be cleared, got %+v", restored.Job)
 	}
 }
+
+func TestHandlePurgeJobRequiresDeletedJobAndKeepsArtifacts(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-purge-http",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 8,
+		State:        domain.StateCompleted,
+		Title:        "job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/purge", nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handlePurgeJob(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected active job purge to be rejected, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	deleteRecorder := httptest.NewRecorder()
+	deleteRequest := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/delete", nil)
+	deleteRequest = mux.SetURLVars(deleteRequest, map[string]string{"id": job.ID})
+	server.handleDeleteJob(deleteRecorder, deleteRequest)
+	if deleteRecorder.Code != http.StatusOK {
+		t.Fatalf("expected delete to succeed, got %d body=%s", deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+
+	artifactDir := artifacts.WorkerDir(root, svc.App().ArtifactsDir, job.ID, artifacts.WorkerDesign)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(artifactDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "result.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.txt) error = %v", err)
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/purge", nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handlePurgeJob(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	if _, err := store.GetJob(context.Background(), job.ID); err == nil {
+		t.Fatalf("expected job to be removed from DB")
+	}
+	if _, err := os.Stat(filepath.Join(artifactDir, "result.txt")); err != nil {
+		t.Fatalf("expected artifact to remain, stat error = %v", err)
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handleJobDetail(recorder, request)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected purged job detail to return 404, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandleJobDetailDoesNotReusePurgedArtifacts(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	appConfig := svc.App()
+	rule := config.WatchRule{ID: "rule-issue", Name: "Issue"}
+	event := domain.DomainEvent{
+		Type: domain.DomainEventIssueMatched,
+		Item: domain.RepositoryItem{
+			Repository: "owner/repository",
+			Number:     9,
+			Title:      "issue",
+			Target:     domain.TargetIssue,
+		},
+	}
+
+	if err := server.orchestrator.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("first ProcessMatch() error = %v", err)
+	}
+
+	jobs, err := server.orchestrator.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs() error = %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	oldJobID := jobs[0].ID
+
+	if err := server.orchestrator.DeleteJob(context.Background(), oldJobID); err != nil {
+		t.Fatalf("DeleteJob() error = %v", err)
+	}
+	if err := server.orchestrator.PurgeJob(context.Background(), oldJobID); err != nil {
+		t.Fatalf("PurgeJob() error = %v", err)
+	}
+
+	oldArtifactDir := artifacts.WorkerDir(root, svc.App().ArtifactsDir, oldJobID, artifacts.WorkerDesign)
+	if err := os.MkdirAll(oldArtifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(oldArtifactDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldArtifactDir, "result.md"), []byte("stale artifact"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	if err := server.orchestrator.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("second ProcessMatch() error = %v", err)
+	}
+
+	jobs, err = server.orchestrator.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs() after purge error = %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 recreated job, got %d", len(jobs))
+	}
+	newJobID := jobs[0].ID
+	if newJobID == oldJobID {
+		t.Fatalf("expected fresh job ID after purge, reused %q", oldJobID)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/jobs/"+newJobID, nil)
+	request = mux.SetURLVars(request, map[string]string{"id": newJobID})
+	server.handleJobDetail(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected job detail to succeed, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var detail jobDetailResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&detail); err != nil {
+		t.Fatalf("Decode(job detail) error = %v", err)
+	}
+	if detail.DesignArtifact != nil {
+		t.Fatalf("expected recreated job to ignore stale artifact, got %+v", detail.DesignArtifact)
+	}
+}

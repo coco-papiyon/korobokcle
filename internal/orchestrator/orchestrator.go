@@ -24,6 +24,7 @@ type Orchestrator struct {
 }
 
 var ErrInvalidStateTransition = errors.New("invalid state transition")
+var ErrJobNotDeleted = errors.New("job is not deleted")
 
 type JobListFilter string
 
@@ -119,7 +120,7 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 			job.State = domain.StateImplementationRunning
 		}
 	} else if errors.Is(err, domain.ErrJobNotFound) {
-		job.ID = job.ID + "-" + uuid.NewString()[:8]
+		job.ID = job.ID + "-" + uuid.NewString()
 	} else {
 		return err
 	}
@@ -133,6 +134,16 @@ func (o *Orchestrator) DeleteJob(ctx context.Context, jobID string) error {
 
 func (o *Orchestrator) RestoreJob(ctx context.Context, jobID string) error {
 	return o.updateJobDeletedAt(ctx, jobID, time.Time{}, "job_restored")
+}
+
+func (o *Orchestrator) PurgeJob(ctx context.Context, jobID string) error {
+	if err := o.store.PurgeJob(ctx, jobID); err != nil {
+		if errors.Is(err, sqlite.ErrJobNotDeleted) {
+			return ErrJobNotDeleted
+		}
+		return err
+	}
+	return nil
 }
 
 func (o *Orchestrator) upsertMatchedJob(ctx context.Context, job domain.Job, rule config.WatchRule, event domain.DomainEvent) error {

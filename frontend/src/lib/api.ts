@@ -38,6 +38,12 @@ export function restoreJob(jobId: string): Promise<JobDetail> {
   })
 }
 
+export function purgeJob(jobId: string): Promise<{ status: string }> {
+  return request<{ status: string }>(`/api/jobs/${jobId}/purge`, {
+    method: 'POST',
+  })
+}
+
 export function submitDesignApproval(jobId: string, status: 'approved' | 'rejected', comment: string): Promise<JobDetail> {
   return request<JobDetail>(`/api/jobs/${jobId}/approvals/design`, {
     method: 'POST',

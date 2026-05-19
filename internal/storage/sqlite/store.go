@@ -18,6 +18,8 @@ type Store struct {
 	db *sql.DB
 }
 
+var ErrJobNotDeleted = errors.New("job is not deleted")
+
 type JobListFilter string
 
 const (
@@ -121,7 +123,7 @@ func (s *Store) GetJob(ctx context.Context, jobID string) (domain.Job, error) {
 	`, jobID)
 	job, err := scanJob(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.Job{}, fmt.Errorf("job %q not found", jobID)
+		return domain.Job{}, fmt.Errorf("%w: job %q not found", domain.ErrJobNotFound, jobID)
 	}
 	if err != nil {
 		return domain.Job{}, err
@@ -153,6 +155,49 @@ func (s *Store) AppendEvent(ctx context.Context, event domain.Event) error {
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, event.JobID, event.EventType, event.StateFrom, event.StateTo, event.Payload, event.CreatedAt.UTC())
 	return err
+}
+
+func (s *Store) PurgeJob(ctx context.Context, jobID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM jobs WHERE id = ? AND deleted_at IS NOT NULL`, jobID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		var deletedAt sql.NullTime
+		err := tx.QueryRowContext(ctx, `
+			SELECT deleted_at
+			FROM jobs
+			WHERE id = ?
+		`, jobID).Scan(&deletedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.ErrJobNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if !deletedAt.Valid {
+			return ErrJobNotDeleted
+		}
+		return domain.ErrJobNotFound
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM job_events WHERE job_id = ?`, jobID); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (s *Store) ListEvents(ctx context.Context, jobID string) ([]domain.Event, error) {
