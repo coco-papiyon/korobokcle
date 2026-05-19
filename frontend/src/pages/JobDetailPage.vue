@@ -19,7 +19,7 @@ import {
   submitReviewComment,
   submitReviewRerun,
 } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, formatPayloadDisplay } from '@/lib/format'
 import { rerunActionFromEvent, rerunButtonLabel, type RerunAction } from '@/lib/rerun-actions'
 import type { JobEvent } from '@/types'
 import { computed, onUnmounted, ref, watch } from 'vue'
@@ -111,6 +111,13 @@ const latestEvent = computed(() => {
   const events = data.value?.events ?? []
   return events.length > 0 ? events[events.length - 1] : null
 })
+
+const eventRows = computed(() =>
+  (data.value?.events ?? []).map((event) => ({
+    ...event,
+    payloadDisplay: formatPayloadDisplay(event.payload),
+  })),
+)
 
 const flowRerunEvent = computed<JobEvent | null>(() => {
   const events = data.value?.events ?? []
@@ -224,15 +231,6 @@ function rerunErrorLabel(action: RerunAction) {
     return 'Review rerun'
   }
   return 'PR rerun'
-}
-
-function formatPayloadPreview(payload: string) {
-  try {
-    const parsed = JSON.parse(payload) as unknown
-    return JSON.stringify(parsed)
-  } catch {
-    return payload
-  }
 }
 
 function formatTestReportMarkdown(raw?: string) {
@@ -708,11 +706,19 @@ async function purgeArchivedJob() {
         </PanelCard>
 
         <DataTable :columns="['When', 'Event', 'State', 'Payload', 'Action']">
-          <tr v-for="event in data.events" :key="event.id">
+          <tr v-for="event in eventRows" :key="event.id">
             <td>{{ formatDateTime(event.createdAt) }}</td>
             <td>{{ event.eventType }}</td>
             <td>{{ event.stateTo || '-' }}</td>
-            <td><pre class="artifact-view">{{ formatPayloadPreview(event.payload) }}</pre></td>
+            <td class="payload-cell">
+              <details class="payload-details">
+                <summary class="payload-summary">
+                  <span class="payload-summary__label">クリックして展開</span>
+                  <span class="payload-summary__preview">{{ event.payloadDisplay.preview }}</span>
+                </summary>
+                <pre class="payload-view artifact-view">{{ event.payloadDisplay.content }}</pre>
+              </details>
+            </td>
             <td>
               <div v-if="event.availableActions.length > 0" class="button-row">
                 <button

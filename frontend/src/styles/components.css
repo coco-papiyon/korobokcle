@@ -311,6 +311,58 @@
   overflow-x: auto;
 }
 
+.payload-cell {
+  min-width: 18rem;
+  max-width: 36rem;
+}
+
+.payload-details {
+  min-width: 0;
+}
+
+.payload-details > summary {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  list-style: none;
+  min-width: 0;
+}
+
+.payload-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.payload-details[open] > summary {
+  border-color: rgba(188, 90, 34, 0.3);
+  background: #fff8f1;
+}
+
+.payload-summary__label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+
+.payload-summary__preview {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-primary);
+  word-break: break-all;
+}
+
+.payload-view {
+  margin-top: var(--space-2);
+  max-height: 18rem;
+  overflow: auto;
+}
+
 .settings-list {
   display: grid;
   gap: var(--space-3);

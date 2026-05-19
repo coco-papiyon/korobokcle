@@ -1,0 +1,33 @@
+# test log
+getenv PATHEXT
+stat pwsh.com
+stat pwsh.exe
+stat pwsh.bat
+stat pwsh.cmd
+stat pwsh.vbs
+stat pwsh.vbe
+stat pwsh.js
+stat pwsh.jse
+stat pwsh.wsf
+stat pwsh.wsh
+stat pwsh.msc
+stat pwsh.cpl
+getenv path
+stat C:\app\go\bin\pwsh.com
+stat C:\app\go\bin\pwsh.exe
+stat C:\app\go\bin\pwsh.bat
+stat C:\app\go\bin\pwsh.cmd
+stat C:\app\go\bin\pwsh.vbs
+stat C:\app\go\bin\pwsh.vbe
+stat C:\app\go\bin\pwsh.js
+stat C:\app\go\bin\pwsh.jse
+stat C:\app\go\bin\pwsh.wsf
+stat C:\app\go\bin\pwsh.wsh
+stat C:\app\go\bin\pwsh.msc
+stat C:\app\go\bin\pwsh.cpl
+stat C:\Program Files\PowerShell\7\pwsh.com
+stat C:\Program Files\PowerShell\7\pwsh.exe
+getenv PATHEXT
+open NUL
+open C:\Program Files\PowerShell\7\pwsh.exe
+stat .
