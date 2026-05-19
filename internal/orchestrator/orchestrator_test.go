@@ -187,6 +187,112 @@ func TestProcessMatchSkipsDuplicatePRFeedbackEvent(t *testing.T) {
 	}
 }
 
+func TestProcessMatchDoesNotRestoreDeletedPRReviewJob(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	deletedAt := nowUTC()
+	job := domain.Job{
+		ID:           "job-pr-review-deleted",
+		Type:         domain.JobTypePRReview,
+		Repository:   "owner/repo",
+		GitHubNumber: 55,
+		State:        domain.StateCompleted,
+		Title:        "existing review",
+		DeletedAt:    &deletedAt,
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	appConfig := config.DefaultFiles().App
+	rule := config.WatchRule{ID: "rule-pr-review", Name: "PR review"}
+	event := domain.DomainEvent{
+		Type: domain.DomainEventPRMatched,
+		Item: domain.RepositoryItem{
+			Repository: "owner/repo",
+			Number:     55,
+			Title:      "existing review updated",
+			Target:     domain.TargetPullRequest,
+		},
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("ProcessMatch() error = %v", err)
+	}
+
+	saved, events, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.DeletedAt == nil {
+		t.Fatalf("expected deleted job to stay deleted, got %+v", saved)
+	}
+	if saved.State != domain.StateCompleted {
+		t.Fatalf("expected completed state to remain, got %s", saved.State)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected no new events for deleted job, got %+v", events)
+	}
+}
+
+func TestProcessMatchDoesNotRestoreDeletedPRFeedbackJob(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	deletedAt := nowUTC()
+	job := domain.Job{
+		ID:           "job-pr-feedback-deleted",
+		Type:         domain.JobTypePRFeedback,
+		Repository:   "owner/repo",
+		GitHubNumber: 56,
+		State:        domain.StateCompleted,
+		Title:        "existing feedback",
+		DeletedAt:    &deletedAt,
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	appConfig := config.DefaultFiles().App
+	rule := config.WatchRule{ID: "rule-feedback", Name: "PR feedback"}
+	event := domain.DomainEvent{
+		Type: domain.DomainEventPRReviewMatched,
+		Item: domain.RepositoryItem{
+			Repository: "owner/repo",
+			Number:     56,
+			Title:      "existing feedback updated",
+			Target:     domain.TargetPullRequestReview,
+			BranchName: "feature/pr-56",
+			ReviewComments: []domain.ReviewComment{
+				{ID: 2001, Author: "reviewer", Body: "new feedback"},
+			},
+		},
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("ProcessMatch() error = %v", err)
+	}
+
+	saved, events, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.DeletedAt == nil {
+		t.Fatalf("expected deleted job to stay deleted, got %+v", saved)
+	}
+	if saved.State != domain.StateCompleted {
+		t.Fatalf("expected completed state to remain, got %s", saved.State)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected no new events for deleted job, got %+v", events)
+	}
+}
+
 func TestRerunDesignAllowedFromWaitingDesignApproval(t *testing.T) {
 	t.Parallel()
 

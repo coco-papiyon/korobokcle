@@ -98,17 +98,15 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 		UpdatedAt:    time.Now().UTC(),
 	}
 	if existing, err := o.store.FindJobBySource(ctx, job.Repository, job.GitHubNumber, job.Type); err == nil {
+		if existing.DeletedAt != nil {
+			return nil
+		}
 		job.ID = existing.ID
 		job.CreatedAt = existing.CreatedAt
 		job.UpdatedAt = time.Now().UTC()
 		if jobType != domain.JobTypePRFeedback {
-			if existing.DeletedAt == nil {
-				return nil
-			}
-			job.DeletedAt = nil
-			return o.upsertMatchedJob(ctx, job, rule, event)
+			return nil
 		}
-		job.DeletedAt = existing.DeletedAt
 		events, err := o.store.ListEvents(ctx, existing.ID)
 		if err != nil {
 			return err
@@ -117,7 +115,6 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 			return nil
 		}
 		job.State = existing.State
-		job.DeletedAt = nil
 		if jobType == domain.JobTypePRFeedback && !prFeedbackJobBusy(existing.State) {
 			job.State = domain.StateImplementationRunning
 		}
