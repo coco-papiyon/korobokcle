@@ -105,6 +105,11 @@ type watchRuleResponse struct {
 	Enabled        bool                        `json:"enabled"`
 }
 
+type testProfileResponse struct {
+	Name     string   `json:"name"`
+	Commands []string `json:"commands"`
+}
+
 type providerSpecResponse struct {
 	Name   string   `json:"name"`
 	Models []string `json:"models"`
@@ -502,6 +507,18 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, rules)
+}
+
+func (s *Server) handleTestProfiles(w http.ResponseWriter, _ *http.Request) {
+	testProfiles := s.config.TestProfiles()
+	profiles := make([]testProfileResponse, 0, len(testProfiles.Profiles))
+	for _, profile := range testProfiles.Profiles {
+		profiles = append(profiles, testProfileResponse{
+			Name:     profile.Name,
+			Commands: sliceOrEmpty(profile.Commands),
+		})
+	}
+	writeJSON(w, http.StatusOK, profiles)
 }
 
 func (s *Server) handleAppConfig(w http.ResponseWriter, _ *http.Request) {
@@ -902,6 +919,26 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 	s.handleWatchRules(w, r)
 }
 
+func (s *Server) handleSaveTestProfiles(w http.ResponseWriter, r *http.Request) {
+	var payload []testProfileResponse
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode test profiles: %w", err))
+		return
+	}
+
+	file, err := normalizeTestProfiles(payload)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := s.config.UpdateTestProfiles(file); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.handleTestProfiles(w, r)
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("ok"))
@@ -1021,6 +1058,44 @@ func normalizeStringSlice(values []string) []string {
 			continue
 		}
 		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
+}
+
+func normalizeTestProfiles(values []testProfileResponse) (config.TestProfiles, error) {
+	out := config.TestProfiles{
+		Profiles: make([]config.TestProfile, 0, len(values)),
+	}
+	seen := make(map[string]struct{}, len(values))
+	for index, value := range values {
+		name := strings.TrimSpace(value.Name)
+		if name == "" {
+			return config.TestProfiles{}, fmt.Errorf("profile[%d].name is required", index)
+		}
+		if _, ok := seen[name]; ok {
+			return config.TestProfiles{}, fmt.Errorf("profile[%d].name must be unique: %q", index, name)
+		}
+		commands := normalizeTestProfileCommands(value.Commands)
+		if len(commands) == 0 {
+			return config.TestProfiles{}, fmt.Errorf("profile[%d].commands must include at least one command", index)
+		}
+		seen[name] = struct{}{}
+		out.Profiles = append(out.Profiles, config.TestProfile{
+			Name:     name,
+			Commands: commands,
+		})
+	}
+	return out, nil
+}
+
+func normalizeTestProfileCommands(commands []string) []string {
+	normalized := make([]string, 0, len(commands))
+	for _, command := range commands {
+		trimmed := strings.TrimSpace(command)
+		if trimmed == "" {
+			continue
+		}
 		normalized = append(normalized, trimmed)
 	}
 	return normalized

@@ -1105,6 +1105,100 @@ func TestHandleSaveWatchRulesAcceptsPullRequestReviewCommentTarget(t *testing.T)
 	}
 }
 
+func TestHandleTestProfilesReturnsProfiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.TestProfiles = config.TestProfiles{
+		Profiles: []config.TestProfile{
+			{Name: "go-default", Commands: []string{"go test ./...", "go test ./internal/..."}},
+		},
+	}
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/test-profiles", nil)
+
+	server.handleTestProfiles(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	var got []struct {
+		Name     string   `json:"name"`
+		Commands []string `json:"commands"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "go-default" || len(got[0].Commands) != 2 {
+		t.Fatalf("unexpected test profiles response: %+v", got)
+	}
+}
+
+func TestHandleSaveTestProfilesNormalizesCommands(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"name":"go-default","commands":["  go test ./...  ","","go test ./internal/..."]}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/test-profiles", bytes.NewReader(body))
+
+	server.handleSaveTestProfiles(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+	if got := svc.TestProfiles().Profiles; len(got) != 1 || len(got[0].Commands) != 2 || got[0].Commands[0] != "go test ./..." || got[0].Commands[1] != "go test ./internal/..." {
+		t.Fatalf("unexpected saved test profiles: %#v", got)
+	}
+}
+
+func TestHandleSaveTestProfilesRejectsDuplicateNames(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"name":"go-default","commands":["go test ./..."]},{"name":"go-default","commands":["go test ./internal/..."]}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/test-profiles", bytes.NewReader(body))
+
+	server.handleSaveTestProfiles(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusBadRequest, recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandleSaveTestProfilesRejectsEmptyCommands(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"name":"go-default","commands":["   ",""]}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/test-profiles", bytes.NewReader(body))
+
+	server.handleSaveTestProfiles(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusBadRequest, recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestHandleSubmitReviewCommentUsesReviewArtifact(t *testing.T) {
 	t.Parallel()
 

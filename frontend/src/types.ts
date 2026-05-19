@@ -93,6 +93,11 @@ export type WatchRuleForm = WatchRule & {
   reviewersText: string
 }
 
+export type TestProfile = {
+  name: string
+  commands: string[]
+}
+
 export type AppConfig = {
   provider: string
   model: string
