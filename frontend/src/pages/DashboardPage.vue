@@ -59,7 +59,6 @@ const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetc
 
 watch(showDeletedOnly, () => {
   selectedJobIds.value = []
-  bulkActionState.value = 'idle'
   bulkActionError.value = null
   void reload()
 })
@@ -68,27 +67,35 @@ const jobs = computed(() => data.value ?? [])
 const visibleJobs = computed(() =>
   jobs.value.filter((job) => (showDeletedOnly.value ? !!job.deletedAt : !job.deletedAt)),
 )
+const visibleJobIds = computed(() => visibleJobs.value.map((job) => job.id))
 const selectedVisibleJobs = computed(() =>
   visibleJobs.value.filter((job) => selectedJobIds.value.includes(job.id)),
 )
 const selectedVisibleJobCount = computed(() => selectedVisibleJobs.value.length)
-const selectedVisibleJobIds = computed(() => selectedVisibleJobs.value.map((job) => job.id))
 const visibleJobCount = computed(() => visibleJobs.value.length)
 const allVisibleJobsSelected = computed(
   () => visibleJobCount.value > 0 && selectedVisibleJobCount.value === visibleJobCount.value,
 )
 const selectedJobCountLabel = computed(() => `${selectedVisibleJobCount.value}件`)
+const isBulkActionRunning = computed(() => bulkActionState.value === 'saving')
 
 function getJobTitle(job: Job) {
   return job.title?.trim() || 'タイトルなし'
 }
+
+function syncSelectedJobIds() {
+  const visibleJobIdSet = new Set(visibleJobIds.value)
+  selectedJobIds.value = selectedJobIds.value.filter((selectedId) => visibleJobIdSet.has(selectedId))
+}
+
+watch(visibleJobs, syncSelectedJobIds, { immediate: true })
 
 function isJobSelected(jobId: string) {
   return selectedJobIds.value.includes(jobId)
 }
 
 function toggleJobSelection(jobId: string) {
-  if (bulkActionState.value === 'saving') {
+  if (isBulkActionRunning.value) {
     return
   }
   if (isJobSelected(jobId)) {
@@ -99,14 +106,15 @@ function toggleJobSelection(jobId: string) {
 }
 
 function setAllVisibleJobsSelected(checked: boolean) {
-  if (bulkActionState.value === 'saving') {
+  if (isBulkActionRunning.value) {
     return
   }
   if (!checked) {
-    selectedJobIds.value = selectedJobIds.value.filter((selectedId) => !selectedVisibleJobIds.value.includes(selectedId))
+    const visibleJobIdSet = new Set(visibleJobIds.value)
+    selectedJobIds.value = selectedJobIds.value.filter((selectedId) => !visibleJobIdSet.has(selectedId))
     return
   }
-  selectedJobIds.value = Array.from(new Set([...selectedJobIds.value, ...selectedVisibleJobIds.value]))
+  selectedJobIds.value = Array.from(new Set([...selectedJobIds.value, ...visibleJobIds.value]))
 }
 
 function toggleAllVisibleJobs(event: Event) {
@@ -118,11 +126,13 @@ function clearBulkSelection() {
   selectedJobIds.value = []
 }
 
-function formatBulkError(actionLabel: string, failures: PromiseRejectedResult[]) {
+function formatBulkError(actionLabel: string, failures: Array<{ jobId: string; reason: unknown }>) {
   const [firstFailure] = failures
   const reason = firstFailure?.reason
   const message = reason instanceof Error ? reason.message : 'Unknown error'
-  return `${actionLabel}に失敗しました: ${message}`
+  const failedJobIds = failures.slice(0, 3).map((failure) => failure.jobId)
+  const failedJobIdLabel = failedJobIds.length > 0 ? ` (対象: ${failedJobIds.join(', ')})` : ''
+  return `${actionLabel}に失敗しました: ${message}${failedJobIdLabel}`
 }
 
 async function submitBulkDelete() {
@@ -142,7 +152,14 @@ async function submitBulkDelete() {
   bulkActionError.value = null
   try {
     const results = await Promise.allSettled(targets.map((job) => deleteJob(job.id)))
-    const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    const failures = results
+      .map((result, index) => {
+        if (result.status === 'fulfilled') {
+          return null
+        }
+        return { jobId: targets[index].id, reason: result.reason }
+      })
+      .filter((failure): failure is { jobId: string; reason: unknown } => failure !== null)
     await reload()
     clearBulkSelection()
     if (failures.length > 0) {
@@ -174,7 +191,14 @@ async function submitBulkRestore() {
   bulkActionError.value = null
   try {
     const results = await Promise.allSettled(targets.map((job) => restoreJob(job.id)))
-    const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+    const failures = results
+      .map((result, index) => {
+        if (result.status === 'fulfilled') {
+          return null
+        }
+        return { jobId: targets[index].id, reason: result.reason }
+      })
+      .filter((failure): failure is { jobId: string; reason: unknown } => failure !== null)
     await reload()
     clearBulkSelection()
     if (failures.length > 0) {
@@ -199,7 +223,12 @@ async function submitBulkRestore() {
       <p v-if="isRefreshing" class="text-muted">Syncing jobs...</p>
       <div class="dashboard-toolbar">
         <div class="button-row">
-          <button class="button button-secondary" type="button" @click="showDeletedOnly = !showDeletedOnly">
+          <button
+            class="button button-secondary"
+            type="button"
+            :disabled="isBulkActionRunning"
+            @click="showDeletedOnly = !showDeletedOnly"
+          >
             {{ showDeletedOnly ? '表示を通常に戻す' : '削除済みジョブを表示' }}
           </button>
         </div>
@@ -207,7 +236,7 @@ async function submitBulkRestore() {
           <label class="dashboard-toolbar__select-all">
             <input
               :checked="allVisibleJobsSelected"
-              :disabled="bulkActionState === 'saving' || visibleJobCount === 0"
+              :disabled="isBulkActionRunning || visibleJobCount === 0"
               type="checkbox"
               @change="toggleAllVisibleJobs"
             >
@@ -219,7 +248,7 @@ async function submitBulkRestore() {
               v-if="!showDeletedOnly"
               class="button button-danger"
               type="button"
-              :disabled="bulkActionState === 'saving' || selectedVisibleJobCount === 0"
+              :disabled="isBulkActionRunning || selectedVisibleJobCount === 0"
               @click="submitBulkDelete"
             >
               {{ selectedVisibleJobCount > 0 ? `選択した ${selectedJobCountLabel} を削除` : '削除するジョブを選択してください' }}
@@ -228,7 +257,7 @@ async function submitBulkRestore() {
               v-else
               class="button button-primary"
               type="button"
-              :disabled="bulkActionState === 'saving' || selectedVisibleJobCount === 0"
+              :disabled="isBulkActionRunning || selectedVisibleJobCount === 0"
               @click="submitBulkRestore"
             >
               {{ selectedVisibleJobCount > 0 ? `選択した ${selectedJobCountLabel} を復元` : '復元するジョブを選択してください' }}
@@ -243,7 +272,7 @@ async function submitBulkRestore() {
             <input
               :checked="isJobSelected(job.id)"
               :aria-label="`${getJobTitle(job)} を選択`"
-              :disabled="bulkActionState === 'saving'"
+              :disabled="isBulkActionRunning"
               type="checkbox"
               @change="toggleJobSelection(job.id)"
             >
