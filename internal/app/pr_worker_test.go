@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,6 +22,12 @@ func TestRunPendingPRCreationsCompletesJob(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
+	if err := runGit(t, root, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := runGit(t, root, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "init"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
 	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
@@ -80,7 +87,7 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 
 	root := t.TempDir()
 	files := config.DefaultFiles()
-	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", Branch: "release/1.x"}}
+	files.App.MonitoredRepositories = []config.MonitoredRepository{{Repository: "owner/repo", Branch: "release/1.x", Workers: 1}}
 	cfg := config.NewService(root, files)
 	job := domain.Job{
 		ID:           "job-1",
@@ -88,7 +95,6 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 		GitHubNumber: 12,
 		Title:        "Implement feature",
 		BranchName:   "korobokcle/issue-12",
-		WatchRuleID:  "rule-1",
 	}
 
 	if err := writeFile(filepath.Join(artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "result.md"), []byte("original summary")); err != nil {
@@ -98,7 +104,7 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 		t.Fatalf("write result.md: %v", err)
 	}
 
-	req, err := buildPRCreateRequest(cfg, job, root)
+	req, err := buildPRCreateRequest(context.Background(), cfg, job, root)
 	if err != nil {
 		t.Fatalf("buildPRCreateRequest() error = %v", err)
 	}
@@ -116,6 +122,61 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 	}
 	if req.BaseBranch != "release/1.x" {
 		t.Fatalf("expected base branch release/1.x, got %q", req.BaseBranch)
+	}
+}
+
+func TestBuildPRCreateRequestUsesDefaultBranchWhenMonitoringBranchIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "init"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "main"); err != nil {
+		t.Fatalf("git checkout main error = %v", err)
+	}
+
+	files := config.DefaultFiles()
+	files.App.MonitoredRepositories = []config.MonitoredRepository{{Repository: "owner/repo", Branch: "", Workers: 1}}
+	cfg := config.NewService(root, files)
+	workDir, err := cloneRepositoryWorkspace(context.Background(), cfg, source, 0)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
+	}
+	job := domain.Job{
+		ID:         "job-1",
+		Repository: "owner/repo",
+		GitHubNumber: 12,
+		Title:      "Implement feature",
+		BranchName: "korobokcle/issue-12",
+	}
+	if err := writeFile(filepath.Join(artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "result.md"), []byte("summary")); err != nil {
+		t.Fatalf("write result.md: %v", err)
+	}
+
+	req, err := buildPRCreateRequest(context.Background(), cfg, job, workDir)
+	if err != nil {
+		t.Fatalf("buildPRCreateRequest() error = %v", err)
+	}
+	if req.BaseBranch != "main" {
+		t.Fatalf("expected default branch main, got %q", req.BaseBranch)
 	}
 }
 

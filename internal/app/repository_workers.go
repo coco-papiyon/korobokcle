@@ -406,7 +406,7 @@ func processPRJob(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 	if job.Type == domain.JobTypePRFeedback {
 		buildReq = buildPRFeedbackPushRequest
 	}
-	req, err := buildReq(cfg, job, repoDir)
+	req, err := buildReq(ctx, cfg, job, repoDir)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 	}
@@ -515,7 +515,8 @@ func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domai
 		return nil
 	}
 
-	baseBranch, err := resolveRepositoryBaseBranch(ctx, cfg, job, repoDir)
+	configuredBranch := resolveMonitoredRepositoryBranch(cfg, job.Repository)
+	baseBranch, err := resolveRepositoryBaseBranch(ctx, repoDir, configuredBranch)
 	if err != nil {
 		return err
 	}
@@ -539,8 +540,8 @@ func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domai
 	return nil
 }
 
-func resolveRepositoryBaseBranch(ctx context.Context, cfg *config.Service, job domain.Job, repoDir string) (string, error) {
-	if branch := strings.TrimSpace(resolveWatchRuleBranch(cfg, job.WatchRuleID)); branch != "" {
+func resolveRepositoryBaseBranch(ctx context.Context, repoDir string, configuredBranch string) (string, error) {
+	if branch := strings.TrimSpace(configuredBranch); branch != "" {
 		return branch, nil
 	}
 
@@ -562,6 +563,16 @@ func resolveRepositoryBaseBranch(ctx context.Context, cfg *config.Service, job d
 		return "", fmt.Errorf("resolve base branch: branch is empty")
 	}
 	return branch, nil
+}
+
+func resolveMonitoredRepositoryBranch(cfg *config.Service, repository string) string {
+	for _, monitored := range cfg.App().MonitoredRepositories {
+		if !repositoryMatches(repository, monitored.Repository) {
+			continue
+		}
+		return strings.TrimSpace(monitored.Branch)
+	}
+	return ""
 }
 
 func runGitCommand(ctx context.Context, repoDir string, args ...string) (string, error) {

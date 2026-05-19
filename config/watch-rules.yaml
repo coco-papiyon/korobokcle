@@ -4,7 +4,6 @@ rules:
       repositories:
         - https://github.com/coco-papiyon/korobokcle
       target: issue
-      branch: ""
       projectName: ""
       labels: []
       projectFilters: []
@@ -12,24 +11,25 @@ rules:
       authors: []
       assignees:
         - coco-papiyon
+      reviewers: []
       excludeDraftPR: true
       provider: ""
       model: ""
       skillSet: default
       testProfile: ""
-      enabled: true
+      enabled: false
     - id: PR
       name: PR
       repositories:
         - https://github.com/coco-papiyon/korobokcle
       target: pull_request
-      branch: ""
       projectName: ""
       labels: []
       projectFilters: []
       titlePattern: ""
       authors: []
       assignees: []
+      reviewers: []
       excludeDraftPR: true
       provider: ""
       model: ""
@@ -41,7 +41,6 @@ rules:
       repositories:
         - https://github.com/coco-papiyon/korobokcle
       target: issue_project
-      branch: ""
       projectName: develop
       labels: []
       projectFilters:
@@ -52,24 +51,25 @@ rules:
       authors: []
       assignees:
         - coco-papiyon
+      reviewers: []
       excludeDraftPR: true
       provider: ""
       model: ""
       skillSet: default
       testProfile: go-default
-      enabled: false
+      enabled: true
     - id: review
       name: review
       repositories:
         - https://github.com/coco-papiyon/korobokcle
       target: pull_request_review
-      branch: ""
       projectName: ""
       labels: []
       projectFilters: []
       titlePattern: ""
       authors: []
       assignees: []
+      reviewers: []
       excludeDraftPR: true
       provider: ""
       model: ""

@@ -90,7 +90,6 @@ type watchRuleResponse struct {
 	Name           string                      `json:"name"`
 	Repositories   []string                    `json:"repositories"`
 	Target         string                      `json:"target"`
-	Branch         string                      `json:"branch"`
 	ProjectName    string                      `json:"projectName"`
 	Labels         []string                    `json:"labels"`
 	ProjectFilters []config.ProjectFieldFilter `json:"projectFilters"`
@@ -113,6 +112,7 @@ type providerSpecResponse struct {
 
 type monitoredRepositoryResponse struct {
 	Repository string `json:"repository"`
+	Branch     string `json:"branch"`
 	Workers    int    `json:"workers"`
 }
 
@@ -486,7 +486,6 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 			Name:           rule.Name,
 			Repositories:   sliceOrEmpty(rule.Repositories),
 			Target:         target,
-			Branch:         rule.Branch,
 			ProjectName:    rule.ProjectName,
 			Labels:         sliceOrEmpty(rule.Labels),
 			ProjectFilters: append([]config.ProjectFieldFilter(nil), rule.ProjectFilters...),
@@ -880,7 +879,6 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			Name:           strings.TrimSpace(rule.Name),
 			Repositories:   repositories,
 			Target:         target,
-			Branch:         strings.TrimSpace(rule.Branch),
 			ProjectName:    strings.TrimSpace(rule.ProjectName),
 			Labels:         compactStrings(rule.Labels),
 			ProjectFilters: compactProjectFilters(rule.ProjectFilters),
@@ -1077,6 +1075,7 @@ func toMonitoredRepositoryResponses(values []config.MonitoredRepository) []monit
 		}
 		out = append(out, monitoredRepositoryResponse{
 			Repository: repository,
+			Branch:     strings.TrimSpace(value.Branch),
 			Workers:    workers,
 		})
 	}
@@ -1094,6 +1093,7 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 		if _, ok := seen[repository]; ok {
 			continue
 		}
+		branch := strings.TrimSpace(value.Branch)
 		workers := value.Workers
 		if workers < 1 {
 			return nil, fmt.Errorf("item[%d].workers must be at least 1", index)
@@ -1101,6 +1101,7 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 		seen[repository] = struct{}{}
 		out = append(out, config.MonitoredRepository{
 			Repository: repository,
+			Branch:     branch,
 			Workers:    workers,
 		})
 	}

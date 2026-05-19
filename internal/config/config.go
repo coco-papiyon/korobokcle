@@ -21,6 +21,7 @@ type App struct {
 
 type MonitoredRepository struct {
 	Repository string `yaml:"repository"`
+	Branch     string `yaml:"branch"`
 	Workers    int    `yaml:"workers"`
 }
 
@@ -39,7 +40,6 @@ type WatchRule struct {
 	Name           string               `yaml:"name"`
 	Repositories   []string             `yaml:"repositories"`
 	Target         string               `yaml:"target"`
-	Branch         string               `yaml:"branch"`
 	ProjectName    string               `yaml:"projectName"`
 	Labels         []string             `yaml:"labels"`
 	ProjectFilters []ProjectFieldFilter `yaml:"projectFilters"`

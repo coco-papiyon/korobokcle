@@ -68,7 +68,6 @@ export type WatchRule = {
   name: string
   repositories: string[] | null
   target: string
-  branch: string
   projectName: string
   labels: string[] | null
   projectFilters: ProjectFieldFilter[]
@@ -109,6 +108,7 @@ export type AppConfig = {
 
 export type MonitoredRepository = {
   repository: string
+  branch: string
   workers: number
 }
 

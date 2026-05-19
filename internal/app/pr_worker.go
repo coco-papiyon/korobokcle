@@ -262,7 +262,7 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 			continue
 		}
 
-		req, err := buildPRCreateRequest(cfg, job, root)
+		req, err := buildPRCreateRequest(ctx, cfg, job, root)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 			continue
@@ -298,7 +298,7 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 	return nil
 }
 
-func buildPRCreateRequest(cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
+func buildPRCreateRequest(ctx context.Context, cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
 	artifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerPR)
 	summaryDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
 	summaryRaw, err := readFirstArtifactFile(summaryDir, "result.md", "implement.md", "summary.md")
@@ -313,11 +313,15 @@ func buildPRCreateRequest(cfg *config.Service, job domain.Job, workDir string) (
 
 	title := naming.RenderPRTitle(cfg.App().PRTitleTemplate, job)
 	body := buildPRBody(job, string(summaryRaw), fixSummaryRaw)
+	baseBranch, err := resolveRepositoryBaseBranch(ctx, workDir, resolveMonitoredRepositoryBranch(cfg, job.Repository))
+	if err != nil {
+		return PRCreateRequest{}, err
+	}
 
 	return PRCreateRequest{
 		Repository:  job.Repository,
 		BranchName:  job.BranchName,
-		BaseBranch:  resolveWatchRuleBranch(cfg, job.WatchRuleID),
+		BaseBranch:  baseBranch,
 		Title:       title,
 		Body:        body,
 		ArtifactDir: artifactDir,
@@ -325,7 +329,7 @@ func buildPRCreateRequest(cfg *config.Service, job domain.Job, workDir string) (
 	}, nil
 }
 
-func buildPRFeedbackPushRequest(cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
+func buildPRFeedbackPushRequest(_ context.Context, cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
 	artifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerPR)
 	summaryRaw, err := readPRFeedbackSummaryArtifact(cfg, job.ID)
 	if err != nil {
@@ -342,14 +346,6 @@ func buildPRFeedbackPushRequest(cfg *config.Service, job domain.Job, workDir str
 		WorkDir:     workDir,
 		ReuseBranch: true,
 	}, nil
-}
-
-func resolveWatchRuleBranch(cfg *config.Service, watchRuleID string) string {
-	rule, ok := cfg.WatchRuleByID(watchRuleID)
-	if !ok {
-		return ""
-	}
-	return strings.TrimSpace(rule.Branch)
 }
 
 func readOptionalFixSummary(cfg *config.Service, jobID string) (string, error) {

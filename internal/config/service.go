@@ -120,6 +120,7 @@ func cloneMonitoredRepositories(values []MonitoredRepository) []MonitoredReposit
 	for _, repository := range values {
 		cloned = append(cloned, MonitoredRepository{
 			Repository: repository.Repository,
+			Branch:     repository.Branch,
 			Workers:    repository.Workers,
 		})
 	}

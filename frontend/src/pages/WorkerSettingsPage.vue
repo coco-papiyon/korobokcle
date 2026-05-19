@@ -16,6 +16,7 @@ watch(
   (config) => {
     monitoredRepositories.value = (config?.monitoredRepositories ?? []).map((entry) => ({
       repository: entry.repository ?? '',
+      branch: entry.branch ?? '',
       workers: Math.max(1, Number(entry.workers) || 1),
     }))
   },
@@ -23,7 +24,7 @@ watch(
 )
 
 function addMonitoredRepository() {
-  monitoredRepositories.value = [...monitoredRepositories.value, { repository: '', workers: 1 }]
+  monitoredRepositories.value = [...monitoredRepositories.value, { repository: '', branch: '', workers: 1 }]
 }
 
 function removeMonitoredRepository(index: number) {
@@ -34,11 +35,13 @@ function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
   return values
     .map((entry) => ({
       repository: entry.repository.trim(),
+      branch: entry.branch.trim(),
       workers: Math.floor(Number(entry.workers)),
     }))
     .filter((entry) => entry.repository.length > 0)
     .map((entry) => ({
       repository: entry.repository,
+      branch: entry.branch,
       workers: Number.isInteger(entry.workers) && entry.workers >= 1 ? entry.workers : 1,
     }))
     .filter((entry, index, items) => items.findIndex((candidate) => candidate.repository === entry.repository) === index)
@@ -53,6 +56,7 @@ async function persistConfig() {
     })
     monitoredRepositories.value = (saved.monitoredRepositories ?? []).map((entry) => ({
       repository: entry.repository ?? '',
+      branch: entry.branch ?? '',
       workers: Math.max(1, Number(entry.workers) || 1),
     }))
     saveState.value = 'saved'
@@ -92,6 +96,10 @@ async function persistConfig() {
                 <span class="field__label">Repository</span>
                 <input v-model="entry.repository" class="field__control" type="text" placeholder="owner/repository" />
               </label>
+              <label class="field field-full">
+                <span class="field__label">Branch</span>
+                <input v-model="entry.branch" class="field__control" type="text" placeholder="main" />
+              </label>
               <label class="field">
                 <span class="field__label">Workers</span>
                 <input v-model.number="entry.workers" class="field__control" type="number" min="1" step="1" />
@@ -99,7 +107,7 @@ async function persistConfig() {
               <button class="button button-secondary" type="button" @click="removeMonitoredRepository(index)">Remove</button>
             </div>
           </div>
-          <p class="text-muted">ワーカー数は 1 以上の整数です。watch rules 側では、ここで登録したリポジトリのみ選択できます。</p>
+          <p class="text-muted">ワーカー数は 1 以上の整数です。branch を空にするとリモートの既定ブランチを使います。watch rules 側では、ここで登録したリポジトリのみ選択できます。</p>
         </div>
 
         <div v-if="saveState === 'saved'" class="notice notice-success">workers を更新しました。</div>
