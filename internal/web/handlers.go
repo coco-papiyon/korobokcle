@@ -202,6 +202,22 @@ func (s *Server) handleRestoreJob(w http.ResponseWriter, r *http.Request) {
 	s.handleJobDetail(w, r)
 }
 
+func (s *Server) handlePurgeJob(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	if err := s.orchestrator.PurgeJob(r.Context(), jobID); err != nil {
+		status := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, orchestrator.ErrJobNotDeleted):
+			status = http.StatusBadRequest
+		case errors.Is(err, domain.ErrJobNotFound):
+			status = http.StatusNotFound
+		}
+		writeJSONError(w, status, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	jobID := mux.Vars(r)["id"]
 	job, events, err := s.orchestrator.JobDetail(r.Context(), jobID)

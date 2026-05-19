@@ -788,6 +788,53 @@ func TestDeleteAndRestoreJob(t *testing.T) {
 	}
 }
 
+func TestPurgeDeletedJobRemovesJobAndEvents(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	deletedAt := nowUTC()
+	job := domain.Job{
+		ID:           "job-purge-1",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 100,
+		State:        domain.StateCompleted,
+		Title:        "purge me",
+		DeletedAt:    &deletedAt,
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := orch.store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "job_deleted",
+		StateFrom: string(domain.StateCompleted),
+		StateTo:   string(domain.StateCompleted),
+		Payload:   `{"deletedAt":"2026-05-19T00:00:00Z"}`,
+		CreatedAt: nowUTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	if err := orch.PurgeJob(context.Background(), job.ID); err != nil {
+		t.Fatalf("PurgeJob() error = %v", err)
+	}
+
+	if _, err := orch.store.GetJob(context.Background(), job.ID); err == nil {
+		t.Fatalf("expected GetJob() to fail after purge")
+	}
+
+	events, err := orch.store.ListEvents(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected events to be removed, got %+v", events)
+	}
+}
+
 func TestRecoverInterruptedJobs(t *testing.T) {
 	t.Parallel()
 

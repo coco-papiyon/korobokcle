@@ -24,6 +24,7 @@ type Orchestrator struct {
 }
 
 var ErrInvalidStateTransition = errors.New("invalid state transition")
+var ErrJobNotDeleted = errors.New("job is not deleted")
 
 type JobListFilter string
 
@@ -133,6 +134,17 @@ func (o *Orchestrator) DeleteJob(ctx context.Context, jobID string) error {
 
 func (o *Orchestrator) RestoreJob(ctx context.Context, jobID string) error {
 	return o.updateJobDeletedAt(ctx, jobID, time.Time{}, "job_restored")
+}
+
+func (o *Orchestrator) PurgeJob(ctx context.Context, jobID string) error {
+	job, err := o.store.GetJob(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if job.DeletedAt == nil {
+		return ErrJobNotDeleted
+	}
+	return o.store.PurgeJob(ctx, jobID)
 }
 
 func (o *Orchestrator) upsertMatchedJob(ctx context.Context, job domain.Job, rule config.WatchRule, event domain.DomainEvent) error {

@@ -183,6 +183,12 @@
   border-color: rgba(188, 90, 34, 0.2);
 }
 
+.button-danger {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+  border-color: rgba(151, 45, 36, 0.22);
+}
+
 .watch-layout {
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);

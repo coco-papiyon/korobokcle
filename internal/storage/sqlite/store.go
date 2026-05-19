@@ -121,7 +121,7 @@ func (s *Store) GetJob(ctx context.Context, jobID string) (domain.Job, error) {
 	`, jobID)
 	job, err := scanJob(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return domain.Job{}, fmt.Errorf("job %q not found", jobID)
+		return domain.Job{}, fmt.Errorf("%w: job %q not found", domain.ErrJobNotFound, jobID)
 	}
 	if err != nil {
 		return domain.Job{}, err
@@ -153,6 +153,31 @@ func (s *Store) AppendEvent(ctx context.Context, event domain.Event) error {
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, event.JobID, event.EventType, event.StateFrom, event.StateTo, event.Payload, event.CreatedAt.UTC())
 	return err
+}
+
+func (s *Store) PurgeJob(ctx context.Context, jobID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM job_events WHERE job_id = ?`, jobID); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, jobID)
+	if err != nil {
+		return err
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		return domain.ErrJobNotFound
+	} else if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (s *Store) ListEvents(ctx context.Context, jobID string) ([]domain.Event, error) {

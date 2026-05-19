@@ -1241,3 +1241,78 @@ func TestHandleDeleteAndRestoreJob(t *testing.T) {
 		t.Fatalf("expected deletedAt to be cleared, got %+v", restored.Job)
 	}
 }
+
+func TestHandlePurgeJobRequiresDeletedJobAndKeepsArtifacts(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-purge-http",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 8,
+		State:        domain.StateCompleted,
+		Title:        "job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/purge", nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handlePurgeJob(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected active job purge to be rejected, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	deleteRecorder := httptest.NewRecorder()
+	deleteRequest := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/delete", nil)
+	deleteRequest = mux.SetURLVars(deleteRequest, map[string]string{"id": job.ID})
+	server.handleDeleteJob(deleteRecorder, deleteRequest)
+	if deleteRecorder.Code != http.StatusOK {
+		t.Fatalf("expected delete to succeed, got %d body=%s", deleteRecorder.Code, deleteRecorder.Body.String())
+	}
+
+	artifactDir := artifacts.WorkerDir(root, svc.App().ArtifactsDir, job.ID, artifacts.WorkerDesign)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(artifactDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "result.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.txt) error = %v", err)
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/purge", nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handlePurgeJob(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	if _, err := store.GetJob(context.Background(), job.ID); err == nil {
+		t.Fatalf("expected job to be removed from DB")
+	}
+	if _, err := os.Stat(filepath.Join(artifactDir, "result.txt")); err != nil {
+		t.Fatalf("expected artifact to remain, stat error = %v", err)
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handleJobDetail(recorder, request)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("expected purged job detail to return 404, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
