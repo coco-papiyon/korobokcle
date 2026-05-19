@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -280,7 +281,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	out.Logs = append(out.Logs, s.loadLogResponses("implementation", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("fix", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerFix), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("pr", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerPR), []string{"git-push.log", "gh-pr-create.log"})...)
-	out.Logs = append(out.Logs, s.loadLogResponses("review", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerReview), []string{"stdout.log", "stderr.log", "gh-pr-review.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("review", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerReview), []string{"stdout.log", "stderr.log", "gh-pr-comment.log"})...)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -312,6 +313,21 @@ func (s *Server) handleDesignApproval(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("status must be approved or rejected"))
 		return
+	}
+
+	if job, _, err := s.orchestrator.JobDetail(r.Context(), jobID); err == nil {
+		if artifact, err := s.loadDesignArtifact(jobID); err == nil && strings.TrimSpace(artifact.Content) != "" {
+			if s.commenter != nil {
+				if err := s.commenter.Submit(r.Context(), IssueCommentSubmitRequest{
+					Repository:  job.Repository,
+					IssueNumber: job.GitHubNumber,
+					Body:        artifact.Content,
+					ArtifactDir: filepath.Dir(artifact.Path),
+				}); err != nil {
+					log.Printf("design approval issue comment failed job=%s error=%v", jobID, err)
+				}
+			}
+		}
 	}
 
 	s.handleJobDetail(w, r)
@@ -421,6 +437,20 @@ func (s *Server) handleReviewRerun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.orchestrator.RerunReviewFromEvent(r.Context(), jobID, payload.EventID, payload.Comment); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, orchestrator.ErrInvalidStateTransition) {
+			status = http.StatusBadRequest
+		}
+		writeJSONError(w, status, err)
+		return
+	}
+
+	s.handleJobDetail(w, r)
+}
+
+func (s *Server) handleReviewApproval(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	if err := s.orchestrator.ApproveReview(r.Context(), jobID); err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, orchestrator.ErrInvalidStateTransition) {
 			status = http.StatusBadRequest

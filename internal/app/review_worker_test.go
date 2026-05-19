@@ -88,8 +88,8 @@ func TestRunPendingReviewsCompletesJob(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JobDetail() error = %v", err)
 	}
-	if saved.State != domain.StateCompleted {
-		t.Fatalf("expected completed, got %s", saved.State)
+	if saved.State != domain.StateReviewReady {
+		t.Fatalf("expected review_ready, got %s", saved.State)
 	}
 	if len(events) == 0 {
 		t.Fatalf("expected events to be recorded")

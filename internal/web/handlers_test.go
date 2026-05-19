@@ -1261,6 +1261,54 @@ func TestHandleSubmitReviewCommentUsesReviewArtifact(t *testing.T) {
 	}
 }
 
+func TestHandleReviewApprovalCompletesReviewJob(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	orch := orchestrator.New(store, nil)
+	server := &Server{config: svc, orchestrator: orch}
+
+	job := domain.Job{
+		ID:           "job-review-approval-1",
+		Type:         domain.JobTypePRReview,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		State:        domain.StateReviewReady,
+		Title:        "review job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/approvals/review", nil)
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	recorder := httptest.NewRecorder()
+
+	server.handleReviewApproval(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StateCompleted {
+		t.Fatalf("expected completed, got %s", saved.State)
+	}
+}
+
 func TestHandleJobDetailForPRFeedbackIncludesReviewCommentsAndSanitizedPayload(t *testing.T) {
 	t.Parallel()
 

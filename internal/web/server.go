@@ -22,10 +22,15 @@ type Server struct {
 	config       *config.Service
 	staticDir    string
 	reviewer     ReviewSubmitter
+	commenter    IssueCommentSubmitter
 }
 
 type ReviewSubmitter interface {
 	Submit(ctx context.Context, req ReviewSubmitRequest) error
+}
+
+type IssueCommentSubmitter interface {
+	Submit(ctx context.Context, req IssueCommentSubmitRequest) error
 }
 
 type ReviewSubmitRequest struct {
@@ -35,13 +40,22 @@ type ReviewSubmitRequest struct {
 	ArtifactDir string
 }
 
+type IssueCommentSubmitRequest struct {
+	Repository  string
+	IssueNumber int
+	Body        string
+	ArtifactDir string
+}
+
 type GHReviewSubmitter struct{}
+type GHIssueCommentSubmitter struct{}
 
 func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) {
 	s := &Server{
 		orchestrator: orch,
 		config:       cfg,
 		reviewer:     GHReviewSubmitter{},
+		commenter:    GHIssueCommentSubmitter{},
 	}
 	s.staticDir = filepath.Join(cfg.Root(), "frontend", "dist")
 
@@ -58,6 +72,7 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) 
 	api.HandleFunc("/jobs/{id}/reruns/implementation", s.handleImplementationRerun).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/reruns/pr", s.handlePRRerun).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/reruns/review", s.handleReviewRerun).Methods(http.MethodPost)
+	api.HandleFunc("/jobs/{id}/approvals/review", s.handleReviewApproval).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/reviews/submit", s.handleSubmitReviewComment).Methods(http.MethodPost)
 	api.HandleFunc("/app-config", s.handleAppConfig).Methods(http.MethodGet)
 	api.HandleFunc("/app-config", s.handleSaveAppConfig).Methods(http.MethodPut)
@@ -100,24 +115,61 @@ func (GHReviewSubmitter) Submit(ctx context.Context, req ReviewSubmitRequest) er
 		return err
 	}
 
-	bodyPath := filepath.Join(req.ArtifactDir, "gh-pr-review-body.md")
+	bodyPath := filepath.Join(req.ArtifactDir, "gh-pr-comment-body.md")
 	if err := os.WriteFile(bodyPath, []byte(req.Body), 0o644); err != nil {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "review",
+	cmd := exec.CommandContext(ctx, "gh", "pr", "comment",
 		fmt.Sprintf("%d", req.PullNumber),
 		"--repo", req.Repository,
-		"--comment",
 		"--body-file", bodyPath,
 	)
 	raw, err := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(raw))
-	if writeErr := os.WriteFile(filepath.Join(req.ArtifactDir, "gh-pr-review.log"), []byte(output), 0o644); writeErr != nil {
+	if writeErr := os.WriteFile(filepath.Join(req.ArtifactDir, "gh-pr-comment.log"), []byte(output), 0o644); writeErr != nil {
 		return writeErr
 	}
 	if err != nil {
-		return fmt.Errorf("gh pr review failed: %w: %s", err, output)
+		return fmt.Errorf("gh pr comment failed: %w: %s", err, output)
+	}
+	return nil
+}
+
+func (GHIssueCommentSubmitter) Submit(ctx context.Context, req IssueCommentSubmitRequest) error {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return fmt.Errorf("gh command is not available: %w", err)
+	}
+	if strings.TrimSpace(req.Repository) == "" {
+		return fmt.Errorf("repository is required")
+	}
+	if req.IssueNumber < 1 {
+		return fmt.Errorf("issue number must be positive")
+	}
+	if strings.TrimSpace(req.Body) == "" {
+		return fmt.Errorf("comment body is empty")
+	}
+	if err := os.MkdirAll(req.ArtifactDir, 0o755); err != nil {
+		return err
+	}
+
+	bodyPath := filepath.Join(req.ArtifactDir, "gh-issue-comment-body.md")
+	if err := os.WriteFile(bodyPath, []byte(req.Body), 0o644); err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, "gh", "issue", "comment",
+		fmt.Sprintf("%d", req.IssueNumber),
+		"--repo", req.Repository,
+		"--body-file", bodyPath,
+	)
+	raw, err := cmd.CombinedOutput()
+	output := strings.TrimSpace(string(raw))
+	if writeErr := os.WriteFile(filepath.Join(req.ArtifactDir, "gh-issue-comment.log"), []byte(output), 0o644); writeErr != nil {
+		return writeErr
+	}
+	if err != nil {
+		return fmt.Errorf("gh issue comment failed: %w: %s", err, output)
 	}
 	return nil
 }

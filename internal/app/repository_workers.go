@@ -392,7 +392,7 @@ func processReviewJob(ctx context.Context, cfg *config.Service, orch *orchestrat
 	}); err != nil {
 		return err
 	}
-	return orch.UpdateJobState(ctx, job.ID, domain.StateCompleted, "review_completed", map[string]any{
+	return orch.UpdateJobState(ctx, job.ID, domain.StateReviewReady, "review_completed", map[string]any{
 		"artifactDir": contextData.ArtifactDir,
 		"skill":       skillName,
 	})

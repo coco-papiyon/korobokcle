@@ -192,24 +192,23 @@ func (GHPRCommentSubmitter) Submit(ctx context.Context, req PRCommentSubmitReque
 		return err
 	}
 
-	bodyPath := filepath.Join(req.ArtifactDir, "gh-pr-review-body.md")
+	bodyPath := filepath.Join(req.ArtifactDir, "gh-pr-comment-body.md")
 	if err := os.WriteFile(bodyPath, []byte(req.Body), 0o644); err != nil {
 		return err
 	}
 
-	cmd := exec.CommandContext(ctx, "gh", "pr", "review",
+	cmd := exec.CommandContext(ctx, "gh", "pr", "comment",
 		fmt.Sprintf("%d", req.PullNumber),
 		"--repo", req.Repository,
-		"--comment",
 		"--body-file", bodyPath,
 	)
 	raw, err := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(raw))
-	if writeErr := os.WriteFile(filepath.Join(req.ArtifactDir, "gh-pr-review.log"), []byte(output), 0o644); writeErr != nil {
+	if writeErr := os.WriteFile(filepath.Join(req.ArtifactDir, "gh-pr-comment.log"), []byte(output), 0o644); writeErr != nil {
 		return writeErr
 	}
 	if err != nil {
-		return fmt.Errorf("gh pr review failed: %w: %s", err, output)
+		return fmt.Errorf("gh pr comment failed: %w: %s", err, output)
 	}
 	return nil
 }

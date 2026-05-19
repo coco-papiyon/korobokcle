@@ -93,6 +93,12 @@ export function submitReviewComment(jobId: string, comment: string): Promise<Job
   })
 }
 
+export function submitReviewApproval(jobId: string): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${jobId}/approvals/review`, {
+    method: 'POST',
+  })
+}
+
 export function fetchWatchRules(): Promise<WatchRule[]> {
   return request<WatchRule[]>('/api/watch-rules')
 }

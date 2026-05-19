@@ -17,6 +17,7 @@ import {
   submitImplementationRerun,
   submitPRRerun,
   submitReviewComment,
+  submitReviewApproval,
   submitReviewRerun,
 } from '@/lib/api'
 import { formatDateTime, formatPayloadDisplay } from '@/lib/format'
@@ -88,11 +89,13 @@ const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const prRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const reviewRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const reviewSubmitState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const reviewApproveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const designRerunError = ref<string | null>(null)
 const implementationRerunError = ref<string | null>(null)
 const prRerunError = ref<string | null>(null)
 const reviewRerunError = ref<string | null>(null)
 const reviewSubmitError = ref<string | null>(null)
+const reviewApproveError = ref<string | null>(null)
 const reviewSubmitComment = ref('')
 
 const prCreateInfo = computed(() => {
@@ -180,7 +183,8 @@ const groupedLogs = computed(() => {
     },
   ].filter((group) => group.items.length > 0)
 })
-const canSubmitReviewComment = computed(() => data.value?.job.type === 'pr_review' && !!data.value?.reviewArtifact)
+const canSubmitReviewComment = computed(() => data.value?.job.type === 'pr_review' && data.value?.job.state === 'review_ready' && !!data.value?.reviewArtifact)
+const canApproveReview = computed(() => data.value?.job.type === 'pr_review' && data.value?.job.state === 'review_ready' && !!data.value?.reviewArtifact)
 const isPRFeedbackJob = computed(() => data.value?.job.type === 'pr_feedback')
 const hasReviewComments = computed(() => (data.value?.reviewComments?.length ?? 0) > 0)
 
@@ -401,6 +405,19 @@ async function sendReviewComment() {
   } catch (err) {
     reviewSubmitState.value = 'error'
     reviewSubmitError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function sendReviewApproval() {
+  reviewApproveState.value = 'saving'
+  reviewApproveError.value = null
+  try {
+    data.value = await submitReviewApproval(jobID.value)
+    reviewApproveState.value = 'saved'
+    await reload()
+  } catch (err) {
+    reviewApproveState.value = 'error'
+    reviewApproveError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
 
@@ -641,13 +658,18 @@ async function purgeArchivedJob() {
                 spellcheck="false"
               />
             </label>
-            <div v-if="canSubmitReviewComment" class="button-row">
+            <div v-if="canApproveReview" class="button-row">
               <button class="button button-primary" type="button" :disabled="reviewSubmitState === 'saving'" @click="sendReviewComment">
                 {{ reviewSubmitState === 'saving' ? 'Submitting Review...' : 'Submit Review Comment' }}
+              </button>
+              <button class="button button-secondary" type="button" :disabled="reviewApproveState === 'saving'" @click="sendReviewApproval">
+                {{ reviewApproveState === 'saving' ? 'Approving Review...' : 'Approve Review' }}
               </button>
             </div>
             <p v-if="reviewSubmitState === 'saved'" class="notice notice-success">レビューコメントを GitHub に送信しました。</p>
             <p v-if="reviewSubmitState === 'error'" class="notice notice-danger">{{ reviewSubmitError }}</p>
+            <p v-if="reviewApproveState === 'saved'" class="notice notice-success">レビューを承認しました。</p>
+            <p v-if="reviewApproveState === 'error'" class="notice notice-danger">{{ reviewApproveError }}</p>
             <details class="stack-sm">
               <summary class="text-muted">{{ data.reviewArtifact.path }}</summary>
               <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>
