@@ -85,6 +85,7 @@ export type WatchRule = {
 }
 
 export type WatchRuleForm = WatchRule & {
+  selectedRepository: string
   repositoriesText: string
   projectFiltersText: string
   labelsText: string

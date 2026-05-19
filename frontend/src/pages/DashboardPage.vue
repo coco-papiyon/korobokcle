@@ -135,6 +135,21 @@ function formatBulkError(actionLabel: string, failures: Array<{ jobId: string; r
   return `${actionLabel}に失敗しました: ${message}${failedJobIdLabel}`
 }
 
+async function runBulkJobAction(
+  targets: Job[],
+  action: (jobId: string) => Promise<unknown>,
+): Promise<Array<{ jobId: string; reason: unknown }>> {
+  const failures: Array<{ jobId: string; reason: unknown }> = []
+  for (const job of targets) {
+    try {
+      await action(job.id)
+    } catch (reason) {
+      failures.push({ jobId: job.id, reason })
+    }
+  }
+  return failures
+}
+
 async function submitBulkDelete() {
   const targets = selectedVisibleJobs.value
   if (targets.length === 0) {
@@ -151,15 +166,7 @@ async function submitBulkDelete() {
   bulkActionState.value = 'saving'
   bulkActionError.value = null
   try {
-    const results = await Promise.allSettled(targets.map((job) => deleteJob(job.id)))
-    const failures = results
-      .map((result, index) => {
-        if (result.status === 'fulfilled') {
-          return null
-        }
-        return { jobId: targets[index].id, reason: result.reason }
-      })
-      .filter((failure): failure is { jobId: string; reason: unknown } => failure !== null)
+    const failures = await runBulkJobAction(targets, deleteJob)
     await reload()
     clearBulkSelection()
     if (failures.length > 0) {
@@ -190,15 +197,7 @@ async function submitBulkRestore() {
   bulkActionState.value = 'saving'
   bulkActionError.value = null
   try {
-    const results = await Promise.allSettled(targets.map((job) => restoreJob(job.id)))
-    const failures = results
-      .map((result, index) => {
-        if (result.status === 'fulfilled') {
-          return null
-        }
-        return { jobId: targets[index].id, reason: result.reason }
-      })
-      .filter((failure): failure is { jobId: string; reason: unknown } => failure !== null)
+    const failures = await runBulkJobAction(targets, restoreJob)
     await reload()
     clearBulkSelection()
     if (failures.length > 0) {

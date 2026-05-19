@@ -861,8 +861,8 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		repositories := compactStrings(rule.Repositories)
-		if len(repositories) == 0 {
-			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].repositories must include at least one monitored repository", index))
+		if len(repositories) != 1 {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].repositories must include exactly one monitored repository", index))
 			return
 		}
 		for _, repository := range repositories {

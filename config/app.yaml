@@ -6,7 +6,7 @@ artifactsDir: artifacts
 workspaceDir: .
 monitoredRepositories:
     - repository: https://github.com/coco-papiyon/korobokcle
-      workers: 1
+      workers: 4
 provider: codex
 model: gpt-5.4-mini
 copilotAllowTools: []

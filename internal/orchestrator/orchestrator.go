@@ -578,7 +578,8 @@ func (o *Orchestrator) notifyJobEvent(ctx context.Context, job domain.Job, event
 		log.Printf("notification failed job=%s event=%s: %v", job.ID, event.EventType, err)
 		return
 	}
-	log.Printf("info notification sent job=%s event=%s state=%s repository=%s number=%d", job.ID, event.EventType, event.StateTo, job.Repository, job.GitHubNumber)
+	log.Printf("info notification sent event=%s state=%s repository=%s number=%d", event.EventType, event.StateTo, job.Repository, job.GitHubNumber)
+	log.Printf("DEBUG notification sent job=%s event=%s state=%s repository=%s number=%d title=%q message=%q payload=%s", job.ID, event.EventType, event.StateTo, job.Repository, job.GitHubNumber, notificationPayload.Title, notificationPayload.Message, event.Payload)
 }
 
 func notificationTitle(job domain.Job, event domain.Event) string {

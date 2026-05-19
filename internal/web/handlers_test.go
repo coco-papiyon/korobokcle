@@ -701,6 +701,25 @@ func TestHandleSaveWatchRulesRejectsUnregisteredRepository(t *testing.T) {
 	}
 }
 
+func TestHandleSaveWatchRulesRejectsMultipleRepositories(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository","owner/other"],"target":"issue","branch":"release/1.x","labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
+
+	server.handleSaveWatchRules(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusBadRequest, recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestHandleNotificationConfigReturnsChannels(t *testing.T) {
 	t.Parallel()
 

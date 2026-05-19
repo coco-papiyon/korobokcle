@@ -13,7 +13,7 @@ import (
 
 func startWatcher(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger, debugLogger *log.Logger) {
 	tokenProvider := gh.NewGHTokenProvider(10 * time.Minute)
-	client := gh.NewClient(tokenProvider, debugLogger)
+	client := gh.NewClient(tokenProvider, debugLogger).WithInfoLogger(logger)
 	poller := gh.NewPoller(client, func() []config.WatchRule {
 		return cfg.WatchRules().Rules
 	}, debugLogger)

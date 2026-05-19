@@ -16,7 +16,7 @@ rules:
       provider: ""
       model: ""
       skillSet: default
-      testProfile: go-default
+      testProfile: ""
       enabled: true
     - id: PR
       name: PR

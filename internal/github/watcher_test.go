@@ -16,18 +16,18 @@ type countingRepositoryLister struct {
 	listCalls int
 }
 
-func (s *countingRepositoryLister) ListIssues(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
+func (s *countingRepositoryLister) ListIssues(context.Context, config.WatchRule, string, time.Time) ([]domain.RepositoryItem, error) {
 	s.mu.Lock()
 	s.listCalls++
 	s.mu.Unlock()
 	return nil, nil
 }
 
-func (s *countingRepositoryLister) ListProjectIssues(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
+func (s *countingRepositoryLister) ListProjectIssues(context.Context, config.WatchRule, string, time.Time) ([]domain.RepositoryItem, error) {
 	return nil, nil
 }
 
-func (s *countingRepositoryLister) ListPullRequests(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
+func (s *countingRepositoryLister) ListPullRequests(context.Context, config.WatchRule, string, time.Time) ([]domain.RepositoryItem, error) {
 	return nil, nil
 }
 

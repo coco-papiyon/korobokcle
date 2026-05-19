@@ -44,22 +44,27 @@ const selectedRuleInvalidRepositories = computed(() => {
     return []
   }
   const allowed = new Set(availableRepositories.value)
-  return (rule.repositories ?? []).filter((repository) => !allowed.has(repository))
+  if (!rule.selectedRepository) {
+    return []
+  }
+  return allowed.has(rule.selectedRepository) ? [] : [rule.selectedRepository]
 })
 
 function toForm(rule: WatchRule): WatchRuleForm {
   const normalizedProjectFilters = normalizeProjectFilters(rule.projectFilters)
+  const selectedRepository = (rule.repositories ?? []).map((value) => value.trim()).find(Boolean) ?? ''
   return {
     ...rule,
     target: normalizeTarget(rule.target),
-    repositories: rule.repositories ?? [],
+    repositories: selectedRepository ? [selectedRepository] : [],
+    selectedRepository,
     projectName: rule.projectName ?? '',
     projectFilters: normalizedProjectFilters,
     labels: rule.labels ?? [],
     authors: rule.authors ?? [],
     assignees: rule.assignees ?? [],
     reviewers: rule.reviewers ?? [],
-    repositoriesText: (rule.repositories ?? []).join(', '),
+    repositoriesText: selectedRepository,
     projectFiltersText: formatProjectFilters(normalizedProjectFilters),
     labelsText: (rule.labels ?? []).join(', '),
     authorsText: (rule.authors ?? []).join(', '),
@@ -69,10 +74,11 @@ function toForm(rule: WatchRule): WatchRuleForm {
 }
 
 function fromForm(rule: WatchRuleForm): WatchRule {
+  const repository = rule.selectedRepository.trim()
   return {
     id: rule.id.trim(),
     name: rule.name.trim(),
-    repositories: [...(rule.repositories ?? [])],
+    repositories: repository ? [repository] : [],
     target: normalizeTarget(rule.target),
     branch: rule.branch.trim(),
     projectName: rule.projectName.trim(),
@@ -179,7 +185,8 @@ function addRule() {
     id: `rule-${suffix}`,
     name: `New Rule ${suffix}`,
     repositories: [...defaultRepositories],
-    repositoriesText: defaultRepositories.join(', '),
+    selectedRepository: defaultRepositories[0] ?? '',
+    repositoriesText: defaultRepositories[0] ?? '',
     target: 'issue',
     branch: '',
     projectName: '',
@@ -207,20 +214,13 @@ function addRule() {
   saveError.value = null
 }
 
-function toggleRepository(repository: string, enabled: boolean) {
+function updateSelectedRepository(repository: string) {
   if (!selectedRule.value) {
     return
   }
-  const current = selectedRule.value.repositories ?? []
-  if (enabled) {
-    if (current.includes(repository)) {
-      return
-    }
-    selectedRule.value.repositories = [...current, repository]
-  } else {
-    selectedRule.value.repositories = current.filter((item) => item !== repository)
-  }
-  selectedRule.value.repositoriesText = (selectedRule.value.repositories ?? []).join(', ')
+  selectedRule.value.selectedRepository = repository
+  selectedRule.value.repositories = repository ? [repository] : []
+  selectedRule.value.repositoriesText = repository
 }
 
 function removeSelectedRule() {
@@ -329,21 +329,18 @@ async function persistRules() {
               </label>
 
               <label class="field field-full">
-                <span class="field__label">Repositories</span>
-                <div v-if="availableRepositories.length" class="stack-sm">
-                  <label
-                    v-for="entry in availableRepositoryEntries"
-                    :key="entry.repository"
-                    class="field field--inline"
-                  >
-                    <span class="field__label">{{ entry.repository }} ({{ entry.workers }})</span>
-                    <input
-                      :checked="(selectedRule.repositories ?? []).includes(entry.repository)"
-                      type="checkbox"
-                      @change="toggleRepository(entry.repository, ($event.target as HTMLInputElement).checked)"
-                    />
-                  </label>
-                </div>
+                <span class="field__label">Repository</span>
+                <select
+                  v-if="availableRepositoryEntries.length"
+                  :value="selectedRule.selectedRepository"
+                  class="field__control"
+                  @change="updateSelectedRepository(($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="">Select repository</option>
+                  <option v-for="entry in availableRepositoryEntries" :key="entry.repository" :value="entry.repository">
+                    {{ entry.repository }} (workers: {{ entry.workers }})
+                  </option>
+                </select>
                 <p v-else class="text-muted">Settings で監視対象リポジトリを追加してください。</p>
                 <p v-if="selectedRuleInvalidRepositories.length" class="notice notice-danger">
                   未登録のリポジトリが含まれています: {{ selectedRuleInvalidRepositories.join(', ') }}

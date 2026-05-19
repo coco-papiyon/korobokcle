@@ -14,17 +14,21 @@ type stubRepositoryLister struct {
 	projectIssues []domain.RepositoryItem
 	prs           []domain.RepositoryItem
 	prReviews     []domain.RepositoryItem
+	lastRule      config.WatchRule
 }
 
-func (s stubRepositoryLister) ListIssues(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
+func (s stubRepositoryLister) ListIssues(_ context.Context, rule config.WatchRule, _ string, _ time.Time) ([]domain.RepositoryItem, error) {
+	s.lastRule = rule
 	return s.issues, nil
 }
 
-func (s stubRepositoryLister) ListProjectIssues(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
+func (s stubRepositoryLister) ListProjectIssues(_ context.Context, rule config.WatchRule, _ string, _ time.Time) ([]domain.RepositoryItem, error) {
+	s.lastRule = rule
 	return s.projectIssues, nil
 }
 
-func (s stubRepositoryLister) ListPullRequests(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
+func (s stubRepositoryLister) ListPullRequests(_ context.Context, rule config.WatchRule, _ string, _ time.Time) ([]domain.RepositoryItem, error) {
+	s.lastRule = rule
 	return s.prs, nil
 }
 
@@ -198,5 +202,53 @@ func TestPollerPollMatchedPullRequestWithReviewers(t *testing.T) {
 	}
 	if events[0].Type != domain.DomainEventPRMatched {
 		t.Fatalf("expected pull_request_matched, got %s", events[0].Type)
+	}
+}
+
+func TestPollerTracksCheckpointPerRule(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	poller := NewPoller(stubRepositoryLister{
+		issues: []domain.RepositoryItem{
+			{
+				Repository: "owner/repo",
+				Number:     10,
+				Title:      "Feature",
+				Labels:     []string{"ai:design"},
+				Target:     domain.TargetIssue,
+				UpdatedAt:  now,
+			},
+		},
+	}, func() []config.WatchRule {
+		return []config.WatchRule{
+			{
+				ID:           "rule-1",
+				Name:         "Issue Rule 1",
+				Enabled:      true,
+				Repositories: []string{"owner/repo"},
+				Target:       "issue",
+				Labels:       []string{"ai:design"},
+			},
+			{
+				ID:           "rule-2",
+				Name:         "Issue Rule 2",
+				Enabled:      true,
+				Repositories: []string{"owner/repo"},
+				Target:       "issue",
+				Labels:       []string{"ai:design"},
+			},
+		}
+	}, nil)
+
+	if _, err := poller.Poll(context.Background()); err != nil {
+		t.Fatalf("Poll() error = %v", err)
+	}
+
+	if got := poller.lastSeenAt["rule-1:owner/repo:issue"]; !got.Equal(now) {
+		t.Fatalf("expected rule-1 checkpoint %s, got %s", now, got)
+	}
+	if got := poller.lastSeenAt["rule-2:owner/repo:issue"]; !got.Equal(now) {
+		t.Fatalf("expected rule-2 checkpoint %s, got %s", now, got)
 	}
 }

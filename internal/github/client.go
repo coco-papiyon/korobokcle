@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
 
@@ -18,6 +19,7 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	tokenSrc   TokenProvider
+	info       *log.Logger
 	debug      *log.Logger
 }
 
@@ -32,12 +34,17 @@ func NewClient(tokenSrc TokenProvider, debug *log.Logger) *Client {
 	}
 }
 
-func (c *Client) ListIssues(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error) {
-	return c.listRepositoryItems(ctx, repository, "issues", since)
+func (c *Client) WithInfoLogger(info *log.Logger) *Client {
+	c.info = info
+	return c
 }
 
-func (c *Client) ListProjectIssues(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error) {
-	items, err := c.listRepositoryItems(ctx, repository, "issues", since)
+func (c *Client) ListIssues(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {
+	return c.listRepositoryItems(ctx, rule, repository, domain.TargetIssue, since)
+}
+
+func (c *Client) ListProjectIssues(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {
+	items, err := c.listRepositoryItems(ctx, rule, repository, domain.TargetIssue, since)
 	if err != nil {
 		return nil, err
 	}
@@ -63,8 +70,8 @@ func (c *Client) ListProjectIssues(ctx context.Context, repository string, since
 	return projectItems, nil
 }
 
-func (c *Client) ListPullRequests(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error) {
-	return c.listRepositoryItems(ctx, repository, "pulls", since)
+func (c *Client) ListPullRequests(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {
+	return c.listRepositoryItems(ctx, rule, repository, domain.TargetPullRequest, since)
 }
 
 func (c *Client) ListPullRequestReviews(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error) {
@@ -167,22 +174,71 @@ func (c *Client) ListPullRequestReviews(ctx context.Context, repository string, 
 	return items, nil
 }
 
-func (c *Client) listRepositoryItems(ctx context.Context, repository string, endpoint string, since time.Time) ([]domain.RepositoryItem, error) {
+func (c *Client) listRepositoryItems(ctx context.Context, rule config.WatchRule, repository string, target domain.MonitoredTarget, since time.Time) ([]domain.RepositoryItem, error) {
 	normalizedRepository, err := normalizeRepository(repository)
 	if err != nil {
 		return nil, err
 	}
 
-	payload, err := c.listAPIItems(ctx, normalizedRepository, endpoint, since)
+	payload, err := c.searchAPIItems(ctx, normalizedRepository, target, rule, since)
 	if err != nil {
 		return nil, err
 	}
 
 	items := make([]domain.RepositoryItem, 0, len(payload))
 	for _, item := range payload {
-		items = append(items, item.toDomain(normalizedRepository, endpoint))
+		items = append(items, item.toDomain(normalizedRepository, searchEndpointForTarget(target)))
 	}
 	return items, nil
+}
+
+func (c *Client) searchAPIItems(ctx context.Context, repository string, target domain.MonitoredTarget, rule config.WatchRule, since time.Time) ([]apiItem, error) {
+	token, err := c.tokenSrc.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	query := url.Values{}
+	query.Set("q", buildSearchQuery(repository, target, rule, since))
+	query.Set("sort", "updated")
+	query.Set("order", "desc")
+	query.Set("per_page", "50")
+
+	rawURL := fmt.Sprintf("%s/search/issues?%s", c.baseURL, query.Encode())
+	c.infof("github api start name=search/issues repository=%s target=%s since=%s labels=%d authors=%d assignees=%d exclude_draft=%t", repository, target, formatSince(since), len(rule.Labels), len(rule.Authors), len(rule.Assignees), rule.ExcludeDraftPR)
+	c.debugf("github request method=%s url=%s", http.MethodGet, rawURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	c.debugf("github response url=%s status=%d body=%s", rawURL, resp.StatusCode, string(body))
+
+	if resp.StatusCode >= 300 {
+		c.infof("github api done name=search/issues repository=%s target=%s status=%d error=http_status", repository, target, resp.StatusCode)
+		return nil, fmt.Errorf("github api %s returned status %d", rawURL, resp.StatusCode)
+	}
+
+	var payload apiSearchResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	c.infof("github api done name=search/issues repository=%s target=%s status=%d items=%d", repository, target, resp.StatusCode, len(payload.Items))
+
+	return payload.Items, nil
 }
 
 func (c *Client) listAPIItems(ctx context.Context, repository string, endpoint string, since time.Time) ([]apiItem, error) {
@@ -206,6 +262,7 @@ func (c *Client) listAPIItems(ctx context.Context, repository string, endpoint s
 	}
 
 	rawURL := fmt.Sprintf("%s/repos/%s/%s/%s?%s", c.baseURL, ownerRepo[0], ownerRepo[1], endpoint, query.Encode())
+	c.infof("github api start name=repos/%s repository=%s since=%s", endpoint, repository, formatSince(since))
 	c.debugf("github request method=%s url=%s", http.MethodGet, rawURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -228,6 +285,7 @@ func (c *Client) listAPIItems(ctx context.Context, repository string, endpoint s
 	c.debugf("github response url=%s status=%d body=%s", rawURL, resp.StatusCode, string(body))
 
 	if resp.StatusCode >= 300 {
+		c.infof("github api done name=repos/%s repository=%s status=%d error=http_status", endpoint, repository, resp.StatusCode)
 		return nil, fmt.Errorf("github api %s returned status %d", rawURL, resp.StatusCode)
 	}
 
@@ -235,6 +293,7 @@ func (c *Client) listAPIItems(ctx context.Context, repository string, endpoint s
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
 	}
+	c.infof("github api done name=repos/%s repository=%s status=%d items=%d", endpoint, repository, resp.StatusCode, len(payload))
 
 	return payload, nil
 }
@@ -254,6 +313,7 @@ func (c *Client) listPullRequestReviews(ctx context.Context, repository string, 
 	query.Set("per_page", "100")
 
 	rawURL := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/reviews?%s", c.baseURL, ownerRepo[0], ownerRepo[1], pullNumber, query.Encode())
+	c.infof("github api start name=pulls/reviews repository=%s pull_number=%d since=%s", repository, pullNumber, formatSince(since))
 	c.debugf("github request method=%s url=%s", http.MethodGet, rawURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -276,6 +336,7 @@ func (c *Client) listPullRequestReviews(ctx context.Context, repository string, 
 	c.debugf("github response url=%s status=%d body=%s", rawURL, resp.StatusCode, string(body))
 
 	if resp.StatusCode >= 300 {
+		c.infof("github api done name=pulls/reviews repository=%s pull_number=%d status=%d error=http_status", repository, pullNumber, resp.StatusCode)
 		return nil, fmt.Errorf("github api %s returned status %d", rawURL, resp.StatusCode)
 	}
 
@@ -295,6 +356,7 @@ func (c *Client) listPullRequestReviews(ctx context.Context, repository string, 
 		}
 		filtered = append(filtered, review)
 	}
+	c.infof("github api done name=pulls/reviews repository=%s pull_number=%d status=%d raw_reviews=%d filtered_reviews=%d", repository, pullNumber, resp.StatusCode, len(payload), len(filtered))
 	return filtered, nil
 }
 
@@ -318,6 +380,7 @@ func (c *Client) listPullRequestReviewComments(ctx context.Context, repository s
 	}
 
 	rawURL := fmt.Sprintf("%s/repos/%s/%s/pulls/comments?%s", c.baseURL, ownerRepo[0], ownerRepo[1], query.Encode())
+	c.infof("github api start name=pulls/comments repository=%s since=%s", repository, formatSince(since))
 	c.debugf("github request method=%s url=%s", http.MethodGet, rawURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -340,6 +403,7 @@ func (c *Client) listPullRequestReviewComments(ctx context.Context, repository s
 	c.debugf("github response url=%s status=%d body=%s", rawURL, resp.StatusCode, string(body))
 
 	if resp.StatusCode >= 300 {
+		c.infof("github api done name=pulls/comments repository=%s status=%d error=http_status", repository, resp.StatusCode)
 		return nil, fmt.Errorf("github api %s returned status %d", rawURL, resp.StatusCode)
 	}
 
@@ -347,7 +411,14 @@ func (c *Client) listPullRequestReviewComments(ctx context.Context, repository s
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
 	}
+	c.infof("github api done name=pulls/comments repository=%s status=%d comments=%d", repository, resp.StatusCode, len(payload))
 	return payload, nil
+}
+
+func (c *Client) infof(format string, args ...any) {
+	if c.info != nil {
+		c.info.Printf(format, args...)
+	}
 }
 
 func (c *Client) debugf(format string, args ...any) {
@@ -438,7 +509,9 @@ query($owner: String!, $name: String!, $number: Int!) {
 	}
 
 	rawURL := c.baseURL + "/graphql"
+	c.infof("github api start name=graphql/projectItems repository=%s issue_number=%d", repository, issueNumber)
 	c.debugf("github request method=%s url=%s", http.MethodPost, rawURL)
+	c.debugf("github request body url=%s body=%s", rawURL, string(rawBody))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(string(rawBody)))
 	if err != nil {
 		return nil, err
@@ -460,6 +533,7 @@ query($owner: String!, $name: String!, $number: Int!) {
 	}
 	c.debugf("github response url=%s status=%d body=%s", rawURL, resp.StatusCode, string(body))
 	if resp.StatusCode >= 300 {
+		c.infof("github api done name=graphql/projectItems repository=%s issue_number=%d status=%d error=http_status", repository, issueNumber, resp.StatusCode)
 		return nil, fmt.Errorf("github api %s returned status %d", rawURL, resp.StatusCode)
 	}
 
@@ -487,6 +561,7 @@ query($owner: String!, $name: String!, $number: Int!) {
 		}
 		cards = append(cards, card)
 	}
+	c.infof("github api done name=graphql/projectItems repository=%s issue_number=%d status=%d project_items=%d", repository, issueNumber, resp.StatusCode, len(cards))
 	return cards, nil
 }
 
@@ -509,6 +584,72 @@ func normalizeRepository(repository string) (string, error) {
 	return parts[0] + "/" + parts[1], nil
 }
 
+func buildSearchQuery(repository string, target domain.MonitoredTarget, rule config.WatchRule, since time.Time) string {
+	parts := []string{
+		"repo:" + repository,
+		"state:open",
+	}
+
+	switch target {
+	case domain.TargetPullRequest:
+		parts = append(parts, "is:pr")
+		if rule.ExcludeDraftPR {
+			parts = append(parts, "-is:draft")
+		}
+	default:
+		parts = append(parts, "is:issue")
+	}
+
+	if !since.IsZero() {
+		parts = append(parts, "updated:>="+since.UTC().Format(time.RFC3339))
+	}
+	for _, label := range compactSearchValues(rule.Labels) {
+		parts = append(parts, fmt.Sprintf("label:%q", label))
+	}
+	if authors := buildSearchORGroup("author", compactSearchValues(rule.Authors)); authors != "" {
+		parts = append(parts, authors)
+	}
+	if assignees := buildSearchORGroup("assignee", compactSearchValues(rule.Assignees)); assignees != "" {
+		parts = append(parts, assignees)
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func compactSearchValues(values []string) []string {
+	compacted := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		compacted = append(compacted, trimmed)
+	}
+	return compacted
+}
+
+func buildSearchORGroup(qualifier string, values []string) string {
+	switch len(values) {
+	case 0:
+		return ""
+	case 1:
+		return qualifier + ":" + values[0]
+	default:
+		parts := make([]string, 0, len(values))
+		for _, value := range values {
+			parts = append(parts, qualifier+":"+value)
+		}
+		return "(" + strings.Join(parts, " OR ") + ")"
+	}
+}
+
+func searchEndpointForTarget(target domain.MonitoredTarget) string {
+	if target == domain.TargetPullRequest {
+		return "pulls"
+	}
+	return "issues"
+}
+
 type apiItem struct {
 	Number    int         `json:"number"`
 	Title     string      `json:"title"`
@@ -523,6 +664,10 @@ type apiItem struct {
 	PullReq   *struct{}   `json:"pull_request,omitempty"`
 	Head      apiPullHead `json:"head"`
 	Base      apiPullBase `json:"base"`
+}
+
+type apiSearchResponse struct {
+	Items []apiItem `json:"items"`
 }
 
 type apiUser struct {

@@ -11,9 +11,9 @@ import (
 )
 
 type RepositoryLister interface {
-	ListIssues(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
-	ListProjectIssues(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
-	ListPullRequests(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
+	ListIssues(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error)
+	ListProjectIssues(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error)
+	ListPullRequests(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error)
 	ListPullRequestReviews(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
 }
 
@@ -46,11 +46,11 @@ func (p *Poller) Poll(ctx context.Context) ([]domain.DomainEvent, error) {
 			continue
 		}
 		for _, repository := range rule.Repositories {
-			key := repository + ":" + rule.Target
+			key := rule.ID + ":" + repository + ":" + rule.Target
 			since := p.lastSeenAt[key]
 			p.debugf("poll repository start rule=%s target=%s repository=%s since=%s", rule.ID, rule.Target, repository, formatSince(since))
 
-			items, err := p.listItems(ctx, repository, rule.Target, since)
+			items, err := p.listItems(ctx, rule, repository, since)
 			if err != nil {
 				log.Printf("poller skipped repository=%q target=%q rule=%q: %v", repository, rule.Target, rule.ID, err)
 				p.debugf("poll repository failed rule=%s target=%s repository=%s error=%v", rule.ID, rule.Target, repository, err)
@@ -187,14 +187,14 @@ func formatSince(value time.Time) string {
 	return value.Format(time.RFC3339)
 }
 
-func (p *Poller) listItems(ctx context.Context, repository string, target string, since time.Time) ([]domain.RepositoryItem, error) {
-	switch target {
+func (p *Poller) listItems(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {
+	switch rule.Target {
 	case string(domain.TargetIssue):
-		return p.client.ListIssues(ctx, repository, since)
+		return p.client.ListIssues(ctx, rule, repository, since)
 	case string(domain.TargetIssueProject):
-		return p.client.ListProjectIssues(ctx, repository, since)
+		return p.client.ListProjectIssues(ctx, rule, repository, since)
 	case string(domain.TargetPullRequest):
-		return p.client.ListPullRequests(ctx, repository, since)
+		return p.client.ListPullRequests(ctx, rule, repository, since)
 	case string(domain.TargetPullRequestReview), "pull_request_review_comment":
 		return p.client.ListPullRequestReviews(ctx, repository, since)
 	default:
