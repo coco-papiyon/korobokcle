@@ -6,8 +6,10 @@ import PanelCard from '@/components/PanelCard.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import {
+  deleteJob,
   fetchAppConfig,
   fetchJobDetail,
+  restoreJob,
   submitDesignApproval,
   submitDesignRerun,
   submitFinalApproval,
@@ -72,8 +74,10 @@ onUnmounted(() => {
 })
 const approvalState = ref<'idle' | 'saving' | 'error'>('idle')
 const finalApprovalState = ref<'idle' | 'saving' | 'error'>('idle')
+const jobArchiveState = ref<'idle' | 'saving' | 'error'>('idle')
 const approvalError = ref<string | null>(null)
 const finalApprovalError = ref<string | null>(null)
+const jobArchiveError = ref<string | null>(null)
 const flowRerunComment = ref('')
 const designRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
@@ -116,7 +120,11 @@ const flowRerunEvent = computed<JobEvent | null>(() => {
 })
 
 const canReviewDesign = computed(() => data.value?.job.state === 'waiting_design_approval')
+const isDeletedJob = computed(() => !!data.value?.job.deletedAt)
 const canReviewImplementation = computed(() => {
+  if (isDeletedJob.value) {
+    return false
+  }
   const state = data.value?.job.state
   if (state === 'waiting_final_approval') {
     return true
@@ -393,6 +401,35 @@ async function sendReviewComment() {
     reviewSubmitError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
+
+async function archiveJob() {
+  if (!window.confirm('このジョブを削除済みとして非表示にしますか？')) {
+    return
+  }
+  jobArchiveState.value = 'saving'
+  jobArchiveError.value = null
+  try {
+    data.value = await deleteJob(jobID.value)
+    jobArchiveState.value = 'idle'
+    await reload()
+  } catch (err) {
+    jobArchiveState.value = 'error'
+    jobArchiveError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function unarchiveJob() {
+  jobArchiveState.value = 'saving'
+  jobArchiveError.value = null
+  try {
+    data.value = await restoreJob(jobID.value)
+    jobArchiveState.value = 'idle'
+    await reload()
+  } catch (err) {
+    jobArchiveState.value = 'error'
+    jobArchiveError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
 </script>
 
 <template>
@@ -407,6 +444,7 @@ async function sendReviewComment() {
           <PanelCard :title="data.job.id" description="Job summary">
             <div class="stack-sm">
               <StateBadge :state="data.job.state" />
+              <p v-if="isDeletedJob" class="notice notice-danger">このジョブは削除済みです。dashboard の通常表示には出ません。</p>
               <p class="text-muted">{{ data.job.repository }} #{{ data.job.githubNumber }}</p>
               <p>{{ data.job.title }}</p>
               <p class="text-muted">Branch: <code>{{ data.job.branchName }}</code></p>
@@ -416,7 +454,27 @@ async function sendReviewComment() {
           <PanelCard title="Flow" description="設計承認、実装成果物確認、最終承認をここから行えます。">
             <div class="stack-sm">
               <p class="text-muted">Current state: <code>{{ data.job.state }}</code></p>
-              <template v-if="flowRerunAction || canReviewDesign || canReviewImplementation">
+              <div class="button-row">
+                <button
+                  v-if="!isDeletedJob"
+                  class="button button-secondary"
+                  type="button"
+                  :disabled="jobArchiveState === 'saving'"
+                  @click="archiveJob"
+                >
+                  削除
+                </button>
+                <button
+                  v-else
+                  class="button button-primary"
+                  type="button"
+                  :disabled="jobArchiveState === 'saving'"
+                  @click="unarchiveJob"
+                >
+                  再登録
+                </button>
+              </div>
+              <template v-if="!isDeletedJob && (flowRerunAction || canReviewDesign || canReviewImplementation)">
                 <label v-if="flowRerunAction" class="field field-full">
                   <span class="field__label">Rerun Comment</span>
                   <textarea
@@ -456,6 +514,7 @@ async function sendReviewComment() {
                   </template>
                 </div>
               </template>
+              <p v-if="jobArchiveState === 'error'" class="notice notice-danger">{{ jobArchiveError }}</p>
               <p v-if="approvalState === 'error'" class="notice notice-danger">{{ approvalError }}</p>
               <template v-if="canReviewImplementation">
                 <p v-if="finalApprovalWarning" class="notice notice-danger">{{ finalApprovalWarning }}</p>

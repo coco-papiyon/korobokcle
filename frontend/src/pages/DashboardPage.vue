@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
 import DataTable from '@/components/DataTable.vue'
@@ -28,6 +28,7 @@ function mergeJobs(current: Job[] | null, incoming: Job[]) {
       existing.title === job.title &&
       existing.branchName === job.branchName &&
       existing.watchRuleId === job.watchRuleId &&
+      existing.deletedAt === job.deletedAt &&
       existing.createdAt === job.createdAt &&
       existing.updatedAt === job.updatedAt
     ) {
@@ -46,9 +47,15 @@ const refreshIntervalMs = computed(() => {
   return seconds > 0 ? seconds * 1000 : 0
 })
 
-const { data, isLoading, isRefreshing, error } = useAsyncData(fetchJobs, {
+const showDeletedOnly = ref(false)
+
+const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetchJobs(showDeletedOnly.value ? 'only' : 'exclude'), {
   pollIntervalMs: refreshIntervalMs,
   mergeData: mergeJobs,
+})
+
+watch(showDeletedOnly, () => {
+  void reload()
 })
 </script>
 
@@ -59,6 +66,11 @@ const { data, isLoading, isRefreshing, error } = useAsyncData(fetchJobs, {
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <p v-if="isRefreshing" class="text-muted">Syncing jobs...</p>
+      <div class="button-row">
+        <button class="button button-secondary" type="button" @click="showDeletedOnly = !showDeletedOnly">
+          {{ showDeletedOnly ? '表示を通常に戻す' : '削除済みジョブを表示' }}
+        </button>
+      </div>
       <DataTable :columns="['ID', 'Type', 'Repository', 'State', 'Updated']">
         <tr v-for="job in data ?? []" :key="job.id">
           <td>
@@ -71,7 +83,9 @@ const { data, isLoading, isRefreshing, error } = useAsyncData(fetchJobs, {
           <td>{{ formatDateTime(job.updatedAt) }}</td>
         </tr>
         <tr v-if="(data ?? []).length === 0">
-          <td colspan="5" class="text-muted">ジョブはまだありません。</td>
+          <td colspan="5" class="text-muted">
+            {{ showDeletedOnly ? '削除済みジョブはまだありません。' : 'ジョブはまだありません。' }}
+          </td>
         </tr>
       </DataTable>
     </AsyncState>

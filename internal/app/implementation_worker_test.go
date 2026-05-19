@@ -322,3 +322,57 @@ func TestResolveImplementationSkillNameUsesReviewFixForPRFeedback(t *testing.T) 
 		t.Fatalf("expected team-a/review_fix, got %q", got)
 	}
 }
+
+func TestResolveJobTestProfileSkipsWhenProfileNameIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{ID: "rule-1", TestProfile: "   "},
+			},
+		},
+	})
+
+	profile, shouldRun, err := resolveJobTestProfile(cfg, domain.Job{WatchRuleID: "rule-1"})
+	if err != nil {
+		t.Fatalf("resolveJobTestProfile() error = %v", err)
+	}
+	if shouldRun {
+		t.Fatal("expected tests to be skipped")
+	}
+	if profile.Name != "" || len(profile.Commands) != 0 {
+		t.Fatalf("expected empty profile when skipped, got %+v", profile)
+	}
+}
+
+func TestResolveJobTestProfileReturnsConfiguredProfile(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{ID: "rule-1", TestProfile: "go-default"},
+			},
+		},
+		TestProfiles: config.TestProfiles{
+			Profiles: []config.TestProfile{
+				{Name: "go-default", Commands: []string{"go test ./..."}},
+			},
+		},
+	})
+
+	profile, shouldRun, err := resolveJobTestProfile(cfg, domain.Job{WatchRuleID: "rule-1"})
+	if err != nil {
+		t.Fatalf("resolveJobTestProfile() error = %v", err)
+	}
+	if !shouldRun {
+		t.Fatal("expected tests to run")
+	}
+	if profile.Name != "go-default" {
+		t.Fatalf("expected profile go-default, got %q", profile.Name)
+	}
+	if len(profile.Commands) != 1 || profile.Commands[0] != "go test ./..." {
+		t.Fatalf("unexpected commands: %+v", profile.Commands)
+	}
+}

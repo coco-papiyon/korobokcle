@@ -44,6 +44,7 @@ type Job struct {
 	Title        string
 	BranchName   string
 	WatchRuleID  string
+	DeletedAt    *time.Time
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }

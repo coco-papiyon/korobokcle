@@ -1108,3 +1108,136 @@ func TestHandleJobDetailForPRFeedbackIncludesReviewCommentsAndSanitizedPayload(t
 		t.Fatalf("expected nested review comment body to be omitted, got %s", got.Events[0].Payload)
 	}
 }
+
+func TestHandleJobsExcludesDeletedByDefaultAndCanShowDeletedOnly(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	activeJob := domain.Job{
+		ID:           "job-active",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 1,
+		State:        domain.StateDetected,
+		Title:        "active",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	deletedAt := time.Now().UTC()
+	deletedJob := domain.Job{
+		ID:           "job-deleted",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 2,
+		State:        domain.StateCompleted,
+		Title:        "deleted",
+		DeletedAt:    &deletedAt,
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), activeJob); err != nil {
+		t.Fatalf("UpsertJob(active) error = %v", err)
+	}
+	if err := store.UpsertJob(context.Background(), deletedJob); err != nil {
+		t.Fatalf("UpsertJob(deleted) error = %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/jobs", nil)
+	server.handleJobs(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	var active []jobResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&active); err != nil {
+		t.Fatalf("Decode(active response) error = %v", err)
+	}
+	if len(active) != 1 || active[0].ID != activeJob.ID {
+		t.Fatalf("expected only active job, got %+v", active)
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/api/jobs?deleted=only", nil)
+	server.handleJobs(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	var deleted []jobResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&deleted); err != nil {
+		t.Fatalf("Decode(deleted response) error = %v", err)
+	}
+	if len(deleted) != 1 || deleted[0].ID != deletedJob.ID || deleted[0].DeletedAt == "" {
+		t.Fatalf("expected only deleted job, got %+v", deleted)
+	}
+}
+
+func TestHandleDeleteAndRestoreJob(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-delete-restore",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 7,
+		State:        domain.StateCompleted,
+		Title:        "job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/delete", nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handleDeleteJob(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	var deleted jobDetailResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&deleted); err != nil {
+		t.Fatalf("Decode(delete response) error = %v", err)
+	}
+	if deleted.Job.DeletedAt == "" {
+		t.Fatalf("expected deletedAt to be set, got %+v", deleted.Job)
+	}
+
+	recorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/restore", nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handleRestoreJob(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	var restored jobDetailResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&restored); err != nil {
+		t.Fatalf("Decode(restore response) error = %v", err)
+	}
+	if restored.Job.DeletedAt != "" {
+		t.Fatalf("expected deletedAt to be cleared, got %+v", restored.Job)
+	}
+}

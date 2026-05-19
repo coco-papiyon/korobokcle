@@ -30,6 +30,7 @@ type jobResponse struct {
 	Title        string `json:"title"`
 	BranchName   string `json:"branchName"`
 	WatchRuleID  string `json:"watchRuleId"`
+	DeletedAt    string `json:"deletedAt,omitempty"`
 	CreatedAt    string `json:"createdAt"`
 	UpdatedAt    string `json:"updatedAt"`
 }
@@ -170,7 +171,7 @@ type createSkillSetRequest struct {
 }
 
 func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
-	jobs, err := s.orchestrator.ListJobs(r.Context())
+	jobs, err := s.orchestrator.ListJobsByFilter(r.Context(), parseJobListFilter(r.URL.Query().Get("deleted")))
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
@@ -181,6 +182,24 @@ func (s *Server) handleJobs(w http.ResponseWriter, r *http.Request) {
 		out = append(out, toJobResponse(job))
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleDeleteJob(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	if err := s.orchestrator.DeleteJob(r.Context(), jobID); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.handleJobDetail(w, r)
+}
+
+func (s *Server) handleRestoreJob(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	if err := s.orchestrator.RestoreJob(r.Context(), jobID); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.handleJobDetail(w, r)
 }
 
 func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
@@ -895,6 +914,10 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 const timeFormat = "2006-01-02T15:04:05Z07:00"
 
 func toJobResponse(job domain.Job) jobResponse {
+	deletedAt := ""
+	if job.DeletedAt != nil {
+		deletedAt = job.DeletedAt.Format(timeFormat)
+	}
 	return jobResponse{
 		ID:           job.ID,
 		Type:         string(job.Type),
@@ -904,8 +927,20 @@ func toJobResponse(job domain.Job) jobResponse {
 		Title:        job.Title,
 		BranchName:   job.BranchName,
 		WatchRuleID:  job.WatchRuleID,
+		DeletedAt:    deletedAt,
 		CreatedAt:    job.CreatedAt.Format(timeFormat),
 		UpdatedAt:    job.UpdatedAt.Format(timeFormat),
+	}
+}
+
+func parseJobListFilter(raw string) orchestrator.JobListFilter {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "only", "deleted":
+		return orchestrator.JobListDeletedOnly
+	case "all", "include":
+		return orchestrator.JobListAll
+	default:
+		return orchestrator.JobListActiveOnly
 	}
 }
 

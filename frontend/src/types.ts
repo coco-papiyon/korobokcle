@@ -7,6 +7,7 @@ export type Job = {
   title: string
   branchName: string
   watchRuleId: string
+  deletedAt?: string
   createdAt: string
   updatedAt: string
 }

@@ -94,23 +94,32 @@ func runPendingImplementations(ctx context.Context, repoRoot string, cfg *config
 			continue
 		}
 
-		if err := orch.UpdateJobState(ctx, job.ID, domain.StateTestRunning, "test_started", map[string]any{
-			"artifactDir": contextData.ArtifactDir,
-		}); err != nil {
-			logger.Printf("test_started state transition failed for %s: %v", job.ID, err)
-			continue
-		}
-
-		report, err := runTestsForJob(ctx, cfg, testRunner, job, contextData.ArtifactDir, repoRoot)
+		shouldRunTests, err := jobHasRunnableTestProfile(cfg, job)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "test_failed", map[string]any{"error": err.Error()})
 			continue
 		}
-		if !report.Success {
-			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "test_failed", map[string]any{
-				"reportPath": filepath.Join(contextData.ArtifactDir, "test-report.json"),
-			})
-			continue
+		if shouldRunTests {
+			if err := orch.UpdateJobState(ctx, job.ID, domain.StateTestRunning, "test_started", map[string]any{
+				"artifactDir": contextData.ArtifactDir,
+			}); err != nil {
+				logger.Printf("test_started state transition failed for %s: %v", job.ID, err)
+				continue
+			}
+
+			report, err := runTestsForJob(ctx, cfg, testRunner, job, contextData.ArtifactDir, repoRoot)
+			if err != nil {
+				_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "test_failed", map[string]any{"error": err.Error()})
+				continue
+			}
+			if !report.Success {
+				_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "test_failed", map[string]any{
+					"reportPath": filepath.Join(contextData.ArtifactDir, "test-report.json"),
+				})
+				continue
+			}
+		} else {
+			logger.Printf("tests skipped for %s: empty test profile", job.ID)
 		}
 
 		if err := orch.UpdateJobState(ctx, job.ID, domain.StateImplementationReady, "implementation_ready", map[string]any{
@@ -403,28 +412,15 @@ func resolveImplementationRetryArtifactDir(cfg *config.Service, job domain.Job, 
 }
 
 func runTestsForJob(ctx context.Context, cfg *config.Service, testRunner *executor.TestRunner, job domain.Job, artifactDir string, repoRoot string) (executor.TestReport, error) {
-	rule, ok := cfg.WatchRuleByID(job.WatchRuleID)
-	if !ok {
-		return executor.TestReport{}, os.ErrNotExist
+	profile, shouldRun, err := resolveJobTestProfile(cfg, job)
+	if err != nil {
+		return executor.TestReport{}, err
+	}
+	if !shouldRun {
+		return executor.TestReport{}, nil
 	}
 
-	var profile config.TestProfile
-	found := false
-	for _, candidate := range cfg.TestProfiles().Profiles {
-		if candidate.Name == rule.TestProfile {
-			profile = candidate
-			found = true
-			break
-		}
-	}
-	if !found {
-		return executor.TestReport{}, os.ErrNotExist
-	}
-
-	report := testRunner.Run(ctx, executor.TestProfile{
-		Name:     profile.Name,
-		Commands: profile.Commands,
-	}, repoRoot)
+	report := testRunner.Run(ctx, profile, repoRoot)
 
 	raw, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -434,4 +430,33 @@ func runTestsForJob(ctx context.Context, cfg *config.Service, testRunner *execut
 		return executor.TestReport{}, err
 	}
 	return report, nil
+}
+
+func jobHasRunnableTestProfile(cfg *config.Service, job domain.Job) (bool, error) {
+	_, shouldRun, err := resolveJobTestProfile(cfg, job)
+	return shouldRun, err
+}
+
+func resolveJobTestProfile(cfg *config.Service, job domain.Job) (executor.TestProfile, bool, error) {
+	rule, ok := cfg.WatchRuleByID(job.WatchRuleID)
+	if !ok {
+		return executor.TestProfile{}, false, os.ErrNotExist
+	}
+
+	profileName := strings.TrimSpace(rule.TestProfile)
+	if profileName == "" {
+		return executor.TestProfile{}, false, nil
+	}
+
+	for _, candidate := range cfg.TestProfiles().Profiles {
+		if candidate.Name != profileName {
+			continue
+		}
+		return executor.TestProfile{
+			Name:     candidate.Name,
+			Commands: append([]string(nil), candidate.Commands...),
+		}, true, nil
+	}
+
+	return executor.TestProfile{}, false, os.ErrNotExist
 }

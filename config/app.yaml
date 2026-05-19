@@ -5,10 +5,10 @@ dataDir: data
 artifactsDir: artifacts
 workspaceDir: .
 monitoredRepositories:
-    - repository: owner/repository
+    - repository: https://github.com/coco-papiyon/korobokcle
       workers: 1
-provider: mock
-model: ""
+provider: codex
+model: gpt-5.4-mini
 copilotAllowTools: []
 prTitleTemplate: '[#{{issue_number}}]{{issue_title}}'
 branchTemplate: issue_{{issue_number}}

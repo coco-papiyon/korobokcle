@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 
@@ -16,6 +17,14 @@ import (
 type Store struct {
 	db *sql.DB
 }
+
+type JobListFilter string
+
+const (
+	JobListActiveOnly  JobListFilter = "active"
+	JobListDeletedOnly JobListFilter = "deleted"
+	JobListAll         JobListFilter = "all"
+)
 
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -47,10 +56,15 @@ func (s *Store) EnsureSeedData(ctx context.Context) error {
 }
 
 func (s *Store) UpsertJob(ctx context.Context, job domain.Job) error {
+	var deletedAt any
+	if job.DeletedAt != nil {
+		deletedAt = job.DeletedAt.UTC()
+	}
+
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO jobs (
-			id, type, repository, github_number, state, title, branch_name, watch_rule_id, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, type, repository, github_number, state, title, branch_name, watch_rule_id, deleted_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			type = excluded.type,
 			repository = excluded.repository,
@@ -59,15 +73,29 @@ func (s *Store) UpsertJob(ctx context.Context, job domain.Job) error {
 			title = excluded.title,
 			branch_name = excluded.branch_name,
 			watch_rule_id = excluded.watch_rule_id,
+			deleted_at = excluded.deleted_at,
 			updated_at = excluded.updated_at
-	`, job.ID, string(job.Type), job.Repository, job.GitHubNumber, string(job.State), job.Title, job.BranchName, job.WatchRuleID, job.CreatedAt.UTC(), job.UpdatedAt.UTC())
+	`, job.ID, string(job.Type), job.Repository, job.GitHubNumber, string(job.State), job.Title, job.BranchName, job.WatchRuleID, deletedAt, job.CreatedAt.UTC(), job.UpdatedAt.UTC())
 	return err
 }
 
 func (s *Store) ListJobs(ctx context.Context) ([]domain.Job, error) {
+	return s.ListJobsByFilter(ctx, JobListActiveOnly)
+}
+
+func (s *Store) ListJobsByFilter(ctx context.Context, filter JobListFilter) ([]domain.Job, error) {
+	whereClause := "WHERE deleted_at IS NULL"
+	switch filter {
+	case JobListDeletedOnly:
+		whereClause = "WHERE deleted_at IS NOT NULL"
+	case JobListAll:
+		whereClause = ""
+	}
+
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, type, repository, github_number, state, title, branch_name, watch_rule_id, created_at, updated_at
+		SELECT id, type, repository, github_number, state, title, branch_name, watch_rule_id, deleted_at, created_at, updated_at
 		FROM jobs
+		`+whereClause+`
 		ORDER BY updated_at DESC
 	`)
 	if err != nil {
@@ -77,57 +105,45 @@ func (s *Store) ListJobs(ctx context.Context) ([]domain.Job, error) {
 
 	var jobs []domain.Job
 	for rows.Next() {
-		var job domain.Job
-		var typ, state string
-		if err := rows.Scan(&job.ID, &typ, &job.Repository, &job.GitHubNumber, &state, &job.Title, &job.BranchName, &job.WatchRuleID, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		job, err := scanJob(rows)
+		if err != nil {
 			return nil, err
 		}
-		job.Type = domain.JobType(typ)
-		job.State = domain.JobState(state)
 		jobs = append(jobs, job)
 	}
 	return jobs, rows.Err()
 }
 
 func (s *Store) GetJob(ctx context.Context, jobID string) (domain.Job, error) {
-	var job domain.Job
-	var typ, state string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, type, repository, github_number, state, title, branch_name, watch_rule_id, created_at, updated_at
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, type, repository, github_number, state, title, branch_name, watch_rule_id, deleted_at, created_at, updated_at
 		FROM jobs WHERE id = ?
-	`, jobID).Scan(&job.ID, &typ, &job.Repository, &job.GitHubNumber, &state, &job.Title, &job.BranchName, &job.WatchRuleID, &job.CreatedAt, &job.UpdatedAt)
+	`, jobID)
+	job, err := scanJob(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Job{}, fmt.Errorf("job %q not found", jobID)
 	}
 	if err != nil {
 		return domain.Job{}, err
 	}
-	job.Type = domain.JobType(typ)
-	job.State = domain.JobState(state)
 	return job, nil
 }
 
 func (s *Store) FindJobBySource(ctx context.Context, repository string, githubNumber int, jobType domain.JobType) (domain.Job, error) {
-	var job domain.Job
-	var typ, state string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, type, repository, github_number, state, title, branch_name, watch_rule_id, created_at, updated_at
+	row := s.db.QueryRowContext(ctx, `
+		SELECT id, type, repository, github_number, state, title, branch_name, watch_rule_id, deleted_at, created_at, updated_at
 		FROM jobs
 		WHERE repository = ? AND github_number = ? AND type = ?
 		ORDER BY created_at ASC
 		LIMIT 1
-	`, repository, githubNumber, string(jobType)).Scan(
-		&job.ID, &typ, &job.Repository, &job.GitHubNumber, &state, &job.Title,
-		&job.BranchName, &job.WatchRuleID, &job.CreatedAt, &job.UpdatedAt,
-	)
+	`, repository, githubNumber, string(jobType))
+	job, err := scanJob(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Job{}, fmt.Errorf("%w: %s#%d (%s)", domain.ErrJobNotFound, repository, githubNumber, jobType)
 	}
 	if err != nil {
 		return domain.Job{}, err
 	}
-	job.Type = domain.JobType(typ)
-	job.State = domain.JobState(state)
 	return job, nil
 }
 
@@ -188,9 +204,11 @@ func (s *Store) migrate() error {
 			title TEXT NOT NULL DEFAULT '',
 			branch_name TEXT NOT NULL DEFAULT '',
 			watch_rule_id TEXT NOT NULL DEFAULT '',
+			deleted_at TIMESTAMP NULL,
 			created_at TIMESTAMP NOT NULL,
 			updated_at TIMESTAMP NOT NULL
 		)`,
+		`ALTER TABLE jobs ADD COLUMN deleted_at TIMESTAMP NULL`,
 		`CREATE TABLE IF NOT EXISTS job_events (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			job_id TEXT NOT NULL,
@@ -206,8 +224,31 @@ func (s *Store) migrate() error {
 
 	for _, stmt := range stmts {
 		if _, err := s.db.Exec(stmt); err != nil {
+			if strings.Contains(stmt, "ALTER TABLE jobs ADD COLUMN deleted_at") && strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
 			return err
 		}
 	}
 	return nil
+}
+
+type jobScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanJob(scanner jobScanner) (domain.Job, error) {
+	var job domain.Job
+	var deletedAt sql.NullTime
+	var typ, state string
+	if err := scanner.Scan(&job.ID, &typ, &job.Repository, &job.GitHubNumber, &state, &job.Title, &job.BranchName, &job.WatchRuleID, &deletedAt, &job.CreatedAt, &job.UpdatedAt); err != nil {
+		return domain.Job{}, err
+	}
+	job.Type = domain.JobType(typ)
+	job.State = domain.JobState(state)
+	if deletedAt.Valid {
+		value := deletedAt.Time.UTC()
+		job.DeletedAt = &value
+	}
+	return job, nil
 }

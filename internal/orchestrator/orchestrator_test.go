@@ -628,6 +628,60 @@ func TestApproveFinalRejectedFromOtherFailedStates(t *testing.T) {
 	}
 }
 
+func TestDeleteAndRestoreJob(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-delete-1",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 99,
+		State:        domain.StateCompleted,
+		Title:        "delete me",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	if err := orch.DeleteJob(context.Background(), job.ID); err != nil {
+		t.Fatalf("DeleteJob() error = %v", err)
+	}
+
+	activeJobs, err := orch.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs() error = %v", err)
+	}
+	if len(activeJobs) != 0 {
+		t.Fatalf("expected deleted job to be hidden, got %+v", activeJobs)
+	}
+
+	deletedJobs, err := orch.ListJobsByFilter(context.Background(), JobListDeletedOnly)
+	if err != nil {
+		t.Fatalf("ListJobsByFilter(deleted) error = %v", err)
+	}
+	if len(deletedJobs) != 1 || deletedJobs[0].DeletedAt == nil {
+		t.Fatalf("expected deleted job, got %+v", deletedJobs)
+	}
+
+	if err := orch.RestoreJob(context.Background(), job.ID); err != nil {
+		t.Fatalf("RestoreJob() error = %v", err)
+	}
+
+	restored, events, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if restored.DeletedAt != nil {
+		t.Fatalf("expected restored job to clear DeletedAt, got %+v", restored)
+	}
+	if len(events) != 2 || events[0].EventType != "job_deleted" || events[1].EventType != "job_restored" {
+		t.Fatalf("unexpected events: %+v", events)
+	}
+}
+
 func TestRecoverInterruptedJobs(t *testing.T) {
 	t.Parallel()
 

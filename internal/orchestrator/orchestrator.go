@@ -25,6 +25,14 @@ type Orchestrator struct {
 
 var ErrInvalidStateTransition = errors.New("invalid state transition")
 
+type JobListFilter string
+
+const (
+	JobListActiveOnly  JobListFilter = "active"
+	JobListDeletedOnly JobListFilter = "deleted"
+	JobListAll         JobListFilter = "all"
+)
+
 func New(store *sqlite.Store, notifier notification.Notifier) *Orchestrator {
 	if notifier == nil {
 		notifier = notification.NewNopNotifier()
@@ -34,6 +42,17 @@ func New(store *sqlite.Store, notifier notification.Notifier) *Orchestrator {
 
 func (o *Orchestrator) ListJobs(ctx context.Context) ([]domain.Job, error) {
 	return o.store.ListJobs(ctx)
+}
+
+func (o *Orchestrator) ListJobsByFilter(ctx context.Context, filter JobListFilter) ([]domain.Job, error) {
+	switch filter {
+	case JobListDeletedOnly:
+		return o.store.ListJobsByFilter(ctx, sqlite.JobListDeletedOnly)
+	case JobListAll:
+		return o.store.ListJobsByFilter(ctx, sqlite.JobListAll)
+	default:
+		return o.store.ListJobsByFilter(ctx, sqlite.JobListActiveOnly)
+	}
 }
 
 func (o *Orchestrator) JobDetail(ctx context.Context, jobID string) (domain.Job, []domain.Event, error) {
@@ -79,9 +98,17 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 		UpdatedAt:    time.Now().UTC(),
 	}
 	if existing, err := o.store.FindJobBySource(ctx, job.Repository, job.GitHubNumber, job.Type); err == nil {
+		job.ID = existing.ID
+		job.CreatedAt = existing.CreatedAt
+		job.UpdatedAt = time.Now().UTC()
 		if jobType != domain.JobTypePRFeedback {
-			return nil
+			if existing.DeletedAt == nil {
+				return nil
+			}
+			job.DeletedAt = nil
+			return o.upsertMatchedJob(ctx, job, rule, event)
 		}
+		job.DeletedAt = existing.DeletedAt
 		events, err := o.store.ListEvents(ctx, existing.ID)
 		if err != nil {
 			return err
@@ -89,10 +116,8 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 		if prFeedbackAlreadyIncorporated(events, event.Item.ReviewComments) {
 			return nil
 		}
-		job.ID = existing.ID
-		job.CreatedAt = existing.CreatedAt
-		job.UpdatedAt = time.Now().UTC()
 		job.State = existing.State
+		job.DeletedAt = nil
 		if jobType == domain.JobTypePRFeedback && !prFeedbackJobBusy(existing.State) {
 			job.State = domain.StateImplementationRunning
 		}
@@ -102,6 +127,18 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 		return err
 	}
 
+	return o.upsertMatchedJob(ctx, job, rule, event)
+}
+
+func (o *Orchestrator) DeleteJob(ctx context.Context, jobID string) error {
+	return o.updateJobDeletedAt(ctx, jobID, time.Now().UTC(), "job_deleted")
+}
+
+func (o *Orchestrator) RestoreJob(ctx context.Context, jobID string) error {
+	return o.updateJobDeletedAt(ctx, jobID, time.Time{}, "job_restored")
+}
+
+func (o *Orchestrator) upsertMatchedJob(ctx context.Context, job domain.Job, rule config.WatchRule, event domain.DomainEvent) error {
 	if err := o.store.UpsertJob(ctx, job); err != nil {
 		return err
 	}
@@ -140,6 +177,53 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 	log.Printf("info job event started job=%s event=%s state_from=%s state_to=%s", job.ID, storedEvent.EventType, storedEvent.StateFrom, storedEvent.StateTo)
 	o.notifyJobEvent(ctx, job, storedEvent)
 	return nil
+}
+
+func (o *Orchestrator) updateJobDeletedAt(ctx context.Context, jobID string, deletedAt time.Time, eventType string) error {
+	job, err := o.store.GetJob(ctx, jobID)
+	if err != nil {
+		return err
+	}
+
+	if eventType == "job_deleted" && job.DeletedAt != nil {
+		return nil
+	}
+	if eventType == "job_restored" && job.DeletedAt == nil {
+		return nil
+	}
+
+	if deletedAt.IsZero() {
+		job.DeletedAt = nil
+	} else {
+		value := deletedAt.UTC()
+		job.DeletedAt = &value
+	}
+	job.UpdatedAt = time.Now().UTC()
+	if err := o.store.UpsertJob(ctx, job); err != nil {
+		return err
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"deletedAt": formatOptionalTime(job.DeletedAt),
+	})
+	if err != nil {
+		return err
+	}
+	return o.store.AppendEvent(ctx, domain.Event{
+		JobID:     job.ID,
+		EventType: eventType,
+		StateFrom: string(job.State),
+		StateTo:   string(job.State),
+		Payload:   string(payload),
+		CreatedAt: time.Now().UTC(),
+	})
+}
+
+func formatOptionalTime(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return value.UTC().Format(time.RFC3339)
 }
 
 func (o *Orchestrator) UpdateJobState(ctx context.Context, jobID string, nextState domain.JobState, eventType string, payload map[string]any) error {

@@ -18,12 +18,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
-export function fetchJobs(): Promise<Job[]> {
-  return request<Job[]>('/api/jobs')
+export function fetchJobs(deleted: 'exclude' | 'only' | 'include' = 'exclude'): Promise<Job[]> {
+  return request<Job[]>(`/api/jobs?deleted=${encodeURIComponent(deleted)}`)
 }
 
 export function fetchJobDetail(jobId: string): Promise<JobDetail> {
   return request<JobDetail>(`/api/jobs/${jobId}`)
+}
+
+export function deleteJob(jobId: string): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${jobId}/delete`, {
+    method: 'POST',
+  })
+}
+
+export function restoreJob(jobId: string): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${jobId}/restore`, {
+    method: 'POST',
+  })
 }
 
 export function submitDesignApproval(jobId: string, status: 'approved' | 'rejected', comment: string): Promise<JobDetail> {

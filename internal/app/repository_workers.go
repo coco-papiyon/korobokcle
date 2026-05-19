@@ -299,26 +299,34 @@ func processImplementationJob(ctx context.Context, cfg *config.Service, orch *or
 		logger.Printf("implementation job ai output saved job_id=%s artifact_dir=%s skill=%s", job.ID, contextData.ArtifactDir, runSpec.SkillName)
 	}
 
-	if err := orch.UpdateJobState(ctx, job.ID, domain.StateTestRunning, "test_started", map[string]any{
-		"artifactDir": contextData.ArtifactDir,
-	}); err != nil {
-		if logger != nil {
-			logger.Printf("test_started state transition failed for %s: %v", job.ID, err)
-		}
-		return err
-	}
-
-	report, err := runTestsForJob(ctx, cfg, testRunner, job, contextData.ArtifactDir, repoDir)
+	shouldRunTests, err := jobHasRunnableTestProfile(cfg, job)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "test_failed", map[string]any{"error": err.Error()})
 	}
-	if logger != nil {
-		logger.Printf("implementation job tests finished job_id=%s success=%t artifact_dir=%s", job.ID, report.Success, contextData.ArtifactDir)
-	}
-	if !report.Success {
-		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "test_failed", map[string]any{
-			"reportPath": filepath.Join(contextData.ArtifactDir, "test-report.json"),
-		})
+	if shouldRunTests {
+		if err := orch.UpdateJobState(ctx, job.ID, domain.StateTestRunning, "test_started", map[string]any{
+			"artifactDir": contextData.ArtifactDir,
+		}); err != nil {
+			if logger != nil {
+				logger.Printf("test_started state transition failed for %s: %v", job.ID, err)
+			}
+			return err
+		}
+
+		report, err := runTestsForJob(ctx, cfg, testRunner, job, contextData.ArtifactDir, repoDir)
+		if err != nil {
+			return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "test_failed", map[string]any{"error": err.Error()})
+		}
+		if logger != nil {
+			logger.Printf("implementation job tests finished job_id=%s success=%t artifact_dir=%s", job.ID, report.Success, contextData.ArtifactDir)
+		}
+		if !report.Success {
+			return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "test_failed", map[string]any{
+				"reportPath": filepath.Join(contextData.ArtifactDir, "test-report.json"),
+			})
+		}
+	} else if logger != nil {
+		logger.Printf("implementation job tests skipped job_id=%s artifact_dir=%s reason=empty_test_profile", job.ID, contextData.ArtifactDir)
 	}
 
 	if err := orch.UpdateJobState(ctx, job.ID, domain.StateImplementationReady, "implementation_ready", map[string]any{
