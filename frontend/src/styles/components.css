@@ -7,6 +7,25 @@
   padding: var(--space-6);
 }
 
+.job-summary {
+  min-width: 0;
+}
+
+.job-summary__title {
+  margin: 0;
+  font-size: clamp(1.4rem, 2.4vw, 2.1rem);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  word-break: break-word;
+}
+
+.job-summary__id {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 .panel-hero {
   position: relative;
   overflow: hidden;
