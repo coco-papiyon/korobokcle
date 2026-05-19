@@ -57,6 +57,10 @@ const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetc
 watch(showDeletedOnly, () => {
   void reload()
 })
+
+function getJobTitle(job: Job) {
+  return job.title?.trim() || 'タイトルなし'
+}
 </script>
 
 <template>
@@ -71,11 +75,13 @@ watch(showDeletedOnly, () => {
           {{ showDeletedOnly ? '表示を通常に戻す' : '削除済みジョブを表示' }}
         </button>
       </div>
-      <DataTable :columns="['ID', 'Type', 'Repository', 'State', 'Updated']">
+      <DataTable :columns="['Title', 'Type', 'Repository', 'State', 'Updated']">
         <tr v-for="job in data ?? []" :key="job.id">
-          <td>
-            <RouterLink class="table-link" :to="`/jobs/${job.id}`">{{ job.id }}</RouterLink>
-            <p class="text-muted">{{ job.title }}</p>
+          <td class="dashboard-job-cell">
+            <RouterLink class="dashboard-job-title" :to="`/jobs/${job.id}`">
+              {{ getJobTitle(job) }}
+            </RouterLink>
+            <span class="dashboard-job-id text-muted">{{ job.id }}</span>
           </td>
           <td>{{ job.type }}</td>
           <td>{{ job.repository }} #{{ job.githubNumber }}</td>
@@ -91,3 +97,30 @@ watch(showDeletedOnly, () => {
     </AsyncState>
   </AppShell>
 </template>
+
+<style scoped>
+.dashboard-job-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.dashboard-job-title {
+  color: var(--ink-primary);
+  font-weight: 700;
+  line-height: 1.45;
+  text-decoration: none;
+  word-break: break-word;
+}
+
+.dashboard-job-title:hover {
+  color: var(--accent-deep);
+}
+
+.dashboard-job-id {
+  display: block;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+</style>
