@@ -24,14 +24,32 @@ export function formatStateLabel(value: string): string {
 
 const emptyPayloadLabel = '(empty)'
 
-function parseJsonPayload(payload: string): { value: unknown; isJson: boolean } {
+type ParsedPayload =
+  | {
+      kind: 'empty'
+    }
+  | {
+      kind: 'json'
+      value: unknown
+    }
+  | {
+      kind: 'raw'
+      value: string
+    }
+
+export type PayloadDisplay = {
+  preview: string
+  content: string
+}
+
+function parseJsonPayload(payload: string): ParsedPayload {
   if (payload.trim() === '') {
-    return { value: payload, isJson: false }
+    return { kind: 'empty' }
   }
   try {
-    return { value: JSON.parse(payload) as unknown, isJson: true }
+    return { kind: 'json', value: JSON.parse(payload) as unknown }
   } catch {
-    return { value: payload, isJson: false }
+    return { kind: 'raw', value: payload }
   }
 }
 
@@ -50,20 +68,36 @@ function truncatePayloadText(payload: string, maxLength = 120): string {
   return `${payload.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
 }
 
-export function formatPayloadPreview(payload: string, maxLength = 120): string {
+export function formatPayloadDisplay(payload: string, maxLength = 120): PayloadDisplay {
   const parsed = parseJsonPayload(payload)
-  const text = parsed.isJson ? JSON.stringify(parsed.value) ?? payload : compactPayloadText(payload)
-  return truncatePayloadText(text, maxLength)
+
+  if (parsed.kind === 'empty') {
+    return {
+      preview: emptyPayloadLabel,
+      content: emptyPayloadLabel,
+    }
+  }
+
+  if (parsed.kind === 'json') {
+    const preview = JSON.stringify(parsed.value) ?? emptyPayloadLabel
+    const content = JSON.stringify(parsed.value, null, 2) ?? emptyPayloadLabel
+    return {
+      preview: truncatePayloadText(preview, maxLength),
+      content,
+    }
+  }
+
+  const preview = compactPayloadText(parsed.value)
+  return {
+    preview: truncatePayloadText(preview, maxLength),
+    content: parsed.value,
+  }
+}
+
+export function formatPayloadPreview(payload: string, maxLength = 120): string {
+  return formatPayloadDisplay(payload, maxLength).preview
 }
 
 export function formatPayloadContent(payload: string): string {
-  const parsed = parseJsonPayload(payload)
-  if (!parsed.isJson) {
-    return payload.trim() === '' ? emptyPayloadLabel : payload
-  }
-  try {
-    return JSON.stringify(parsed.value, null, 2) ?? (payload.trim() === '' ? emptyPayloadLabel : payload)
-  } catch {
-    return payload.trim() === '' ? emptyPayloadLabel : payload
-  }
+  return formatPayloadDisplay(payload).content
 }

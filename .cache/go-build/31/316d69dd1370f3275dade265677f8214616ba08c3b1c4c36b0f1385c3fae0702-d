@@ -1,0 +1,6 @@
+./auth.go
+./client.go
+./poller.go
+./client_test.go
+./poller_test.go
+./watcher_test.go

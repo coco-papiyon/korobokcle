@@ -1,0 +1,26 @@
+# test log
+getenv GO_WANT_AGENT_HELPER_PROCESS
+getenv GO_WANT_AGENT_WRAPPER_HELPER_PROCESS
+getenv PATHEXT
+open C:\Users\cocoo\AppData\Local\Temp\go-build3367826149\b201\agent.test.exe
+open C:\Users\cocoo\AppData\Local\Temp\TestRunWrapperExecModePassesPromptAsArgument1749110594\001\exec-provider.cmd
+getenv PATHEXT
+open C:\Users\cocoo\AppData\Local\Temp\go-build3367826149\b201\agent.test.exe
+getenv PATHEXT
+open C:\Users\cocoo\AppData\Local\Temp\go-build3367826149\b201\agent.test.exe
+getenv PATHEXT
+open C:\Users\cocoo\AppData\Local\Temp\TestRunWrapperExecModePassesPromptAsArgument1749110594\001\exec-provider.cmd
+getenv PATHEXT
+getenv PATHEXT
+open C:\Users\cocoo\AppData\Local\Temp\go-build3367826149\b201\agent.test.exe
+open C:\Users\cocoo\AppData\Local\Temp\go-build3367826149\b201\agent.test.exe
+getenv PATHEXT
+open C:\Users\cocoo\AppData\Local\Temp\go-build3367826149\b201\agent.test.exe
+stat C:\Users\cocoo\AppData\Local\Temp\TestRunWrapperExecModePassesPromptAsArgument1749110594
+open C:\Users\cocoo\AppData\Local\Temp\TestRunWrapperExecModePassesPromptAsArgument1749110594
+stat C:\Users\cocoo\AppData\Local\Temp\TestRunWrapperExecModePassesPromptAsArgument1749110594\001
+open C:\Users\cocoo\AppData\Local\Temp\TestRunWrapperExecModePassesPromptAsArgument1749110594\001
+getenv PATHEXT
+open C:\Users\cocoo\AppData\Local\Temp\go-build3367826149\b201\agent.test.exe
+getenv PATHEXT
+open C:\Users\cocoo\AppData\Local\Temp\go-build3367826149\b201\agent.test.exe

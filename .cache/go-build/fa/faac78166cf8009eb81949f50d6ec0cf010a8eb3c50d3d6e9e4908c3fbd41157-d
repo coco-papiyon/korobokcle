@@ -1,0 +1,26 @@
+# test log
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\app.yaml
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\app.yaml
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\watch-rules.yaml
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\watch-rules.yaml
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\notifications.yaml
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\notifications.yaml
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\test-profiles.yaml
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\test-profiles.yaml
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\app.yaml
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\watch-rules.yaml
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\notifications.yaml
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\test-profiles.yaml
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\app.yaml
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\watch-rules.yaml
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\notifications.yaml
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\test-profiles.yaml
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config\app.yaml
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001
+stat C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config
+open C:\Users\cocoo\AppData\Local\Temp\TestLoadOrInitCreatesDefaults417724375\001\config

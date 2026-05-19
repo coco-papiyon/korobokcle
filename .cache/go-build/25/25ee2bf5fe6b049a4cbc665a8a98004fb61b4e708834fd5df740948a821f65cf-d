@@ -1,0 +1,5 @@
+./configured.go
+./notifier.go
+./windows_toast.go
+./configured_test.go
+./windows_toast_test.go
