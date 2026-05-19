@@ -241,8 +241,14 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	if got.Model != "" {
 		t.Fatalf("expected default model to be normalized away, got %q", got.Model)
 	}
-	if len(got.Providers) != 3 || got.Providers[0].Name != "copilot" || len(got.Providers[0].Models) != 1 || got.Providers[0].Models[0] != "gpt-4.1" {
+	if len(got.Providers) != 3 || got.Providers[0].Name != "copilot" || len(got.Providers[0].Models) != 5 {
 		t.Fatalf("unexpected provider catalog: %#v", got.Providers)
+	}
+	wantModels := []string{"claude-sonnet-4.6", "claude-opus-4.6", "gpt-5.4", "gpt-5-mini", "gpt-4.1"}
+	for i, want := range wantModels {
+		if got.Providers[0].Models[i] != want {
+			t.Fatalf("unexpected provider catalog: %#v", got.Providers)
+		}
 	}
 	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].Workers != 1 {
 		t.Fatalf("unexpected monitored repositories: %#v", got.MonitoredRepositories)
@@ -376,6 +382,33 @@ func TestHandleSaveAppConfigUpdatesProviderAndModel(t *testing.T) {
 	}
 }
 
+func TestHandleSaveAppConfigAcceptsNewCopilotModels(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.Provider = "copilot"
+	files.App.Model = "gpt-4.1"
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"copilot","model":"gpt-5-mini","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := svc.App().Provider; got != "copilot" {
+		t.Fatalf("expected saved provider copilot, got %q", got)
+	}
+	if got := svc.App().Model; got != "gpt-5-mini" {
+		t.Fatalf("expected saved model gpt-5-mini, got %q", got)
+	}
+}
+
 func TestHandleSaveAppConfigRejectsInvalidModelForProvider(t *testing.T) {
 	t.Parallel()
 
@@ -384,7 +417,7 @@ func TestHandleSaveAppConfigRejectsInvalidModelForProvider(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"copilot","model":"gpt-5.4"}`)
+	body := []byte(`{"provider":"copilot","model":"gpt-4.5"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -917,6 +950,28 @@ func TestHandleSaveWatchRulesUpdatesProjectFilters(t *testing.T) {
 	}
 }
 
+func TestHandleSaveWatchRulesAcceptsNewCopilotModels(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"copilot","model":"claude-opus-4.6","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
+
+	server.handleSaveWatchRules(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+	if got := svc.WatchRules().Rules[0].Model; got != "claude-opus-4.6" {
+		t.Fatalf("expected saved model claude-opus-4.6, got %q", got)
+	}
+}
+
 func TestHandleSaveWatchRulesRejectsInvalidModelForProvider(t *testing.T) {
 	t.Parallel()
 
@@ -925,7 +980,7 @@ func TestHandleSaveWatchRulesRejectsInvalidModelForProvider(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"copilot","model":"gpt-5.4","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"copilot","model":"gpt-4.5","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 

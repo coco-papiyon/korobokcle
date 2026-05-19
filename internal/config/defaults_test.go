@@ -27,7 +27,7 @@ func TestProviderCatalogMatchesIssue(t *testing.T) {
 	t.Parallel()
 
 	want := []ProviderSpec{
-		{Name: "copilot", Models: []string{"gpt-4.1"}},
+		{Name: "copilot", Models: []string{"claude-sonnet-4.6", "claude-opus-4.6", "gpt-5.4", "gpt-5-mini", "gpt-4.1"}},
 		{Name: "codex", Models: []string{"gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"}},
 		{Name: "mock", Models: []string{}},
 	}
