@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	"github.com/coco-papiyon/korobokcle/internal/notification"
@@ -832,6 +834,84 @@ func TestPurgeDeletedJobRemovesJobAndEvents(t *testing.T) {
 	}
 	if len(events) != 0 {
 		t.Fatalf("expected events to be removed, got %+v", events)
+	}
+}
+
+func TestProcessMatchAfterPurgeUsesFreshJobID(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	orch := New(store, notification.NewNopNotifier())
+	appConfig := config.DefaultFiles().App
+	rule := config.WatchRule{ID: "rule-issue", Name: "Issue"}
+	event := domain.DomainEvent{
+		Type: domain.DomainEventIssueMatched,
+		Item: domain.RepositoryItem{
+			Repository: "owner/repo",
+			Number:     101,
+			Title:      "issue",
+			Target:     domain.TargetIssue,
+		},
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("first ProcessMatch() error = %v", err)
+	}
+
+	jobs, err := orch.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs() error = %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	oldJobID := jobs[0].ID
+
+	if err := orch.DeleteJob(context.Background(), oldJobID); err != nil {
+		t.Fatalf("DeleteJob() error = %v", err)
+	}
+	if err := orch.PurgeJob(context.Background(), oldJobID); err != nil {
+		t.Fatalf("PurgeJob() error = %v", err)
+	}
+
+	oldArtifactDir := artifacts.WorkerDir(root, appConfig.ArtifactsDir, oldJobID, artifacts.WorkerDesign)
+	if err := os.MkdirAll(oldArtifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(oldArtifactDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldArtifactDir, "result.md"), []byte("stale artifact"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("second ProcessMatch() error = %v", err)
+	}
+
+	jobs, err = orch.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs() after purge error = %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 recreated job, got %d", len(jobs))
+	}
+	if jobs[0].ID == oldJobID {
+		t.Fatalf("expected fresh job ID after purge, reused %q", oldJobID)
+	}
+
+	job, events, err := orch.JobDetail(context.Background(), jobs[0].ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if job.ID != jobs[0].ID {
+		t.Fatalf("unexpected job detail id: got %q want %q", job.ID, jobs[0].ID)
+	}
+	if len(events) == 0 {
+		t.Fatalf("expected job events for recreated job")
 	}
 }
 

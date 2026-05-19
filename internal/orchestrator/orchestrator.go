@@ -120,7 +120,7 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 			job.State = domain.StateImplementationRunning
 		}
 	} else if errors.Is(err, domain.ErrJobNotFound) {
-		job.ID = job.ID + "-" + uuid.NewString()[:8]
+		job.ID = job.ID + "-" + uuid.NewString()
 	} else {
 		return err
 	}
@@ -137,14 +137,13 @@ func (o *Orchestrator) RestoreJob(ctx context.Context, jobID string) error {
 }
 
 func (o *Orchestrator) PurgeJob(ctx context.Context, jobID string) error {
-	job, err := o.store.GetJob(ctx, jobID)
-	if err != nil {
+	if err := o.store.PurgeJob(ctx, jobID); err != nil {
+		if errors.Is(err, sqlite.ErrJobNotDeleted) {
+			return ErrJobNotDeleted
+		}
 		return err
 	}
-	if job.DeletedAt == nil {
-		return ErrJobNotDeleted
-	}
-	return o.store.PurgeJob(ctx, jobID)
+	return nil
 }
 
 func (o *Orchestrator) upsertMatchedJob(ctx context.Context, job domain.Job, rule config.WatchRule, event domain.DomainEvent) error {

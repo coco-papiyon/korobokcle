@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -167,6 +168,44 @@ func TestPurgeJobRemovesJobAndEventsButKeepsArtifacts(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(artifactDir, "result.txt")); err != nil {
 		t.Fatalf("expected artifact to remain, stat error = %v", err)
+	}
+}
+
+func TestPurgeJobRejectsActiveJobWithoutDeletingIt(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	job := domain.Job{
+		ID:           "job-active-purge",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 7,
+		State:        domain.StateDetected,
+		Title:        "active",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	if err := store.PurgeJob(context.Background(), job.ID); err == nil {
+		t.Fatalf("expected PurgeJob() to reject active job")
+	} else if !errors.Is(err, ErrJobNotDeleted) {
+		t.Fatalf("expected ErrJobNotDeleted, got %v", err)
+	}
+
+	saved, err := store.GetJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("GetJob() after failed purge error = %v", err)
+	}
+	if saved.DeletedAt != nil {
+		t.Fatalf("expected active job to remain active, got %+v", saved)
 	}
 }
 

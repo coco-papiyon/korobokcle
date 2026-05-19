@@ -18,6 +18,8 @@ type Store struct {
 	db *sql.DB
 }
 
+var ErrJobNotDeleted = errors.New("job is not deleted")
+
 type JobListFilter string
 
 const (
@@ -164,16 +166,34 @@ func (s *Store) PurgeJob(ctx context.Context, jobID string) error {
 		_ = tx.Rollback()
 	}()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM job_events WHERE job_id = ?`, jobID); err != nil {
-		return err
-	}
-	result, err := tx.ExecContext(ctx, `DELETE FROM jobs WHERE id = ?`, jobID)
+	result, err := tx.ExecContext(ctx, `DELETE FROM jobs WHERE id = ? AND deleted_at IS NOT NULL`, jobID)
 	if err != nil {
 		return err
 	}
-	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		var deletedAt sql.NullTime
+		err := tx.QueryRowContext(ctx, `
+			SELECT deleted_at
+			FROM jobs
+			WHERE id = ?
+		`, jobID).Scan(&deletedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domain.ErrJobNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if !deletedAt.Valid {
+			return ErrJobNotDeleted
+		}
 		return domain.ErrJobNotFound
-	} else if err != nil {
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM job_events WHERE job_id = ?`, jobID); err != nil {
 		return err
 	}
 
