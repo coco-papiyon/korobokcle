@@ -5,7 +5,7 @@ import AsyncState from '@/components/AsyncState.vue'
 import DataTable from '@/components/DataTable.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
-import { fetchAppConfig, fetchJobs } from '@/lib/api'
+import { deleteJob, fetchAppConfig, fetchJobs, restoreJob } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import type { Job } from '@/types'
 
@@ -48,6 +48,9 @@ const refreshIntervalMs = computed(() => {
 })
 
 const showDeletedOnly = ref(false)
+const selectedJobIds = ref<string[]>([])
+const bulkActionState = ref<'idle' | 'saving' | 'error'>('idle')
+const bulkActionError = ref<string | null>(null)
 
 const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetchJobs(showDeletedOnly.value ? 'only' : 'exclude'), {
   pollIntervalMs: refreshIntervalMs,
@@ -55,11 +58,159 @@ const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetc
 })
 
 watch(showDeletedOnly, () => {
+  selectedJobIds.value = []
+  bulkActionError.value = null
   void reload()
 })
 
+const jobs = computed(() => data.value ?? [])
+const visibleJobs = computed(() =>
+  jobs.value.filter((job) => (showDeletedOnly.value ? !!job.deletedAt : !job.deletedAt)),
+)
+const visibleJobIds = computed(() => visibleJobs.value.map((job) => job.id))
+const selectedVisibleJobs = computed(() =>
+  visibleJobs.value.filter((job) => selectedJobIds.value.includes(job.id)),
+)
+const selectedVisibleJobCount = computed(() => selectedVisibleJobs.value.length)
+const visibleJobCount = computed(() => visibleJobs.value.length)
+const allVisibleJobsSelected = computed(
+  () => visibleJobCount.value > 0 && selectedVisibleJobCount.value === visibleJobCount.value,
+)
+const selectedJobCountLabel = computed(() => `${selectedVisibleJobCount.value}件`)
+const isBulkActionRunning = computed(() => bulkActionState.value === 'saving')
+
 function getJobTitle(job: Job) {
   return job.title?.trim() || 'タイトルなし'
+}
+
+function syncSelectedJobIds() {
+  const visibleJobIdSet = new Set(visibleJobIds.value)
+  selectedJobIds.value = selectedJobIds.value.filter((selectedId) => visibleJobIdSet.has(selectedId))
+}
+
+watch(visibleJobs, syncSelectedJobIds, { immediate: true })
+
+function isJobSelected(jobId: string) {
+  return selectedJobIds.value.includes(jobId)
+}
+
+function toggleJobSelection(jobId: string) {
+  if (isBulkActionRunning.value) {
+    return
+  }
+  if (isJobSelected(jobId)) {
+    selectedJobIds.value = selectedJobIds.value.filter((selectedId) => selectedId !== jobId)
+    return
+  }
+  selectedJobIds.value = [...selectedJobIds.value, jobId]
+}
+
+function setAllVisibleJobsSelected(checked: boolean) {
+  if (isBulkActionRunning.value) {
+    return
+  }
+  if (!checked) {
+    const visibleJobIdSet = new Set(visibleJobIds.value)
+    selectedJobIds.value = selectedJobIds.value.filter((selectedId) => !visibleJobIdSet.has(selectedId))
+    return
+  }
+  selectedJobIds.value = Array.from(new Set([...selectedJobIds.value, ...visibleJobIds.value]))
+}
+
+function toggleAllVisibleJobs(event: Event) {
+  const target = event.target as HTMLInputElement
+  setAllVisibleJobsSelected(target.checked)
+}
+
+function clearBulkSelection() {
+  selectedJobIds.value = []
+}
+
+function formatBulkError(actionLabel: string, failures: Array<{ jobId: string; reason: unknown }>) {
+  const [firstFailure] = failures
+  const reason = firstFailure?.reason
+  const message = reason instanceof Error ? reason.message : 'Unknown error'
+  const failedJobIds = failures.slice(0, 3).map((failure) => failure.jobId)
+  const failedJobIdLabel = failedJobIds.length > 0 ? ` (対象: ${failedJobIds.join(', ')})` : ''
+  return `${actionLabel}に失敗しました: ${message}${failedJobIdLabel}`
+}
+
+async function submitBulkDelete() {
+  const targets = selectedVisibleJobs.value
+  if (targets.length === 0) {
+    bulkActionState.value = 'error'
+    bulkActionError.value = showDeletedOnly.value
+      ? '削除済み表示で復元対象のジョブを選択してください。'
+      : '削除対象のジョブを選択してください。'
+    return
+  }
+  if (!window.confirm(`選択した ${targets.length} 件のジョブを削除済みにしますか？`)) {
+    return
+  }
+
+  bulkActionState.value = 'saving'
+  bulkActionError.value = null
+  try {
+    const results = await Promise.allSettled(targets.map((job) => deleteJob(job.id)))
+    const failures = results
+      .map((result, index) => {
+        if (result.status === 'fulfilled') {
+          return null
+        }
+        return { jobId: targets[index].id, reason: result.reason }
+      })
+      .filter((failure): failure is { jobId: string; reason: unknown } => failure !== null)
+    await reload()
+    clearBulkSelection()
+    if (failures.length > 0) {
+      bulkActionState.value = 'error'
+      bulkActionError.value = `${targets.length}件中${failures.length}件の削除に失敗しました。${formatBulkError('削除', failures)}`
+      return
+    }
+    bulkActionState.value = 'idle'
+  } catch (err) {
+    bulkActionState.value = 'error'
+    bulkActionError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function submitBulkRestore() {
+  const targets = selectedVisibleJobs.value
+  if (targets.length === 0) {
+    bulkActionState.value = 'error'
+    bulkActionError.value = showDeletedOnly.value
+      ? '復元対象のジョブを選択してください。'
+      : '通常表示では復元を実行できません。'
+    return
+  }
+  if (!window.confirm(`選択した ${targets.length} 件のジョブを復元しますか？`)) {
+    return
+  }
+
+  bulkActionState.value = 'saving'
+  bulkActionError.value = null
+  try {
+    const results = await Promise.allSettled(targets.map((job) => restoreJob(job.id)))
+    const failures = results
+      .map((result, index) => {
+        if (result.status === 'fulfilled') {
+          return null
+        }
+        return { jobId: targets[index].id, reason: result.reason }
+      })
+      .filter((failure): failure is { jobId: string; reason: unknown } => failure !== null)
+    await reload()
+    clearBulkSelection()
+    if (failures.length > 0) {
+      bulkActionState.value = 'error'
+      bulkActionError.value = `${targets.length}件中${failures.length}件の復元に失敗しました。${formatBulkError('復元', failures)}`
+      return
+    }
+    bulkActionState.value = 'idle'
+  } catch (err) {
+    bulkActionState.value = 'error'
+    bulkActionError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
 }
 </script>
 
@@ -70,13 +221,62 @@ function getJobTitle(job: Job) {
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <p v-if="isRefreshing" class="text-muted">Syncing jobs...</p>
-      <div class="button-row">
-        <button class="button button-secondary" type="button" @click="showDeletedOnly = !showDeletedOnly">
-          {{ showDeletedOnly ? '表示を通常に戻す' : '削除済みジョブを表示' }}
-        </button>
+      <div class="dashboard-toolbar">
+        <div class="button-row">
+          <button
+            class="button button-secondary"
+            type="button"
+            :disabled="isBulkActionRunning"
+            @click="showDeletedOnly = !showDeletedOnly"
+          >
+            {{ showDeletedOnly ? '表示を通常に戻す' : '削除済みジョブを表示' }}
+          </button>
+        </div>
+        <div class="dashboard-toolbar__bulk">
+          <label class="dashboard-toolbar__select-all">
+            <input
+              :checked="allVisibleJobsSelected"
+              :disabled="isBulkActionRunning || visibleJobCount === 0"
+              type="checkbox"
+              @change="toggleAllVisibleJobs"
+            >
+            <span>表示中を全選択</span>
+          </label>
+          <p class="text-muted dashboard-toolbar__selection">選択中: {{ selectedJobCountLabel }}</p>
+          <div class="button-row">
+            <button
+              v-if="!showDeletedOnly"
+              class="button button-danger"
+              type="button"
+              :disabled="isBulkActionRunning || selectedVisibleJobCount === 0"
+              @click="submitBulkDelete"
+            >
+              {{ selectedVisibleJobCount > 0 ? `選択した ${selectedJobCountLabel} を削除` : '削除するジョブを選択してください' }}
+            </button>
+            <button
+              v-else
+              class="button button-primary"
+              type="button"
+              :disabled="isBulkActionRunning || selectedVisibleJobCount === 0"
+              @click="submitBulkRestore"
+            >
+              {{ selectedVisibleJobCount > 0 ? `選択した ${selectedJobCountLabel} を復元` : '復元するジョブを選択してください' }}
+            </button>
+          </div>
+        </div>
       </div>
-      <DataTable :columns="['Title', 'Type', 'Repository', 'State', 'Updated']">
-        <tr v-for="job in data ?? []" :key="job.id">
+      <p v-if="bulkActionState === 'error' && bulkActionError" class="notice notice-danger">{{ bulkActionError }}</p>
+      <DataTable :columns="['選択', 'Title', 'Type', 'Repository', 'State', 'Updated']">
+        <tr v-for="job in visibleJobs" :key="job.id">
+          <td class="dashboard-select-cell">
+            <input
+              :checked="isJobSelected(job.id)"
+              :aria-label="`${getJobTitle(job)} を選択`"
+              :disabled="isBulkActionRunning"
+              type="checkbox"
+              @change="toggleJobSelection(job.id)"
+            >
+          </td>
           <td class="dashboard-job-cell">
             <RouterLink class="dashboard-job-title" :to="`/jobs/${job.id}`">
               {{ getJobTitle(job) }}
@@ -88,8 +288,8 @@ function getJobTitle(job: Job) {
           <td><StateBadge :state="job.state" /></td>
           <td>{{ formatDateTime(job.updatedAt) }}</td>
         </tr>
-        <tr v-if="(data ?? []).length === 0">
-          <td colspan="5" class="text-muted">
+        <tr v-if="visibleJobs.length === 0">
+          <td colspan="6" class="text-muted">
             {{ showDeletedOnly ? '削除済みジョブはまだありません。' : 'ジョブはまだありません。' }}
           </td>
         </tr>
@@ -99,6 +299,44 @@ function getJobTitle(job: Job) {
 </template>
 
 <style scoped>
+.dashboard-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.dashboard-toolbar__bulk {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.dashboard-toolbar__select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.dashboard-toolbar__selection {
+  margin: 0;
+}
+
+.dashboard-select-cell {
+  width: 3.25rem;
+}
+
+.dashboard-select-cell input {
+  margin-top: 0.25rem;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+}
+
 .dashboard-job-cell {
   display: flex;
   flex-direction: column;
