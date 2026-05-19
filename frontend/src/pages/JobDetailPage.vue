@@ -459,12 +459,13 @@ async function purgeArchivedJob() {
       <p v-if="isRefreshing" class="text-muted">Syncing job detail...</p>
       <template v-if="data">
         <section class="hero-grid">
-          <PanelCard :title="data.job.id" description="Job summary">
-            <div class="stack-sm">
+          <PanelCard title="Job summary">
+            <div class="stack-sm job-summary">
+              <h3 class="job-summary__title">{{ data.job.title || '-' }}</h3>
+              <p class="job-summary__id text-muted">ID: <code>{{ data.job.id || '-' }}</code></p>
               <StateBadge :state="data.job.state" />
               <p v-if="isDeletedJob" class="notice notice-danger">このジョブは削除済みです。dashboard の通常表示には出ません。</p>
               <p class="text-muted">{{ data.job.repository }} #{{ data.job.githubNumber }}</p>
-              <p>{{ data.job.title }}</p>
               <p class="text-muted">Branch: <code>{{ data.job.branchName }}</code></p>
               <p class="text-muted">Watch Rule: <code>{{ data.job.watchRuleId }}</code></p>
             </div>
