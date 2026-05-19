@@ -518,6 +518,7 @@ type apiItem struct {
 	Draft     bool        `json:"draft"`
 	User      apiUser     `json:"user"`
 	Assignees []apiUser   `json:"assignees"`
+	Reviewers []apiUser   `json:"requested_reviewers"`
 	Labels    []apiLabel  `json:"labels"`
 	PullReq   *struct{}   `json:"pull_request,omitempty"`
 	Head      apiPullHead `json:"head"`
@@ -632,6 +633,11 @@ func (i apiItem) toDomain(repository string, endpoint string) domain.RepositoryI
 		assignees = append(assignees, assignee.Login)
 	}
 
+	reviewers := make([]string, 0, len(i.Reviewers))
+	for _, reviewer := range i.Reviewers {
+		reviewers = append(reviewers, reviewer.Login)
+	}
+
 	target := domain.TargetIssue
 	state := domain.StateDetected
 	if endpoint == "pulls" || i.PullReq != nil {
@@ -646,6 +652,7 @@ func (i apiItem) toDomain(repository string, endpoint string) domain.RepositoryI
 		Body:         i.Body,
 		Author:       i.User.Login,
 		Assignees:    assignees,
+		Reviewers:    reviewers,
 		Labels:       labels,
 		Draft:        i.Draft,
 		URL:          i.HTMLURL,

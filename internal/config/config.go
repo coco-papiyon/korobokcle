@@ -46,6 +46,7 @@ type WatchRule struct {
 	TitlePattern   string               `yaml:"titlePattern"`
 	Authors        []string             `yaml:"authors"`
 	Assignees      []string             `yaml:"assignees"`
+	Reviewers      []string             `yaml:"reviewers"`
 	ExcludeDraftPR bool                 `yaml:"excludeDraftPR"`
 	Provider       string               `yaml:"provider"`
 	Model          string               `yaml:"model"`

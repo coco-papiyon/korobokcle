@@ -36,6 +36,7 @@ type RepositoryItem struct {
 	Body           string
 	Author         string
 	Assignees      []string
+	Reviewers      []string
 	Labels         []string
 	Draft          bool
 	URL            string

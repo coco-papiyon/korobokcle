@@ -75,6 +75,7 @@ export type WatchRule = {
   titlePattern: string
   authors: string[] | null
   assignees: string[] | null
+  reviewers: string[] | null
   excludeDraftPR: boolean
   provider: string
   model: string
@@ -89,6 +90,7 @@ export type WatchRuleForm = WatchRule & {
   labelsText: string
   authorsText: string
   assigneesText: string
+  reviewersText: string
 }
 
 export type AppConfig = {

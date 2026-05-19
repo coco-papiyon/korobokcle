@@ -149,6 +149,7 @@ func cloneWatchRule(rule WatchRule) WatchRule {
 	}
 	cloned.Authors = append([]string(nil), rule.Authors...)
 	cloned.Assignees = append([]string(nil), rule.Assignees...)
+	cloned.Reviewers = append([]string(nil), rule.Reviewers...)
 	return cloned
 }
 

@@ -72,6 +72,28 @@ func TestEvaluateWatchRuleMatchedWithRepositoryURLAndAssignee(t *testing.T) {
 	}
 }
 
+func TestEvaluateWatchRuleMatchedWithReviewers(t *testing.T) {
+	t.Parallel()
+
+	rule := config.WatchRule{
+		Enabled:      true,
+		Repositories: []string{"owner/repo"},
+		Target:       "pull_request_review",
+		Reviewers:    []string{"  coco-papiyon  "},
+	}
+	item := RepositoryItem{
+		Repository: "owner/repo",
+		Target:     TargetPullRequestReview,
+		Reviewers:  []string{"coco-papiyon"},
+		UpdatedAt:  time.Now(),
+	}
+
+	result := EvaluateWatchRule(rule, item)
+	if result.Status != MatchStatusMatched {
+		t.Fatalf("expected matched, got %s", result.Status)
+	}
+}
+
 func TestEvaluateWatchRuleMatchedProjectIssue(t *testing.T) {
 	t.Parallel()
 
