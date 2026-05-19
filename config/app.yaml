@@ -1,6 +1,6 @@
 httpPort: 8080
 pollInterval: 120
-screenRefreshInterval: 5s
+screenRefreshInterval: 5
 dataDir: data
 artifactsDir: artifacts
 workspaceDir: .
@@ -13,4 +13,4 @@ copilotAllowTools: []
 prTitleTemplate: '[#{{issue_number}}]{{issue_title}}'
 branchTemplate: issue_{{issue_number}}
 sqlitePath: data/korobokcle.db
-shutdownTimeout: 10s
+shutdownTimeout: 10

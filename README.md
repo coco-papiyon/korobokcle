@@ -176,8 +176,9 @@ SQLite ファイルはデフォルトで `data/korobokcle.db` に作成されま
 provider と model の候補はコード内の provider catalog を参照します。
 `model` は省略可能で、未指定ならツールの既定モデルを使います。
 Web UI の `Settings` 画面からも切り替え可能です。
-`config/app.yaml` の `pollInterval` は watcher のポーリング間隔です。秒数で保存され、画面更新用の `screenRefreshInterval` とは別設定です。
-`config/app.yaml` の `screenRefreshInterval` で、Dashboard と Job Detail の自動更新間隔を `0 / 5 / 10 / 20 / 30` 秒から選べます。`0` は自動更新なしです。
+`config/app.yaml` の `pollInterval` は watcher のポーリング間隔です。秒数の整数で保存され、`0` にすると Git 監視のポーリングを無効にします。
+`config/app.yaml` の `screenRefreshInterval` は Dashboard と Job Detail の自動更新間隔です。秒数の整数で保存され、`0` は自動更新なしです。
+`config/app.yaml` の `shutdownTimeout` は終了処理の待機秒数です。こちらも整数秒で保存されます。
 
 `config/watch-rules.yaml` の各ルールでも `provider` / `model` を指定でき、未指定時は `config/app.yaml` の設定を使います。
 watch rule 側の provider / model の候補も、コード内の provider catalog を元に表示されます。

@@ -8,11 +8,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestAppMarshalYAMLUsesSecondsForPollInterval(t *testing.T) {
+func TestAppMarshalYAMLUsesSecondsForTimingFields(t *testing.T) {
 	t.Parallel()
 
 	app := DefaultFiles().App
 	app.PollInterval = 90 * time.Second
+	app.ScreenRefreshInterval = 15 * time.Second
+	app.ShutdownTimeout = 42 * time.Second
 
 	raw, err := yaml.Marshal(app)
 	if err != nil {
@@ -20,42 +22,45 @@ func TestAppMarshalYAMLUsesSecondsForPollInterval(t *testing.T) {
 	}
 
 	text := string(raw)
-	if !strings.Contains(text, "pollInterval: 90") {
-		t.Fatalf("expected poll interval to be stored as seconds, got %s", text)
+	for _, expected := range []string{"pollInterval: 90", "screenRefreshInterval: 15", "shutdownTimeout: 42"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("expected %q in yaml, got %s", expected, text)
+		}
 	}
-	if strings.Contains(text, "providers:") {
-		t.Fatalf("expected app yaml to omit providers, got %s", text)
+	if strings.Contains(text, "5s") || strings.Contains(text, "10s") {
+		t.Fatalf("expected yaml to omit duration strings, got %s", text)
 	}
 }
 
-func TestAppUnmarshalYAMLAcceptsLegacyDurationAndSeconds(t *testing.T) {
+func TestAppUnmarshalYAMLUsesIntegerSecondsAndFallsBackForInvalidValues(t *testing.T) {
 	t.Parallel()
 
-	t.Run("legacy duration", func(t *testing.T) {
-		t.Parallel()
+	var app App
+	app = DefaultFiles().App
 
-		var app App
-		app = DefaultFiles().App
+	if err := yaml.Unmarshal([]byte("pollInterval: 120\nscreenRefreshInterval: 7\nshutdownTimeout: 30\n"), &app); err != nil {
+		t.Fatalf("yaml.Unmarshal() error = %v", err)
+	}
+	if got := app.PollInterval; got != 2*time.Minute {
+		t.Fatalf("expected poll interval 2m, got %s", got)
+	}
+	if got := app.ScreenRefreshInterval; got != 7*time.Second {
+		t.Fatalf("expected screen refresh interval 7s, got %s", got)
+	}
+	if got := app.ShutdownTimeout; got != 30*time.Second {
+		t.Fatalf("expected shutdown timeout 30s, got %s", got)
+	}
 
-		if err := yaml.Unmarshal([]byte("pollInterval: 2m0s\n"), &app); err != nil {
-			t.Fatalf("yaml.Unmarshal() error = %v", err)
-		}
-		if got := app.PollInterval; got != 2*time.Minute {
-			t.Fatalf("expected 2m0s to decode as 2m, got %s", got)
-		}
-	})
-
-	t.Run("seconds", func(t *testing.T) {
-		t.Parallel()
-
-		var app App
-		app = DefaultFiles().App
-
-		if err := yaml.Unmarshal([]byte("pollInterval: 120\n"), &app); err != nil {
-			t.Fatalf("yaml.Unmarshal() error = %v", err)
-		}
-		if got := app.PollInterval; got != 2*time.Minute {
-			t.Fatalf("expected 120 to decode as 2m, got %s", got)
-		}
-	})
+	if err := yaml.Unmarshal([]byte("pollInterval: 2m0s\nscreenRefreshInterval: 5s\nshutdownTimeout: 1m\n"), &app); err != nil {
+		t.Fatalf("yaml.Unmarshal() error = %v", err)
+	}
+	if got := app.PollInterval; got != 2*time.Minute {
+		t.Fatalf("expected invalid poll interval to keep previous value, got %s", got)
+	}
+	if got := app.ScreenRefreshInterval; got != 7*time.Second {
+		t.Fatalf("expected invalid screen refresh interval to keep previous value, got %s", got)
+	}
+	if got := app.ShutdownTimeout; got != 30*time.Second {
+		t.Fatalf("expected invalid shutdown timeout to keep previous value, got %s", got)
+	}
 }

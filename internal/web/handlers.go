@@ -122,6 +122,7 @@ type appConfigResponse struct {
 	CopilotAllowTools     []string                      `json:"copilotAllowTools"`
 	PollInterval          int                           `json:"pollInterval"`
 	ScreenRefreshInterval int                           `json:"screenRefreshInterval"`
+	ShutdownTimeout       int                           `json:"shutdownTimeout"`
 	PRTitleTemplate       string                        `json:"prTitleTemplate"`
 	BranchTemplate        string                        `json:"branchTemplate"`
 	MonitoredRepositories []monitoredRepositoryResponse `json:"monitoredRepositories"`
@@ -134,6 +135,7 @@ type saveAppConfigRequest struct {
 	CopilotAllowTools     []string                       `json:"copilotAllowTools"`
 	PollInterval          *int                           `json:"pollInterval"`
 	ScreenRefreshInterval *int                           `json:"screenRefreshInterval"`
+	ShutdownTimeout       *int                           `json:"shutdownTimeout"`
 	PRTitleTemplate       string                         `json:"prTitleTemplate"`
 	BranchTemplate        string                         `json:"branchTemplate"`
 	MonitoredRepositories *[]monitoredRepositoryResponse `json:"monitoredRepositories"`
@@ -572,22 +574,25 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	appConfig.BranchTemplate = branchTemplate
 	if payload.PollInterval != nil {
-		if *payload.PollInterval < 1 {
-			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be a positive whole number of seconds"))
-			return
-		}
-		if *payload.PollInterval > 24*60*60 {
-			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be no more than 86400 seconds"))
+		if *payload.PollInterval < 0 {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("pollInterval must be a non-negative whole number of seconds"))
 			return
 		}
 		appConfig.PollInterval = time.Duration(*payload.PollInterval) * time.Second
 	}
 	if payload.ScreenRefreshInterval != nil {
-		if !allowedScreenRefreshInterval(*payload.ScreenRefreshInterval) {
-			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("screenRefreshInterval must be one of 0, 5, 10, 20, or 30 seconds"))
+		if *payload.ScreenRefreshInterval < 0 {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("screenRefreshInterval must be a non-negative whole number of seconds"))
 			return
 		}
 		appConfig.ScreenRefreshInterval = time.Duration(*payload.ScreenRefreshInterval) * time.Second
+	}
+	if payload.ShutdownTimeout != nil {
+		if *payload.ShutdownTimeout < 0 {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("shutdownTimeout must be a non-negative whole number of seconds"))
+			return
+		}
+		appConfig.ShutdownTimeout = time.Duration(*payload.ShutdownTimeout) * time.Second
 	}
 	if err := s.config.UpdateApp(appConfig); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
@@ -1044,8 +1049,9 @@ func toAppConfigResponse(app config.App) appConfigResponse {
 		Provider:              app.Provider,
 		Model:                 normalizeDefaultModelValue(app.Model),
 		CopilotAllowTools:     sliceOrEmpty(app.CopilotAllowTools),
-		PollInterval:          int(effectivePollInterval(app.PollInterval) / time.Second),
+		PollInterval:          durationSeconds(app.PollInterval),
 		ScreenRefreshInterval: durationSeconds(app.ScreenRefreshInterval),
+		ShutdownTimeout:       durationSeconds(app.ShutdownTimeout),
 		PRTitleTemplate:       prTitleTemplate,
 		BranchTemplate:        branchTemplate,
 		MonitoredRepositories: toMonitoredRepositoryResponses(app.MonitoredRepositories),
@@ -1145,27 +1151,11 @@ func toSkillSetResponse(set skill.SkillSet) skillSetResponse {
 	}
 }
 
-func effectivePollInterval(value time.Duration) time.Duration {
-	if value <= 0 {
-		return config.DefaultPollInterval
-	}
-	return value
-}
-
 func durationSeconds(value time.Duration) int {
 	if value <= 0 {
 		return 0
 	}
 	return int(value / time.Second)
-}
-
-func allowedScreenRefreshInterval(seconds int) bool {
-	switch seconds {
-	case 0, 5, 10, 20, 30:
-		return true
-	default:
-		return false
-	}
 }
 
 func toProviderSpecResponses(providers []config.ProviderSpec) []providerSpecResponse {

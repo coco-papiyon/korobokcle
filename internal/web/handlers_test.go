@@ -211,6 +211,7 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 		Model                 string `json:"model"`
 		PollInterval          int    `json:"pollInterval"`
 		ScreenRefreshInterval int    `json:"screenRefreshInterval"`
+		ShutdownTimeout       int    `json:"shutdownTimeout"`
 		PRTitleTemplate       string `json:"prTitleTemplate"`
 		BranchTemplate        string `json:"branchTemplate"`
 		Providers             []struct {
@@ -231,6 +232,9 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 	if got.ScreenRefreshInterval != 5 {
 		t.Fatalf("expected screen refresh interval 5, got %d", got.ScreenRefreshInterval)
+	}
+	if got.ShutdownTimeout != 10 {
+		t.Fatalf("expected shutdown timeout 10, got %d", got.ShutdownTimeout)
 	}
 	if got.PRTitleTemplate != "[#{{issue_number}}]{{issue_title}}" {
 		t.Fatalf("unexpected pr title template %q", got.PRTitleTemplate)
@@ -318,11 +322,64 @@ func TestHandleSaveAppConfigUpdatesScreenRefreshInterval(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read saved config: %v", err)
 	}
-	if !bytes.Contains(raw, []byte("screenRefreshInterval: 0s")) {
+	if !bytes.Contains(raw, []byte("screenRefreshInterval: 0")) {
 		t.Fatalf("expected saved config to contain screen refresh interval, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("shutdownTimeout: 10")) {
+		t.Fatalf("expected saved config to keep shutdown timeout, got %s", string(raw))
 	}
 	if !bytes.Contains(raw, []byte("pollInterval: 45")) {
 		t.Fatalf("expected saved config to keep watcher poll interval, got %s", string(raw))
+	}
+}
+
+func TestHandleSaveAppConfigAllowsDisablingPollInterval(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"pollInterval":0,"screenRefreshInterval":0,"shutdownTimeout":0,"prTitleTemplate":"[#{{issue_number}}]{{issue_title}}","branchTemplate":"issue_{{issue_number}}"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := svc.App().PollInterval; got != 0 {
+		t.Fatalf("expected poll interval to be disabled, got %s", got)
+	}
+	if got := svc.App().ScreenRefreshInterval; got != 0 {
+		t.Fatalf("expected screen refresh interval to be disabled, got %s", got)
+	}
+	if got := svc.App().ShutdownTimeout; got != 0 {
+		t.Fatalf("expected shutdown timeout to be zero, got %s", got)
+	}
+
+	var response struct {
+		PollInterval          int `json:"pollInterval"`
+		ScreenRefreshInterval int `json:"screenRefreshInterval"`
+		ShutdownTimeout       int `json:"shutdownTimeout"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.PollInterval != 0 || response.ScreenRefreshInterval != 0 || response.ShutdownTimeout != 0 {
+		t.Fatalf("expected zeroed timing fields in response, got %#v", response)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, "config", "app.yaml"))
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	for _, expected := range [][]byte{[]byte("pollInterval: 0"), []byte("screenRefreshInterval: 0"), []byte("shutdownTimeout: 0")} {
+		if !bytes.Contains(raw, expected) {
+			t.Fatalf("expected saved config to contain %q, got %s", expected, string(raw))
+		}
 	}
 }
 
@@ -562,7 +619,26 @@ func TestHandleSaveAppConfigRejectsInvalidScreenRefreshInterval(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"screenRefreshInterval":1}`)
+	body := []byte(`{"screenRefreshInterval":-1}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
+	}
+}
+
+func TestHandleSaveAppConfigRejectsInvalidShutdownTimeout(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"shutdownTimeout":-1}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 

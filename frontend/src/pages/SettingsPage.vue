@@ -12,7 +12,9 @@ const { data: notificationData, reload: reloadNotificationData } = useAsyncData(
 const provider = ref('mock')
 const model = ref('')
 const copilotAllowToolsText = ref('')
-const screenRefreshInterval = ref(5)
+const pollInterval = ref('120')
+const screenRefreshInterval = ref('5')
+const shutdownTimeout = ref('10')
 const prTitleTemplate = ref('')
 const branchTemplate = ref('')
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
@@ -21,7 +23,6 @@ const providerCatalog = ref<ProviderSpec[]>([])
 const notificationChannels = ref<NotificationChannel[]>([])
 const notificationSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const notificationSaveError = ref<string | null>(null)
-const screenRefreshIntervalOptions = [0, 5, 10, 20, 30] as const
 const templateVariables = ['{{issue_number}}', '{{issue_title}}', '{{repository}}'] as const
 
 const notificationEventOptions = [
@@ -42,7 +43,9 @@ watch(
     provider.value = config?.provider ?? 'mock'
     model.value = config?.model ?? ''
     copilotAllowToolsText.value = (config?.copilotAllowTools ?? []).join('\n')
-    screenRefreshInterval.value = config?.screenRefreshInterval ?? 5
+    pollInterval.value = String(config?.pollInterval ?? 120)
+    screenRefreshInterval.value = String(config?.screenRefreshInterval ?? 5)
+    shutdownTimeout.value = String(config?.shutdownTimeout ?? 10)
     prTitleTemplate.value = config?.prTitleTemplate ?? ''
     branchTemplate.value = config?.branchTemplate ?? ''
     providerCatalog.value = config?.providers ?? []
@@ -62,10 +65,16 @@ watch(
 )
 
 async function persistConfig() {
-  const interval = Number(screenRefreshInterval.value)
-  if (!Number.isInteger(interval) || !screenRefreshIntervalOptions.includes(interval as (typeof screenRefreshIntervalOptions)[number])) {
-    saveState.value = 'error'
-    saveError.value = 'Screen refresh interval must be one of 0, 5, 10, 20, or 30 seconds.'
+  const parsedPollInterval = parseIntegerField(pollInterval.value, 'Git polling interval')
+  if (parsedPollInterval === null) {
+    return
+  }
+  const parsedScreenRefreshInterval = parseIntegerField(screenRefreshInterval.value, 'Screen refresh interval')
+  if (parsedScreenRefreshInterval === null) {
+    return
+  }
+  const parsedShutdownTimeout = parseIntegerField(shutdownTimeout.value, 'Shutdown timeout')
+  if (parsedShutdownTimeout === null) {
     return
   }
 
@@ -76,14 +85,18 @@ async function persistConfig() {
       provider: provider.value,
       model: model.value,
       copilotAllowTools: parseCopilotAllowTools(copilotAllowToolsText.value),
-      screenRefreshInterval: interval,
+      pollInterval: parsedPollInterval,
+      screenRefreshInterval: parsedScreenRefreshInterval,
+      shutdownTimeout: parsedShutdownTimeout,
       prTitleTemplate: prTitleTemplate.value,
       branchTemplate: branchTemplate.value,
     })
     provider.value = saved.provider
     model.value = saved.model
     copilotAllowToolsText.value = (saved.copilotAllowTools ?? []).join('\n')
-    screenRefreshInterval.value = saved.screenRefreshInterval
+    pollInterval.value = String(saved.pollInterval)
+    screenRefreshInterval.value = String(saved.screenRefreshInterval)
+    shutdownTimeout.value = String(saved.shutdownTimeout)
     prTitleTemplate.value = saved.prTitleTemplate
     branchTemplate.value = saved.branchTemplate
     saveState.value = 'saved'
@@ -134,6 +147,21 @@ function parseCopilotAllowTools(value: string) {
     .filter((item, index, items) => item.length > 0 && items.indexOf(item) === index)
 }
 
+function parseIntegerField(value: string, label: string) {
+  if (value.trim() === '') {
+    saveState.value = 'error'
+    saveError.value = `${label} is required.`
+    return null
+  }
+  const parsed = Number(value)
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    saveState.value = 'error'
+    saveError.value = `${label} must be a non-negative whole number.`
+    return null
+  }
+  return parsed
+}
+
 </script>
 
 <template>
@@ -146,7 +174,7 @@ function parseCopilotAllowTools(value: string) {
         <div class="rule-editor__header">
           <div>
             <h2>アプリケーション設定</h2>
-            <p class="text-muted">provider、model、画面の自動更新間隔をここから変更できます。</p>
+            <p class="text-muted">provider、model、Git ポーリング間隔、画面の自動更新間隔、shutdown timeout をここから変更できます。</p>
           </div>
           <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistConfig">
             {{ saveState === 'saving' ? '保存中...' : '設定を保存' }}
@@ -186,13 +214,42 @@ function parseCopilotAllowTools(value: string) {
           </label>
 
           <label class="settings-row">
+            <span class="settings-row__label">Git ポーリング間隔（秒）</span>
+            <input
+              v-model="pollInterval"
+              class="field__control settings-row__control"
+              inputmode="numeric"
+              min="0"
+              step="1"
+              type="number"
+            />
+            <p class="settings-row__description text-muted">0 にすると Git 監視のポーリングを無効にします。</p>
+          </label>
+
+          <label class="settings-row">
             <span class="settings-row__label">画面自動更新間隔（秒）</span>
-            <select v-model.number="screenRefreshInterval" class="field__control settings-row__control">
-              <option v-for="option in screenRefreshIntervalOptions" :key="option" :value="option">
-                {{ option }}
-              </option>
-            </select>
-            <p class="settings-row__description text-muted">0 にすると自動更新を止めます。Dashboard と Job Detail に反映されます。</p>
+            <input
+              v-model="screenRefreshInterval"
+              class="field__control settings-row__control"
+              inputmode="numeric"
+              min="0"
+              step="1"
+              type="number"
+            />
+            <p class="settings-row__description text-muted">0 にすると Dashboard と Job Detail の自動更新を止めます。</p>
+          </label>
+
+          <label class="settings-row">
+            <span class="settings-row__label">Shutdown Timeout（秒）</span>
+            <input
+              v-model="shutdownTimeout"
+              class="field__control settings-row__control"
+              inputmode="numeric"
+              min="0"
+              step="1"
+              type="number"
+            />
+            <p class="settings-row__description text-muted">終了処理を待つ最大秒数です。整数秒で保存されます。</p>
           </label>
 
           <label class="settings-row">
