@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -43,8 +44,10 @@ func RepositoryWorkerLogsDir(root string, artifactsDir string, repository string
 	return filepath.Join(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), "logs")
 }
 
-func RepositoryWorkerLogPath(root string, artifactsDir string, repository string, workerIndex int) string {
-	return filepath.Join(RepositoryWorkerLogsDir(root, artifactsDir, repository, workerIndex), "worker.log")
+func RepositoryWorkerLogPath(root string, artifactsDir string, repository string, workerIndex int, startedAt time.Time) string {
+	dateDir := startedAt.Format("2006-01-02")
+	fileName := startedAt.Format("2006-01-02_15-04-05") + ".log"
+	return filepath.Join(RepositoryWorkerLogsDir(root, artifactsDir, repository, workerIndex), dateDir, fileName)
 }
 
 func workerName(index int) string {

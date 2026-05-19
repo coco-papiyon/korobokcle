@@ -385,14 +385,15 @@ func TestRepositoryWorkerDirUsesOwnerRepoName(t *testing.T) {
 func TestRepositoryWorkerSourceAndLogPaths(t *testing.T) {
 	t.Parallel()
 
+	startedAt := time.Date(2026, 5, 19, 14, 52, 0, 0, time.Local)
 	sourceDir := artifacts.RepositoryWorkerSourceDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
 	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "source")
 	if sourceDir != wantSourceDir {
 		t.Fatalf("expected source dir %q, got %q", wantSourceDir, sourceDir)
 	}
 
-	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	wantLogPath := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "logs", "worker.log")
+	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
+	wantLogPath := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "logs", "2026-05-19", "2026-05-19_14-52-00.log")
 	if logPath != wantLogPath {
 		t.Fatalf("expected log path %q, got %q", wantLogPath, logPath)
 	}
@@ -405,8 +406,9 @@ func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
 	cfg := config.NewService(root, config.DefaultFiles())
 	var fallback bytes.Buffer
 	fallbackLogger := log.New(&fallback, "", 0)
+	startedAt := time.Date(2026, 5, 19, 14, 52, 0, 0, time.Local)
 
-	logger, cleanup, err := newRepositoryWorkerLogger(cfg, fallbackLogger, "https://github.com/coco-papiyon/korobokcle.git", 2)
+	logger, cleanup, err := newRepositoryWorkerLogger(cfg, fallbackLogger, "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
 	if err != nil {
 		t.Fatalf("newRepositoryWorkerLogger() error = %v", err)
 	}
@@ -418,7 +420,12 @@ func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
 		t.Fatalf("expected no fallback log output, got %q", fallback.String())
 	}
 
-	data, err := os.ReadFile(artifacts.RepositoryWorkerLogPath(root, cfg.App().ArtifactsDir, "https://github.com/coco-papiyon/korobokcle.git", 2))
+	logPath := artifacts.RepositoryWorkerLogPath(root, cfg.App().ArtifactsDir, "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
+	if _, err := os.Stat(filepath.Dir(logPath)); err != nil {
+		t.Fatalf("expected log directory to exist: %v", err)
+	}
+
+	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("ReadFile(worker log) error = %v", err)
 	}

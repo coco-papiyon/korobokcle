@@ -37,7 +37,7 @@ func startRepositoryWorkers(ctx context.Context, cfg *config.Service, orch *orch
 }
 
 func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger, repository config.MonitoredRepository, workerIndex int) {
-	workerLogger, cleanup, err := newRepositoryWorkerLogger(cfg, logger, repository.Repository, workerIndex)
+	workerLogger, cleanup, err := newRepositoryWorkerLogger(cfg, logger, repository.Repository, workerIndex, time.Now())
 	if err != nil {
 		if logger != nil {
 			logger.Printf("repository worker logger init failed repository=%s worker=%d error=%v", repository.Repository, workerIndex, err)
@@ -586,9 +586,9 @@ func runGitCommand(ctx context.Context, repoDir string, args ...string) (string,
 	return output, nil
 }
 
-func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, repository string, workerIndex int) (*log.Logger, func(), error) {
+func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, repository string, workerIndex int, startedAt time.Time) (*log.Logger, func(), error) {
 	_ = fallback
-	logPath := artifacts.RepositoryWorkerLogPath(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex)
+	logPath := artifacts.RepositoryWorkerLogPath(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex, startedAt)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return nil, func() {}, err
 	}
