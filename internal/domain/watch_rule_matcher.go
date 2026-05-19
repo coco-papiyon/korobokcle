@@ -43,6 +43,10 @@ func EvaluateWatchRule(rule config.WatchRule, item RepositoryItem) MatchResult {
 		return MatchResult{Status: MatchStatusIgnored, Reason: "assignee_mismatch"}
 	}
 
+	if len(rule.Reviewers) > 0 && !anyContainsFold(rule.Reviewers, item.Reviewers) {
+		return MatchResult{Status: MatchStatusIgnored, Reason: "reviewer_mismatch"}
+	}
+
 	if len(rule.Labels) > 0 && !allContainsFold(item.Labels, rule.Labels) {
 		return MatchResult{Status: MatchStatusIgnored, Reason: "label_mismatch"}
 	}
@@ -117,8 +121,9 @@ func projectFieldMatches(filter config.ProjectFieldFilter, fields []ProjectField
 }
 
 func containsFold(values []string, target string) bool {
+	target = strings.TrimSpace(target)
 	for _, value := range values {
-		if strings.EqualFold(value, target) {
+		if strings.EqualFold(strings.TrimSpace(value), target) {
 			return true
 		}
 	}

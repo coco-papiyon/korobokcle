@@ -97,6 +97,7 @@ type watchRuleResponse struct {
 	TitlePattern   string                      `json:"titlePattern"`
 	Authors        []string                    `json:"authors"`
 	Assignees      []string                    `json:"assignees"`
+	Reviewers      []string                    `json:"reviewers"`
 	ExcludeDraftPR bool                        `json:"excludeDraftPR"`
 	Provider       string                      `json:"provider"`
 	Model          string                      `json:"model"`
@@ -474,6 +475,7 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 			TitlePattern:   rule.TitlePattern,
 			Authors:        sliceOrEmpty(rule.Authors),
 			Assignees:      sliceOrEmpty(rule.Assignees),
+			Reviewers:      sliceOrEmpty(rule.Reviewers),
 			ExcludeDraftPR: rule.ExcludeDraftPR,
 			Provider:       rule.Provider,
 			Model:          rule.Model,
@@ -864,6 +866,7 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			TitlePattern:   strings.TrimSpace(rule.TitlePattern),
 			Authors:        compactStrings(rule.Authors),
 			Assignees:      compactStrings(rule.Assignees),
+			Reviewers:      compactStrings(rule.Reviewers),
 			ExcludeDraftPR: rule.ExcludeDraftPR,
 			Provider:       provider,
 			Model:          model,

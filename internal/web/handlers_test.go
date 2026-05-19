@@ -862,7 +862,7 @@ func TestHandleSaveWatchRulesUpdatesBranch(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"release/1.x","labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"release/1.x","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":["reviewer1"],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 
@@ -874,6 +874,18 @@ func TestHandleSaveWatchRulesUpdatesBranch(t *testing.T) {
 	if got := svc.WatchRules().Rules[0].Branch; got != "release/1.x" {
 		t.Fatalf("expected branch release/1.x, got %q", got)
 	}
+	if got := svc.WatchRules().Rules[0].Reviewers; len(got) != 1 || got[0] != "reviewer1" {
+		t.Fatalf("expected reviewers to be saved, got %+v", got)
+	}
+	var response []struct {
+		Reviewers []string `json:"reviewers"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode watch rules response: %v", err)
+	}
+	if len(response) != 1 || len(response[0].Reviewers) != 1 || response[0].Reviewers[0] != "reviewer1" {
+		t.Fatalf("expected reviewers in response, got %+v", response)
+	}
 }
 
 func TestHandleSaveWatchRulesUpdatesProjectFilters(t *testing.T) {
@@ -884,7 +896,7 @@ func TestHandleSaveWatchRulesUpdatesProjectFilters(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue_project","branch":"","projectName":"Roadmap","projectFilters":[{"field":"Status","values":["Ready","In Progress"]}],"labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue_project","branch":"","projectName":"Roadmap","projectFilters":[{"field":"Status","values":["Ready","In Progress"]}],"labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 
@@ -913,7 +925,7 @@ func TestHandleSaveWatchRulesRejectsInvalidModelForProvider(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"","labels":[],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"copilot","model":"gpt-5.4","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"copilot","model":"gpt-5.4","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 
@@ -932,7 +944,7 @@ func TestHandleSaveWatchRulesAcceptsPullRequestReviewCommentTarget(t *testing.T)
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"pull_request_review","branch":"","labels":["ai:fix"],"titlePattern":"","authors":[],"assignees":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"pull_request_review","branch":"","labels":["ai:fix"],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 

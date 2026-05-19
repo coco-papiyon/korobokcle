@@ -130,6 +130,7 @@ func TestPollerPollMatchedPullRequestReview(t *testing.T) {
 				Title:      "Fix bug",
 				Labels:     []string{"ai:fix"},
 				Target:     domain.TargetPullRequestReview,
+				Reviewers:  []string{"carol"},
 				UpdatedAt:  time.Now().UTC(),
 			},
 		},
@@ -141,6 +142,7 @@ func TestPollerPollMatchedPullRequestReview(t *testing.T) {
 				Enabled:      true,
 				Repositories: []string{"owner/repo"},
 				Target:       "pull_request_review",
+				Reviewers:    []string{"carol"},
 				Labels:       []string{"ai:fix"},
 			},
 		}
@@ -155,5 +157,46 @@ func TestPollerPollMatchedPullRequestReview(t *testing.T) {
 	}
 	if events[0].Type != domain.DomainEventPRReviewMatched {
 		t.Fatalf("expected pull_request_review_matched, got %s", events[0].Type)
+	}
+}
+
+func TestPollerPollMatchedPullRequestWithReviewers(t *testing.T) {
+	t.Parallel()
+
+	poller := NewPoller(stubRepositoryLister{
+		prs: []domain.RepositoryItem{
+			{
+				Repository: "owner/repo",
+				Number:     13,
+				Title:      "Add review filter",
+				Labels:     []string{"ai:review"},
+				Target:     domain.TargetPullRequest,
+				Reviewers:  []string{"carol"},
+				UpdatedAt:  time.Now().UTC(),
+			},
+		},
+	}, func() []config.WatchRule {
+		return []config.WatchRule{
+			{
+				ID:           "rule-1",
+				Name:         "PR Rule",
+				Enabled:      true,
+				Repositories: []string{"owner/repo"},
+				Target:       "pull_request",
+				Reviewers:    []string{"carol"},
+				Labels:       []string{"ai:review"},
+			},
+		}
+	}, nil)
+
+	events, err := poller.Poll(context.Background())
+	if err != nil {
+		t.Fatalf("Poll() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if events[0].Type != domain.DomainEventPRMatched {
+		t.Fatalf("expected pull_request_matched, got %s", events[0].Type)
 	}
 }

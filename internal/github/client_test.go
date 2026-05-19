@@ -137,3 +137,42 @@ func TestClientListProjectIssues(t *testing.T) {
 		t.Fatalf("unexpected project cards: %+v", items[0].ProjectCards)
 	}
 }
+
+func TestClientListPullRequestsIncludesReviewers(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/repos/owner/repo/pulls" {
+			t.Fatalf("unexpected path: %s", got)
+		}
+		_, _ = w.Write([]byte(`[
+			{
+				"number": 124,
+				"title": "Add review filter",
+				"body": "details",
+				"html_url": "https://github.com/owner/repo/pull/124",
+				"updated_at": "2026-05-15T09:00:00Z",
+				"user": {"login": "alice"},
+				"assignees": [{"login": "bob"}],
+				"requested_reviewers": [{"login": "carol"}],
+				"labels": [{"name": "ai:review"}],
+				"pull_request": {}
+			}
+		]`))
+	}))
+	defer server.Close()
+
+	client := NewClient(stubTokenProvider{}, nil)
+	client.baseURL = server.URL
+
+	items, err := client.ListPullRequests(context.Background(), "owner/repo", time.Time{})
+	if err != nil {
+		t.Fatalf("ListPullRequests() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if len(items[0].Reviewers) != 1 || items[0].Reviewers[0] != "carol" {
+		t.Fatalf("expected reviewers to include carol, got %+v", items[0].Reviewers)
+	}
+}

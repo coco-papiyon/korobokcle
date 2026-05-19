@@ -58,11 +58,13 @@ function toForm(rule: WatchRule): WatchRuleForm {
     labels: rule.labels ?? [],
     authors: rule.authors ?? [],
     assignees: rule.assignees ?? [],
+    reviewers: rule.reviewers ?? [],
     repositoriesText: (rule.repositories ?? []).join(', '),
     projectFiltersText: formatProjectFilters(normalizedProjectFilters),
     labelsText: (rule.labels ?? []).join(', '),
     authorsText: (rule.authors ?? []).join(', '),
     assigneesText: (rule.assignees ?? []).join(', '),
+    reviewersText: (rule.reviewers ?? []).join(', '),
   }
 }
 
@@ -79,6 +81,7 @@ function fromForm(rule: WatchRuleForm): WatchRule {
     titlePattern: rule.titlePattern.trim(),
     authors: splitCSV(rule.authorsText),
     assignees: splitCSV(rule.assigneesText),
+    reviewers: splitCSV(rule.reviewersText),
     excludeDraftPR: rule.excludeDraftPR,
     provider: rule.provider.trim(),
     model: rule.model.trim(),
@@ -189,6 +192,8 @@ function addRule() {
     authorsText: '',
     assignees: [],
     assigneesText: '',
+    reviewers: [],
+    reviewersText: '',
     excludeDraftPR: true,
     provider: '',
     model: '',
@@ -389,6 +394,11 @@ async function persistRules() {
               <label class="field">
                 <span class="field__label">Assignees</span>
                 <input v-model="selectedRule.assigneesText" class="field__control" type="text" placeholder="carol, dave" />
+              </label>
+
+              <label class="field">
+                <span class="field__label">Reviewers</span>
+                <input v-model="selectedRule.reviewersText" class="field__control" type="text" placeholder="erin, frank" />
               </label>
 
               <label class="field">
