@@ -260,6 +260,35 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 }
 
+func TestDisplayPathUnderToolRoot(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "tool-root")
+	svc := config.NewService(root, config.DefaultFiles())
+	server := &Server{config: svc}
+
+	got := server.displayPath(filepath.Join(root, "artifacts", "job-1", "design", "result.md"))
+	want := "artifacts/job-1/design/result.md"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestDisplayPathOutsideToolRootFallsBackToCleanPath(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "tool-root")
+	outside := filepath.Join(t.TempDir(), "other", "result.md")
+	svc := config.NewService(root, config.DefaultFiles())
+	server := &Server{config: svc}
+
+	got := server.displayPath(outside)
+	want := filepath.ToSlash(filepath.Clean(outside))
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
 func TestHandleSPAReturnsHelpfulErrorWhenStaticDistIsMissing(t *testing.T) {
 	t.Parallel()
 

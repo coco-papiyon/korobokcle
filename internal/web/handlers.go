@@ -322,7 +322,7 @@ func (s *Server) handleDesignApproval(w http.ResponseWriter, r *http.Request) {
 					Repository:  job.Repository,
 					IssueNumber: job.GitHubNumber,
 					Body:        artifact.Content,
-					ArtifactDir: filepath.Dir(artifact.Path),
+					ArtifactDir: artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerDesign),
 				}); err != nil {
 					log.Printf("design approval issue comment failed job=%s error=%v", jobID, err)
 				}
@@ -499,7 +499,7 @@ func (s *Server) handleSubmitReviewComment(w http.ResponseWriter, r *http.Reques
 		Repository:  job.Repository,
 		PullNumber:  job.GitHubNumber,
 		Body:        comment,
-		ArtifactDir: filepath.Dir(artifact.Path),
+		ArtifactDir: artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerReview),
 	}); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
@@ -1348,7 +1348,7 @@ func (s *Server) loadArtifact(path string) (*artifactResponse, error) {
 		return nil, err
 	}
 	return &artifactResponse{
-		Path:    path,
+		Path:    s.displayPath(path),
 		Content: string(raw),
 	}, nil
 }
@@ -1370,7 +1370,7 @@ func (s *Server) loadTestReport(jobID string, events []domain.Event) (*artifactR
 		raw, err := os.ReadFile(path)
 		if err == nil {
 			return &artifactResponse{
-				Path:    path,
+				Path:    s.displayPath(path),
 				Content: string(raw),
 			}, nil
 		}
@@ -1500,11 +1500,25 @@ func (s *Server) loadLogResponses(phase string, dir string, names []string) []lo
 		logs = append(logs, logResponse{
 			Name:    name,
 			Phase:   phase,
-			Path:    path,
+			Path:    s.displayPath(path),
 			Content: string(raw),
 		})
 	}
 	return logs
+}
+
+func (s *Server) displayPath(path string) string {
+	root := filepath.Clean(s.config.Root())
+	cleanPath := filepath.Clean(path)
+
+	rel, err := filepath.Rel(root, cleanPath)
+	if err == nil && rel != "." && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+		return filepath.ToSlash(rel)
+	}
+	if err == nil && rel == "." {
+		return "."
+	}
+	return filepath.ToSlash(cleanPath)
 }
 
 func (s *Server) loadFirstArtifact(dir string, names ...string) (*artifactResponse, error) {

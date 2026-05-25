@@ -8,9 +8,6 @@ defineProps<{
 <template>
   <div class="app-shell">
     <header class="hero panel panel-hero">
-      <div class="hero__content">
-        <h1 class="hero__title">{{ title }}</h1>
-      </div>
       <nav class="nav-tabs" aria-label="Main">
         <RouterLink class="nav-tabs__link" to="/">Dashboard</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings">Settings</RouterLink>
