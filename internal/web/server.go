@@ -51,13 +51,17 @@ type GHReviewSubmitter struct{}
 type GHIssueCommentSubmitter struct{}
 
 func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) {
+	staticDir, err := resolveStaticDir()
+	if err != nil {
+		return nil, err
+	}
 	s := &Server{
 		orchestrator: orch,
 		config:       cfg,
+		staticDir:    staticDir,
 		reviewer:     GHReviewSubmitter{},
 		commenter:    GHIssueCommentSubmitter{},
 	}
-	s.staticDir = filepath.Join(cfg.Root(), "frontend", "dist")
 
 	router := mux.NewRouter()
 	api := router.PathPrefix("/api").Subrouter()
@@ -96,6 +100,14 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) 
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s, nil
+}
+
+func resolveStaticDir() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolve executable path: %w", err)
+	}
+	return filepath.Join(filepath.Dir(exe), "frontend", "dist"), nil
 }
 
 func (GHReviewSubmitter) Submit(ctx context.Context, req ReviewSubmitRequest) error {

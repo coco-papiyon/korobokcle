@@ -20,7 +20,7 @@ const (
 )
 
 func JobDir(root string, artifactsDir string, jobID string) string {
-	return filepath.Join(root, artifactsDir, "jobs", jobID)
+	return filepath.Join(resolveAgainstRoot(root, artifactsDir), "jobs", jobID)
 }
 
 func WorkerDir(root string, artifactsDir string, jobID string, worker string) string {
@@ -28,7 +28,7 @@ func WorkerDir(root string, artifactsDir string, jobID string, worker string) st
 }
 
 func WorkersDir(root string, artifactsDir string) string {
-	return filepath.Join(root, artifactsDir, "workers")
+	return filepath.Join(resolveAgainstRoot(root, artifactsDir), "workers")
 }
 
 func RepositoryWorkerDir(root string, artifactsDir string, repository string, workerIndex int) string {
@@ -48,6 +48,13 @@ func RepositoryWorkerLogPath(root string, artifactsDir string, repository string
 	dateDir := startedAt.Format("2006-01-02")
 	fileName := startedAt.Format("2006-01-02_15-04-05") + ".log"
 	return filepath.Join(RepositoryWorkerLogsDir(root, artifactsDir, repository, workerIndex), dateDir, fileName)
+}
+
+func resolveAgainstRoot(root string, target string) string {
+	if filepath.IsAbs(target) {
+		return filepath.Clean(target)
+	}
+	return filepath.Join(root, target)
 }
 
 func workerName(index int) string {

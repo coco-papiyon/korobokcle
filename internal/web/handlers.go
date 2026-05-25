@@ -976,7 +976,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 	if !s.hasStaticDist() {
-		http.Error(w, "frontend dist is missing; run npm install && npm run build in frontend", http.StatusServiceUnavailable)
+		s.writeStaticDistMissing(w)
 		return
 	}
 
@@ -998,6 +998,11 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.ServeFile(w, r, filepath.Join(s.staticDir, "index.html"))
+}
+
+func (s *Server) writeStaticDistMissing(w http.ResponseWriter) {
+	log.Printf("frontend dist is missing: expected %s; run npm install && npm run build in frontend", s.staticDir)
+	http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 }
 
 const timeFormat = "2006-01-02T15:04:05Z07:00"

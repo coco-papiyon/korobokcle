@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -256,6 +257,34 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].Workers != 1 {
 		t.Fatalf("unexpected monitored repositories: %#v", got.MonitoredRepositories)
+	}
+}
+
+func TestHandleSPAReturnsHelpfulErrorWhenStaticDistIsMissing(t *testing.T) {
+	t.Parallel()
+
+	server := &Server{staticDir: filepath.Join(t.TempDir(), "frontend", "dist")}
+	var logBuf bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(previousWriter)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	server.handleSPA(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, recorder.Code)
+	}
+	if contentType := recorder.Header().Get("Content-Type"); contentType != "text/plain; charset=utf-8" {
+		t.Fatalf("expected text content type, got %q", contentType)
+	}
+	body := recorder.Body.String()
+	if body != "Service Unavailable\n" {
+		t.Fatalf("expected generic service unavailable body, got %q", body)
+	}
+	if !bytes.Contains(logBuf.Bytes(), []byte("frontend dist is missing: expected "+server.staticDir)) {
+		t.Fatalf("expected missing dist log, got %q", logBuf.String())
 	}
 }
 
