@@ -37,7 +37,7 @@ func startRepositoryWorkers(ctx context.Context, cfg *config.Service, orch *orch
 }
 
 func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger, repository config.MonitoredRepository, workerIndex int) {
-	workerLogger, cleanup, err := newRepositoryWorkerLogger(cfg, logger, repository.Repository, workerIndex)
+	workerLogger, cleanup, err := newRepositoryWorkerLogger(cfg, logger, repository.Repository, workerIndex, time.Now())
 	if err != nil {
 		if logger != nil {
 			logger.Printf("repository worker logger init failed repository=%s worker=%d error=%v", repository.Repository, workerIndex, err)
@@ -392,7 +392,7 @@ func processReviewJob(ctx context.Context, cfg *config.Service, orch *orchestrat
 	}); err != nil {
 		return err
 	}
-	return orch.UpdateJobState(ctx, job.ID, domain.StateCompleted, "review_completed", map[string]any{
+	return orch.UpdateJobState(ctx, job.ID, domain.StateReviewReady, "review_completed", map[string]any{
 		"artifactDir": contextData.ArtifactDir,
 		"skill":       skillName,
 	})
@@ -406,7 +406,7 @@ func processPRJob(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 	if job.Type == domain.JobTypePRFeedback {
 		buildReq = buildPRFeedbackPushRequest
 	}
-	req, err := buildReq(cfg, job, repoDir)
+	req, err := buildReq(ctx, cfg, job, repoDir)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 	}
@@ -515,7 +515,8 @@ func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domai
 		return nil
 	}
 
-	baseBranch, err := resolveRepositoryBaseBranch(ctx, cfg, job, repoDir)
+	configuredBranch := resolveMonitoredRepositoryBranch(cfg, job.Repository)
+	baseBranch, err := resolveRepositoryBaseBranch(ctx, repoDir, configuredBranch)
 	if err != nil {
 		return err
 	}
@@ -539,8 +540,8 @@ func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domai
 	return nil
 }
 
-func resolveRepositoryBaseBranch(ctx context.Context, cfg *config.Service, job domain.Job, repoDir string) (string, error) {
-	if branch := strings.TrimSpace(resolveWatchRuleBranch(cfg, job.WatchRuleID)); branch != "" {
+func resolveRepositoryBaseBranch(ctx context.Context, repoDir string, configuredBranch string) (string, error) {
+	if branch := strings.TrimSpace(configuredBranch); branch != "" {
 		return branch, nil
 	}
 
@@ -564,6 +565,16 @@ func resolveRepositoryBaseBranch(ctx context.Context, cfg *config.Service, job d
 	return branch, nil
 }
 
+func resolveMonitoredRepositoryBranch(cfg *config.Service, repository string) string {
+	for _, monitored := range cfg.App().MonitoredRepositories {
+		if !repositoryMatches(repository, monitored.Repository) {
+			continue
+		}
+		return strings.TrimSpace(monitored.Branch)
+	}
+	return ""
+}
+
 func runGitCommand(ctx context.Context, repoDir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir = repoDir
@@ -575,9 +586,9 @@ func runGitCommand(ctx context.Context, repoDir string, args ...string) (string,
 	return output, nil
 }
 
-func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, repository string, workerIndex int) (*log.Logger, func(), error) {
+func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, repository string, workerIndex int, startedAt time.Time) (*log.Logger, func(), error) {
 	_ = fallback
-	logPath := artifacts.RepositoryWorkerLogPath(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex)
+	logPath := artifacts.RepositoryWorkerLogPath(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex, startedAt)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return nil, func() {}, err
 	}

@@ -661,6 +661,37 @@ func TestApproveFinalAllowedFromWaitingFinalApproval(t *testing.T) {
 	}
 }
 
+func TestApproveReviewAllowedFromReviewReady(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-review-1",
+		Type:         domain.JobTypePRReview,
+		Repository:   "owner/repo",
+		GitHubNumber: 21,
+		State:        domain.StateReviewReady,
+		Title:        "test review",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	if err := orch.ApproveReview(context.Background(), job.ID); err != nil {
+		t.Fatalf("ApproveReview() error = %v", err)
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StateCompleted {
+		t.Fatalf("expected completed, got %s", saved.State)
+	}
+}
+
 func TestApproveFinalAllowedAfterTestFailed(t *testing.T) {
 	t.Parallel()
 

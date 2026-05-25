@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -256,6 +257,63 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].Workers != 1 {
 		t.Fatalf("unexpected monitored repositories: %#v", got.MonitoredRepositories)
+	}
+}
+
+func TestDisplayPathUnderToolRoot(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "tool-root")
+	svc := config.NewService(root, config.DefaultFiles())
+	server := &Server{config: svc}
+
+	got := server.displayPath(filepath.Join(root, "artifacts", "job-1", "design", "result.md"))
+	want := "artifacts/job-1/design/result.md"
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestDisplayPathOutsideToolRootFallsBackToCleanPath(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join(t.TempDir(), "tool-root")
+	outside := filepath.Join(t.TempDir(), "other", "result.md")
+	svc := config.NewService(root, config.DefaultFiles())
+	server := &Server{config: svc}
+
+	got := server.displayPath(outside)
+	want := filepath.ToSlash(filepath.Clean(outside))
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
+func TestHandleSPAReturnsHelpfulErrorWhenStaticDistIsMissing(t *testing.T) {
+	t.Parallel()
+
+	server := &Server{staticDir: filepath.Join(t.TempDir(), "frontend", "dist")}
+	var logBuf bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&logBuf)
+	defer log.SetOutput(previousWriter)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	server.handleSPA(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status %d, got %d", http.StatusServiceUnavailable, recorder.Code)
+	}
+	if contentType := recorder.Header().Get("Content-Type"); contentType != "text/plain; charset=utf-8" {
+		t.Fatalf("expected text content type, got %q", contentType)
+	}
+	body := recorder.Body.String()
+	if body != "Service Unavailable\n" {
+		t.Fatalf("expected generic service unavailable body, got %q", body)
+	}
+	if !bytes.Contains(logBuf.Bytes(), []byte("frontend dist is missing: expected "+server.staticDir)) {
+		t.Fatalf("expected missing dist log, got %q", logBuf.String())
 	}
 }
 
@@ -524,7 +582,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","workers":1},{"repository":"owner/other","workers":3}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","branch":"main","workers":1},{"repository":"owner/other","branch":"release/1.x","workers":3}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -533,7 +591,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
-	if got := svc.App().MonitoredRepositories; len(got) != 2 || got[0].Repository != "owner/repository" || got[0].Workers != 1 || got[1].Repository != "owner/other" || got[1].Workers != 3 {
+	if got := svc.App().MonitoredRepositories; len(got) != 2 || got[0].Repository != "owner/repository" || got[0].Branch != "main" || got[0].Workers != 1 || got[1].Repository != "owner/other" || got[1].Branch != "release/1.x" || got[1].Workers != 3 {
 		t.Fatalf("unexpected monitored repositories: %#v", got)
 	}
 
@@ -542,7 +600,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read saved config: %v", err)
 	}
-	if !bytes.Contains(raw, []byte("monitoredRepositories:")) || !bytes.Contains(raw, []byte("repository: owner/other")) || !bytes.Contains(raw, []byte("workers: 3")) {
+	if !bytes.Contains(raw, []byte("monitoredRepositories:")) || !bytes.Contains(raw, []byte("repository: owner/other")) || !bytes.Contains(raw, []byte("branch: release/1.x")) || !bytes.Contains(raw, []byte("workers: 3")) {
 		t.Fatalf("expected saved config to contain monitoredRepositories, got %s", string(raw))
 	}
 }
@@ -982,7 +1040,7 @@ func TestLoadTestReportPrefersFixReportForTestFailureRerun(t *testing.T) {
 	}
 }
 
-func TestHandleSaveWatchRulesUpdatesBranch(t *testing.T) {
+func TestHandleSaveWatchRulesSavesReviewers(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -990,7 +1048,7 @@ func TestHandleSaveWatchRulesUpdatesBranch(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"release/1.x","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":["reviewer1"],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":["reviewer1"],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 
@@ -998,9 +1056,6 @@ func TestHandleSaveWatchRulesUpdatesBranch(t *testing.T) {
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
-	}
-	if got := svc.WatchRules().Rules[0].Branch; got != "release/1.x" {
-		t.Fatalf("expected branch release/1.x, got %q", got)
 	}
 	if got := svc.WatchRules().Rules[0].Reviewers; len(got) != 1 || got[0] != "reviewer1" {
 		t.Fatalf("expected reviewers to be saved, got %+v", got)
@@ -1024,7 +1079,7 @@ func TestHandleSaveWatchRulesUpdatesProjectFilters(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue_project","branch":"","projectName":"Roadmap","projectFilters":[{"field":"Status","values":["Ready","In Progress"]}],"labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue_project","projectName":"Roadmap","projectFilters":[{"field":"Status","values":["Ready","In Progress"]}],"labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 
@@ -1053,7 +1108,7 @@ func TestHandleSaveWatchRulesAcceptsNewCopilotModels(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"copilot","model":"claude-opus-4.6","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"copilot","model":"claude-opus-4.6","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 
@@ -1075,7 +1130,7 @@ func TestHandleSaveWatchRulesRejectsInvalidModelForProvider(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","branch":"","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"copilot","model":"gpt-4.5","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"copilot","model":"gpt-4.5","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 
@@ -1094,7 +1149,7 @@ func TestHandleSaveWatchRulesAcceptsPullRequestReviewCommentTarget(t *testing.T)
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"pull_request_review","branch":"","labels":["ai:fix"],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"pull_request_review","labels":["ai:fix"],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"","model":"","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 
@@ -1105,6 +1160,100 @@ func TestHandleSaveWatchRulesAcceptsPullRequestReviewCommentTarget(t *testing.T)
 	}
 	if got := svc.WatchRules().Rules[0].Target; got != "pull_request_review" {
 		t.Fatalf("expected target pull_request_review, got %q", got)
+	}
+}
+
+func TestHandleTestProfilesReturnsProfiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.TestProfiles = config.TestProfiles{
+		Profiles: []config.TestProfile{
+			{Name: "go-default", Commands: []string{"go test ./...", "go test ./internal/..."}},
+		},
+	}
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/test-profiles", nil)
+
+	server.handleTestProfiles(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	var got []struct {
+		Name     string   `json:"name"`
+		Commands []string `json:"commands"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "go-default" || len(got[0].Commands) != 2 {
+		t.Fatalf("unexpected test profiles response: %+v", got)
+	}
+}
+
+func TestHandleSaveTestProfilesNormalizesCommands(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"name":"go-default","commands":["  go test ./...  ","","go test ./internal/..."]}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/test-profiles", bytes.NewReader(body))
+
+	server.handleSaveTestProfiles(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+	if got := svc.TestProfiles().Profiles; len(got) != 1 || len(got[0].Commands) != 2 || got[0].Commands[0] != "go test ./..." || got[0].Commands[1] != "go test ./internal/..." {
+		t.Fatalf("unexpected saved test profiles: %#v", got)
+	}
+}
+
+func TestHandleSaveTestProfilesRejectsDuplicateNames(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"name":"go-default","commands":["go test ./..."]},{"name":"go-default","commands":["go test ./internal/..."]}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/test-profiles", bytes.NewReader(body))
+
+	server.handleSaveTestProfiles(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusBadRequest, recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandleSaveTestProfilesRejectsEmptyCommands(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"name":"go-default","commands":["   ",""]}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/test-profiles", bytes.NewReader(body))
+
+	server.handleSaveTestProfiles(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusBadRequest, recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -1167,6 +1316,54 @@ func TestHandleSubmitReviewCommentUsesReviewArtifact(t *testing.T) {
 	}
 	if submitter.req.ArtifactDir != reviewDir {
 		t.Fatalf("expected artifact dir %q, got %q", reviewDir, submitter.req.ArtifactDir)
+	}
+}
+
+func TestHandleReviewApprovalCompletesReviewJob(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	orch := orchestrator.New(store, nil)
+	server := &Server{config: svc, orchestrator: orch}
+
+	job := domain.Job{
+		ID:           "job-review-approval-1",
+		Type:         domain.JobTypePRReview,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		State:        domain.StateReviewReady,
+		Title:        "review job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/approvals/review", nil)
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	recorder := httptest.NewRecorder()
+
+	server.handleReviewApproval(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StateCompleted {
+		t.Fatalf("expected completed, got %s", saved.State)
 	}
 }
 

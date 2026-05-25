@@ -31,7 +31,7 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 	}
 	debugLogger := log.New(debugWriter, "DEBUG ", log.LstdFlags)
 
-	store, err := sqlite.Open(filepath.Join(toolRoot, configService.App().SQLitePath))
+	store, err := sqlite.Open(resolvePath(toolRoot, configService.App().SQLitePath))
 	if err != nil {
 		return fmt.Errorf("open sqlite store: %w", err)
 	}
@@ -81,4 +81,11 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 	case serveErr := <-errCh:
 		return serveErr
 	}
+}
+
+func resolvePath(root string, target string) string {
+	if filepath.IsAbs(target) {
+		return filepath.Clean(target)
+	}
+	return filepath.Join(root, target)
 }

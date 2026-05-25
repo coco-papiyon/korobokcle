@@ -80,7 +80,6 @@ function fromForm(rule: WatchRuleForm): WatchRule {
     name: rule.name.trim(),
     repositories: repository ? [repository] : [],
     target: normalizeTarget(rule.target),
-    branch: rule.branch.trim(),
     projectName: rule.projectName.trim(),
     labels: splitCSV(rule.labelsText),
     projectFilters: parseProjectFilters(rule.projectFiltersText),
@@ -188,7 +187,6 @@ function addRule() {
     selectedRepository: defaultRepositories[0] ?? '',
     repositoriesText: defaultRepositories[0] ?? '',
     target: 'issue',
-    branch: '',
     projectName: '',
     projectFilters: [],
     projectFiltersText: '',
@@ -347,11 +345,6 @@ async function persistRules() {
                 </p>
               </label>
 
-              <label class="field field-full">
-                <span class="field__label">Branch</span>
-                <input v-model="selectedRule.branch" class="field__control" type="text" placeholder="Default branch" />
-              </label>
-
               <label v-if="selectedRule.target === 'issue_project'" class="field field-full">
                 <span class="field__label">Project Name</span>
                 <input
@@ -398,19 +391,21 @@ async function persistRules() {
                 <input v-model="selectedRule.reviewersText" class="field__control" type="text" placeholder="erin, frank" />
               </label>
 
-              <label class="field">
-                <span class="field__label">Skill Set</span>
-                <select v-model="selectedRule.skillSet" class="field__control">
-                  <option v-for="skillSet in skillSets ?? []" :key="skillSet.name" :value="skillSet.name">
-                    {{ skillSet.name }}
-                  </option>
-                </select>
-              </label>
+              <div class="field field-full" style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4);">
+                <label class="field">
+                  <span class="field__label">Skill Set</span>
+                  <select v-model="selectedRule.skillSet" class="field__control">
+                    <option v-for="skillSet in skillSets ?? []" :key="skillSet.name" :value="skillSet.name">
+                      {{ skillSet.name }}
+                    </option>
+                  </select>
+                </label>
 
-              <label class="field">
-                <span class="field__label">Test Profile</span>
-                <input v-model="selectedRule.testProfile" class="field__control" type="text" />
-              </label>
+                <label class="field">
+                  <span class="field__label">Test Profile</span>
+                  <input v-model="selectedRule.testProfile" class="field__control" type="text" />
+                </label>
+              </div>
 
               <label class="field">
                 <span class="field__label">Provider</span>

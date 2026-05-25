@@ -194,6 +194,8 @@ model を指定した場合は `--model` を付けて実行します。
 環境に応じて `KOROBOKCLE_COPILOT_BIN` / `KOROBOKCLE_COPILOT_ARGS_JSON`、
 `KOROBOKCLE_CODEX_BIN` / `KOROBOKCLE_CODEX_ARGS_JSON` で上書きできます。
 `KOROBOKCLE_TOOL_ROOT` を指定すると、ツール配置ディレクトリを明示できます。
+`dataDir`、`artifactsDir`、`sqlitePath` の相対パスは `KOROBOKCLE_TOOL_ROOT` で指定した
+ツール配置ディレクトリ基準で解決されます。
 `*_ARGS_JSON` は JSON 配列で、`{{prompt}}`, `{{model_flag}}`, `{{model}}`, `{{work_dir}}`, `{{artifact_dir}}`, `{{output_path}}`, `{{skill_name}}` を使えます。
 
 `config/watch-rules.yaml` の `repositories` は `owner/repo` 形式を推奨します。

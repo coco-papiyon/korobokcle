@@ -94,7 +94,7 @@ func runPendingReviews(ctx context.Context, repoRoot string, cfg *config.Service
 			return err
 		}
 
-		if err := orch.UpdateJobState(ctx, job.ID, domain.StateCompleted, "review_completed", map[string]any{
+		if err := orch.UpdateJobState(ctx, job.ID, domain.StateReviewReady, "review_completed", map[string]any{
 			"artifactDir": contextData.ArtifactDir,
 			"skill":       skillName,
 		}); err != nil {

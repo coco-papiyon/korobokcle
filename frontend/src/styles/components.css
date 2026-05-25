@@ -7,6 +7,25 @@
   padding: var(--space-6);
 }
 
+.job-summary {
+  min-width: 0;
+}
+
+.job-summary__title {
+  margin: 0;
+  font-size: clamp(1.4rem, 2.4vw, 2.1rem);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  word-break: break-word;
+}
+
+.job-summary__id {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 .panel-hero {
   position: relative;
   overflow: hidden;
@@ -47,7 +66,7 @@
 
 .nav-tabs__link {
   padding: 0.7rem 1rem;
-  border: 1px solid transparent;
+  border: 1px solid rgba(188, 90, 34, 0.14);
   border-radius: 999px;
   text-decoration: none;
   color: var(--accent-deep);
@@ -56,8 +75,10 @@
 }
 
 .nav-tabs__link.router-link-active {
-  border-color: rgba(188, 90, 34, 0.25);
-  background: #fff7ef;
+  border-color: rgba(188, 90, 34, 0.45);
+  background: var(--accent);
+  color: var(--ink-inverse);
+  box-shadow: 0 0 0 1px rgba(188, 90, 34, 0.15);
 }
 
 .nav-tabs__link:hover {
@@ -144,6 +165,19 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
+}
+
+.review-button-row {
+  align-items: center;
+}
+
+.review-button-row__submit {
+  margin-left: auto;
+}
+
+.flow-delete-row {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .status-inline {
@@ -309,6 +343,97 @@
   white-space: pre-wrap;
   word-break: break-word;
   overflow-x: auto;
+}
+
+.artifact-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-deep);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.log-entry-button {
+  display: block;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(188, 90, 34, 0.18);
+  border-radius: var(--radius-sm);
+  background: #fff6ee;
+  color: var(--accent-deep);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.log-entry-button:hover {
+  background: #ffe9d8;
+}
+
+.artifact-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.artifact-headline > .log-entry-button {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.artifact-headline > .text-muted {
+  margin: 0;
+  flex: 1 1 18rem;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: rgba(31, 24, 20, 0.42);
+}
+
+.modal-panel {
+  width: min(56rem, 100%);
+  max-height: calc(100vh - 3rem);
+  overflow: auto;
+  padding: var(--space-5);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--bg-panel-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-panel__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.modal-panel__title {
+  margin: 0 0 var(--space-2);
+}
+
+.modal-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.modal-actions__right {
+  margin-left: auto;
 }
 
 .payload-cell {

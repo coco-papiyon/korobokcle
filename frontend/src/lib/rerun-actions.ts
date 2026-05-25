@@ -20,16 +20,16 @@ export function rerunActionFromEvent(event?: Pick<JobEvent, 'availableActions'> 
 
 export function rerunButtonLabel(action: RerunAction, eventType?: string, sourceEventType?: string) {
   if (action === 'retry_implementation' && (eventType === 'test_failed' || sourceEventType === 'test_failed')) {
-    return 'Fix Implementation'
+    return '実装を修正'
   }
   if (action === 'retry_design') {
-    return 'Rerun Design'
+    return '設計を再実行'
   }
   if (action === 'retry_implementation') {
-    return 'Rerun Implementation'
+    return '実装を再実行'
   }
   if (action === 'retry_review') {
-    return 'Rerun Review'
+    return 'レビューを再実行'
   }
-  return 'Retry PR'
+  return 'PR作成を再実行'
 }

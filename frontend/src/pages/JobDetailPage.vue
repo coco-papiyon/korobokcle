@@ -16,12 +16,13 @@ import {
   submitFinalApproval,
   submitImplementationRerun,
   submitPRRerun,
+  submitReviewApproval,
   submitReviewComment,
   submitReviewRerun,
 } from '@/lib/api'
 import { formatDateTime, formatPayloadDisplay } from '@/lib/format'
 import { rerunActionFromEvent, rerunButtonLabel, type RerunAction } from '@/lib/rerun-actions'
-import type { JobEvent } from '@/types'
+import type { JobEvent, JobLog } from '@/types'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -82,19 +83,28 @@ const approvalError = ref<string | null>(null)
 const finalApprovalError = ref<string | null>(null)
 const jobArchiveError = ref<string | null>(null)
 const jobPurgeError = ref<string | null>(null)
-const flowRerunComment = ref('')
+const designArtifactModalOpen = ref(false)
+const implementationArtifactModalOpen = ref(false)
+const testReportModalOpen = ref(false)
+const reviewArtifactModalOpen = ref(false)
+const issueBodyModalOpen = ref(false)
+const selectedLog = ref<{ groupTitle: string; log: JobLog } | null>(null)
+const designArtifactComment = ref('')
+const implementationArtifactComment = ref('')
+const testReportComment = ref('')
+const reviewArtifactComment = ref('')
 const designRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const prRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const reviewRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const reviewSubmitState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const reviewApproveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const designRerunError = ref<string | null>(null)
 const implementationRerunError = ref<string | null>(null)
 const prRerunError = ref<string | null>(null)
 const reviewRerunError = ref<string | null>(null)
 const reviewSubmitError = ref<string | null>(null)
-const reviewSubmitComment = ref('')
-
+const reviewApproveError = ref<string | null>(null)
 const prCreateInfo = computed(() => {
   const raw = data.value?.prCreateArtifact?.content
   if (!raw) {
@@ -143,6 +153,9 @@ const canReviewImplementation = computed(() => {
   return state === 'failed' && latestEvent.value?.eventType === 'test_failed'
 })
 const flowRerunAction = computed<RerunAction | null>(() => rerunActionFromEvent(flowRerunEvent.value))
+const flowRerunActionInFlow = computed<RerunAction | null>(() => {
+  return flowRerunAction.value === 'retry_pr' ? flowRerunAction.value : null
+})
 const finalApprovalWarning = computed(() => {
   if (data.value?.job.state === 'failed' && latestEvent.value?.eventType === 'test_failed') {
     return 'Tests failed, but you can still approve and continue to PR creation.'
@@ -180,15 +193,17 @@ const groupedLogs = computed(() => {
     },
   ].filter((group) => group.items.length > 0)
 })
-const canSubmitReviewComment = computed(() => data.value?.job.type === 'pr_review' && !!data.value?.reviewArtifact)
+const canSubmitReviewComment = computed(() => data.value?.job.type === 'pr_review' && data.value?.job.state === 'review_ready' && !!data.value?.reviewArtifact)
+const canApproveReview = computed(() => data.value?.job.type === 'pr_review' && data.value?.job.state === 'review_ready' && !!data.value?.reviewArtifact)
 const isPRFeedbackJob = computed(() => data.value?.job.type === 'pr_feedback')
 const hasReviewComments = computed(() => (data.value?.reviewComments?.length ?? 0) > 0)
+const hasIssueBody = computed(() => (data.value?.issueBody?.trim().length ?? 0) > 0)
 
 watch(
   () => data.value?.reviewArtifact?.content,
   (content) => {
-    if (typeof content === 'string' && reviewSubmitComment.value.trim() === '') {
-      reviewSubmitComment.value = content
+    if (typeof content === 'string' && reviewArtifactComment.value.trim() === '') {
+      reviewArtifactComment.value = content
     }
   },
   { immediate: true },
@@ -222,15 +237,15 @@ function rerunError(action: RerunAction) {
 
 function rerunErrorLabel(action: RerunAction) {
   if (action === 'retry_design') {
-    return 'Design rerun'
+    return '設計の再実行'
   }
   if (action === 'retry_implementation') {
-    return 'Implementation rerun'
+    return '実装の再実行'
   }
   if (action === 'retry_review') {
-    return 'Review rerun'
+    return 'レビューの再実行'
   }
-  return 'PR rerun'
+  return 'PR作成の再実行'
 }
 
 function formatTestReportMarkdown(raw?: string) {
@@ -346,8 +361,7 @@ async function submitRerun(action: RerunAction, eventId?: number) {
   try {
     const event =
       eventId === undefined ? latestEvent.value : data.value?.events.find((candidate) => candidate.id === eventId)
-    const typedComment = flowRerunComment.value.trim()
-    const comment = typedComment.length > 0 ? flowRerunComment.value : defaultRerunCommentForEvent(action, event)
+    const comment = defaultRerunCommentForEvent(action, event)
     if (action === 'retry_design') {
       data.value = await submitDesignRerun(jobID.value, comment, eventId)
     } else if (action === 'retry_implementation') {
@@ -365,12 +379,79 @@ async function submitRerun(action: RerunAction, eventId?: number) {
   }
 }
 
-async function sendApproval(status: 'approved' | 'rejected') {
+async function submitDesignArtifactRerun() {
+  designRerunState.value = 'saving'
+  designRerunError.value = null
+  try {
+    data.value = await submitDesignRerun(jobID.value, designArtifactComment.value)
+    designRerunState.value = 'idle'
+    designArtifactComment.value = ''
+    designArtifactModalOpen.value = false
+    await reload()
+  } catch (err) {
+    designRerunState.value = 'error'
+    designRerunError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function submitImplementationArtifactRerun() {
+  implementationRerunState.value = 'saving'
+  implementationRerunError.value = null
+  try {
+    const comment = implementationArtifactComment.value.trim().length > 0
+      ? implementationArtifactComment.value
+      : defaultRerunCommentForEvent('retry_implementation', latestEvent.value)
+    data.value = await submitImplementationRerun(jobID.value, comment)
+    implementationRerunState.value = 'idle'
+    implementationArtifactComment.value = ''
+    implementationArtifactModalOpen.value = false
+    await reload()
+  } catch (err) {
+    implementationRerunState.value = 'error'
+    implementationRerunError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function submitTestReportRerun() {
+  implementationRerunState.value = 'saving'
+  implementationRerunError.value = null
+  try {
+    const comment = testReportComment.value.trim().length > 0
+      ? testReportComment.value
+      : defaultRerunCommentForEvent('retry_implementation', latestEvent.value)
+    data.value = await submitImplementationRerun(jobID.value, comment)
+    implementationRerunState.value = 'idle'
+    testReportComment.value = ''
+    testReportModalOpen.value = false
+    await reload()
+  } catch (err) {
+    implementationRerunState.value = 'error'
+    implementationRerunError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function submitReviewArtifactRerun() {
+  reviewRerunState.value = 'saving'
+  reviewRerunError.value = null
+  try {
+    data.value = await submitReviewRerun(jobID.value, reviewArtifactComment.value)
+    reviewRerunState.value = 'idle'
+    reviewArtifactModalOpen.value = false
+    await reload()
+  } catch (err) {
+    reviewRerunState.value = 'error'
+    reviewRerunError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function sendApproval(status: 'approved' | 'rejected', comment = '') {
   approvalState.value = 'saving'
   approvalError.value = null
   try {
-    data.value = await submitDesignApproval(jobID.value, status, '')
+    data.value = await submitDesignApproval(jobID.value, status, comment)
     approvalState.value = 'idle'
+    designArtifactComment.value = ''
+    designArtifactModalOpen.value = false
     await reload()
   } catch (err) {
     approvalState.value = 'error'
@@ -378,12 +459,20 @@ async function sendApproval(status: 'approved' | 'rejected') {
   }
 }
 
-async function sendFinalApproval(status: 'approved' | 'rejected') {
+async function sendFinalApproval(status: 'approved' | 'rejected', comment = '', source: 'implementation' | 'test-report' | null = null) {
   finalApprovalState.value = 'saving'
   finalApprovalError.value = null
   try {
-    data.value = await submitFinalApproval(jobID.value, status, '')
+    data.value = await submitFinalApproval(jobID.value, status, comment)
     finalApprovalState.value = 'idle'
+    if (source === 'implementation') {
+      implementationArtifactComment.value = ''
+      implementationArtifactModalOpen.value = false
+    }
+    if (source === 'test-report') {
+      testReportComment.value = ''
+      testReportModalOpen.value = false
+    }
     await reload()
   } catch (err) {
     finalApprovalState.value = 'error'
@@ -395,12 +484,26 @@ async function sendReviewComment() {
   reviewSubmitState.value = 'saving'
   reviewSubmitError.value = null
   try {
-    data.value = await submitReviewComment(jobID.value, reviewSubmitComment.value)
+    data.value = await submitReviewComment(jobID.value, reviewArtifactComment.value)
     reviewSubmitState.value = 'saved'
     await reload()
   } catch (err) {
     reviewSubmitState.value = 'error'
     reviewSubmitError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function sendReviewApproval() {
+  reviewApproveState.value = 'saving'
+  reviewApproveError.value = null
+  try {
+    data.value = await submitReviewApproval(jobID.value)
+    reviewApproveState.value = 'saved'
+    reviewArtifactModalOpen.value = false
+    await reload()
+  } catch (err) {
+    reviewApproveState.value = 'error'
+    reviewApproveError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
 
@@ -459,86 +562,52 @@ async function purgeArchivedJob() {
       <p v-if="isRefreshing" class="text-muted">Syncing job detail...</p>
       <template v-if="data">
         <section class="hero-grid">
-          <PanelCard :title="data.job.id" description="Job summary">
-            <div class="stack-sm">
-              <StateBadge :state="data.job.state" />
-              <p v-if="isDeletedJob" class="notice notice-danger">このジョブは削除済みです。dashboard の通常表示には出ません。</p>
+          <PanelCard title="Job summary">
+            <div class="stack-sm job-summary">
+              <h3 class="job-summary__title">{{ data.job.title || '-' }}</h3>
+              <p class="job-summary__id text-muted">ID: <code>{{ data.job.id || '-' }}</code></p>
               <p class="text-muted">{{ data.job.repository }} #{{ data.job.githubNumber }}</p>
-              <p>{{ data.job.title }}</p>
               <p class="text-muted">Branch: <code>{{ data.job.branchName }}</code></p>
               <p class="text-muted">Watch Rule: <code>{{ data.job.watchRuleId }}</code></p>
             </div>
           </PanelCard>
-          <PanelCard title="Flow" description="設計承認、実装成果物確認、最終承認をここから行えます。">
+          <PanelCard title="Flow">
             <div class="stack-sm">
-              <p class="text-muted">Current state: <code>{{ data.job.state }}</code></p>
-              <div class="button-row">
-                <button
-                  v-if="!isDeletedJob"
-                  class="button button-secondary"
-                  type="button"
-                  :disabled="jobArchiveState === 'saving'"
-                  @click="archiveJob"
-                >
-                  削除
-                </button>
-                <template v-else>
-                  <button
-                    class="button button-primary"
-                    type="button"
-                    :disabled="jobArchiveState === 'saving'"
-                    @click="unarchiveJob"
-                  >
-                    復元
-                  </button>
-                  <button
-                    class="button button-danger"
-                    type="button"
-                    :disabled="jobPurgeState === 'saving'"
-                    @click="purgeArchivedJob"
-                  >
-                    完全削除
-                  </button>
-                </template>
-              </div>
-              <template v-if="!isDeletedJob && (flowRerunAction || canReviewDesign || canReviewImplementation)">
-                <label v-if="flowRerunAction" class="field field-full">
-                  <span class="field__label">Rerun Comment</span>
-                  <textarea
-                    v-model="flowRerunComment"
-                    class="field__control field__control--textarea"
-                    rows="4"
-                    placeholder="再実行時に AI へ伝えたい指示を入力してください。"
-                    spellcheck="false"
-                  />
-                  <p class="text-muted">入力したコメントは rerun の prompt に渡されます。未入力なら従来通りの挙動です。</p>
-                </label>
+              <StateBadge :state="data.job.state" />
+              <template v-if="!isDeletedJob && flowRerunActionInFlow">
                 <div class="button-row">
                   <button
-                    v-if="flowRerunAction"
+                    v-if="flowRerunActionInFlow"
                     class="button button-secondary"
                     type="button"
-                    :disabled="approvalState === 'saving' || finalApprovalState === 'saving' || rerunState(flowRerunAction) === 'saving'"
-                    @click="submitRerun(flowRerunAction, flowRerunEvent?.id)"
+                    :disabled="rerunState(flowRerunActionInFlow) === 'saving'"
+                    @click="submitRerun(flowRerunActionInFlow, flowRerunEvent?.id)"
                   >
-                    {{ rerunButtonLabel(flowRerunAction, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
+                    {{ rerunButtonLabel(flowRerunActionInFlow, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
                   </button>
-                  <template v-if="canReviewDesign">
-                    <button class="button button-secondary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('rejected')">
-                      Reject Design
+                </div>
+              </template>
+              <template v-if="isDeletedJob">
+                <p class="notice notice-danger">このジョブは削除済みです。</p>
+                <div class="flow-delete-row">
+                  <div class="button-row">
+                    <button
+                      class="button button-primary"
+                      type="button"
+                      :disabled="jobArchiveState === 'saving'"
+                      @click="unarchiveJob"
+                    >
+                      復元
                     </button>
-                    <button class="button button-primary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('approved')">
-                      Approve Design
+                    <button
+                      class="button button-danger"
+                      type="button"
+                      :disabled="jobPurgeState === 'saving'"
+                      @click="purgeArchivedJob"
+                    >
+                      完全削除
                     </button>
-                  </template>
-                  <template v-if="canReviewImplementation">
-                    <button class="button button-secondary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('rejected')">
-                      Reject Final
-                    </button>
-                    <button class="button button-primary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('approved')">
-                      Approve Final
-                    </button>
-                  </template>
+                  </div>
                 </div>
               </template>
               <p v-if="jobArchiveState === 'error'" class="notice notice-danger">{{ jobArchiveError }}</p>
@@ -548,19 +617,28 @@ async function purgeArchivedJob() {
                 <p v-if="finalApprovalWarning" class="notice notice-danger">{{ finalApprovalWarning }}</p>
                 <p v-if="finalApprovalState === 'error'" class="notice notice-danger">{{ finalApprovalError }}</p>
               </template>
+              <div v-if="!isDeletedJob" class="flow-delete-row">
+                <button
+                  class="button button-secondary"
+                  type="button"
+                  :disabled="jobArchiveState === 'saving'"
+                  @click="archiveJob"
+                >
+                  ジョブを削除
+                </button>
+              </div>
             </div>
           </PanelCard>
         </section>
 
         <PanelCard
-          v-if="!isPRFeedbackJob"
+          v-if="!isPRFeedbackJob && hasIssueBody"
           title="Issue"
-          description="元の issue 内容です。"
         >
-          <details class="stack-sm">
-            <summary class="text-muted">Open issue body</summary>
-            <pre class="artifact-view">{{ formatIssueBody(data.issueBody) }}</pre>
-          </details>
+          <div class="artifact-headline">
+            <button class="log-entry-button" type="button" @click="issueBodyModalOpen = true">Issue body を開く</button>
+            <p class="text-muted">元の issue 内容です。</p>
+          </div>
         </PanelCard>
 
         <PanelCard
@@ -589,26 +667,20 @@ async function purgeArchivedJob() {
         <PanelCard
           v-if="data.designArtifact"
           title="Design Artifact"
-          description="生成された設計成果物です。承認前に内容を確認します。"
         >
-          <div class="stack-sm">
-            <details class="stack-sm">
-              <summary class="text-muted">{{ data.designArtifact.path }}</summary>
-              <pre class="artifact-view">{{ data.designArtifact.content }}</pre>
-            </details>
+          <div class="artifact-headline">
+            <button class="log-entry-button" type="button" @click="designArtifactModalOpen = true">設計結果を開く</button>
+            <p class="text-muted">生成された設計成果物です。承認前に内容を確認します。</p>
           </div>
         </PanelCard>
 
         <PanelCard
           v-if="data.implementationArtifact"
           :title="isPRFeedbackJob ? '修正結果' : 'Implementation Artifact'"
-          :description="isPRFeedbackJob ? 'PR review コメントに対する修正結果です。' : '実装フェーズの成果物サマリです。最終承認前に確認します。'"
         >
-          <div class="stack-sm">
-            <details class="stack-sm">
-              <summary class="text-muted">{{ data.implementationArtifact.path }}</summary>
-              <pre class="artifact-view">{{ data.implementationArtifact.content }}</pre>
-            </details>
+          <div class="artifact-headline">
+            <button class="log-entry-button" type="button" @click="implementationArtifactModalOpen = true">{{ isPRFeedbackJob ? '修正結果を開く' : '実装結果を開く' }}</button>
+            <p class="text-muted">{{ isPRFeedbackJob ? 'PR review コメントに対する修正結果です。' : '実装フェーズの成果物サマリです。最終承認前に確認します。' }}</p>
           </div>
         </PanelCard>
 
@@ -617,54 +689,35 @@ async function purgeArchivedJob() {
           :title="isPRFeedbackJob ? '追加修正結果' : 'Fix Artifact'"
           :description="isPRFeedbackJob ? '再実行やテスト失敗後の追加修正結果です。' : 'test_failed 後の修正フェーズで生成された成果物です。'"
         >
-          <div class="stack-sm">
-            <details class="stack-sm">
-              <summary class="text-muted">{{ data.fixArtifact.path }}</summary>
-              <pre class="artifact-view">{{ data.fixArtifact.content }}</pre>
-            </details>
-          </div>
+          <details class="stack-sm">
+            <summary class="text-muted">{{ data.fixArtifact.path }}</summary>
+            <pre class="artifact-view">{{ data.fixArtifact.content }}</pre>
+          </details>
         </PanelCard>
 
         <PanelCard
           v-if="data.reviewArtifact"
           title="Review Artifact"
-          description="PR review フェーズの成果物です。総評コメントとして GitHub へ返せます。"
         >
+          <div class="artifact-headline">
+            <button class="log-entry-button" type="button" @click="reviewArtifactModalOpen = true">レビュー結果を開く</button>
+            <p class="text-muted">PR review フェーズの成果物です。総評コメントとして GitHub へ返せます。</p>
+          </div>
           <div class="stack-sm">
-            <label v-if="canSubmitReviewComment" class="field field-full">
-              <span class="field__label">Review Comment</span>
-              <textarea
-                v-model="reviewSubmitComment"
-                class="field__control field__control--textarea"
-                rows="10"
-                placeholder="GitHub に返すレビューコメント"
-                spellcheck="false"
-              />
-            </label>
-            <div v-if="canSubmitReviewComment" class="button-row">
-              <button class="button button-primary" type="button" :disabled="reviewSubmitState === 'saving'" @click="sendReviewComment">
-                {{ reviewSubmitState === 'saving' ? 'Submitting Review...' : 'Submit Review Comment' }}
-              </button>
-            </div>
             <p v-if="reviewSubmitState === 'saved'" class="notice notice-success">レビューコメントを GitHub に送信しました。</p>
             <p v-if="reviewSubmitState === 'error'" class="notice notice-danger">{{ reviewSubmitError }}</p>
-            <details class="stack-sm">
-              <summary class="text-muted">{{ data.reviewArtifact.path }}</summary>
-              <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>
-            </details>
+            <p v-if="reviewApproveState === 'saved'" class="notice notice-success">レビューを承認しました。</p>
+            <p v-if="reviewApproveState === 'error'" class="notice notice-danger">{{ reviewApproveError }}</p>
           </div>
         </PanelCard>
 
         <PanelCard
           v-if="data.testReport"
           title="Test Report"
-          description="設定された test profile の実行結果です。"
         >
-          <div class="stack-sm">
-            <details class="stack-sm">
-              <summary class="text-muted">{{ data.testReport.path }}</summary>
-              <pre class="artifact-view">{{ testReportMarkdown }}</pre>
-            </details>
+          <div class="artifact-headline">
+            <button class="log-entry-button" type="button" @click="testReportModalOpen = true">テスト結果を開く</button>
+            <p class="text-muted">設定された test profile の実行結果です。</p>
           </div>
         </PanelCard>
 
@@ -673,20 +726,18 @@ async function purgeArchivedJob() {
           title="Pull Request"
           description="作成された PR の記録です。"
         >
-          <div class="stack-sm">
-            <details class="stack-sm">
-              <summary class="text-muted">{{ data.prCreateArtifact.path }}</summary>
-              <template v-if="prCreateInfo">
-                <p v-if="prCreateInfo.title"><strong>{{ prCreateInfo.title }}</strong></p>
-                <p v-if="prCreateInfo.repository" class="text-muted">Repository: <code>{{ prCreateInfo.repository }}</code></p>
-                <p v-if="prCreateInfo.branchName" class="text-muted">Branch: <code>{{ prCreateInfo.branchName }}</code></p>
-                <p v-if="prCreateInfo.url">
-                  <a class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">Open Pull Request</a>
-                </p>
-              </template>
-              <pre class="artifact-view">{{ data.prCreateArtifact.content }}</pre>
-            </details>
-          </div>
+          <details class="stack-sm">
+            <summary class="text-muted">{{ data.prCreateArtifact.path }}</summary>
+            <template v-if="prCreateInfo">
+              <p v-if="prCreateInfo.title"><strong>{{ prCreateInfo.title }}</strong></p>
+              <p v-if="prCreateInfo.repository" class="text-muted">Repository: <code>{{ prCreateInfo.repository }}</code></p>
+              <p v-if="prCreateInfo.branchName" class="text-muted">Branch: <code>{{ prCreateInfo.branchName }}</code></p>
+              <p v-if="prCreateInfo.url">
+                <a class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">Open Pull Request</a>
+              </p>
+            </template>
+            <pre class="artifact-view">{{ data.prCreateArtifact.content }}</pre>
+          </details>
         </PanelCard>
 
         <PanelCard
@@ -697,15 +748,22 @@ async function purgeArchivedJob() {
           <div class="stack-md">
             <section v-for="group in groupedLogs" :key="group.phase" class="stack-sm">
               <h3>{{ group.title }}</h3>
-              <details v-for="log in group.items" :key="log.path" class="stack-sm">
-                <summary class="text-muted">{{ formatLogName(log.name) }} <code>{{ log.path }}</code></summary>
-                <pre class="artifact-view">{{ log.content }}</pre>
-              </details>
+              <div class="stack-sm">
+                <button
+                  v-for="log in group.items"
+                  :key="log.path"
+                  class="log-entry-button"
+                  type="button"
+                  @click="selectedLog = { groupTitle: group.title, log }"
+                >
+                  {{ formatLogName(log.name) }} <code>{{ log.path }}</code>
+                </button>
+              </div>
             </section>
           </div>
         </PanelCard>
 
-        <DataTable :columns="['When', 'Event', 'State', 'Payload', 'Action']">
+        <DataTable :columns="['When', 'Event', 'State', 'Payload']">
           <tr v-for="event in eventRows" :key="event.id">
             <td>{{ formatDateTime(event.createdAt) }}</td>
             <td>{{ event.eventType }}</td>
@@ -719,52 +777,203 @@ async function purgeArchivedJob() {
                 <pre class="payload-view artifact-view">{{ event.payloadDisplay.content }}</pre>
               </details>
             </td>
-            <td>
-              <div v-if="event.availableActions.length > 0" class="button-row">
-                <button
-                  v-if="event.availableActions.includes('retry_design')"
-                  class="button button-secondary"
-                  type="button"
-                  :disabled="designRerunState === 'saving'"
-                  @click="submitRerun('retry_design', event.id)"
-                >
-                  {{ rerunButtonLabel('retry_design', event.eventType, event.sourceEventType) }}
-                </button>
-                <button
-                  v-if="event.availableActions.includes('retry_implementation')"
-                  class="button button-secondary"
-                  type="button"
-                  :disabled="implementationRerunState === 'saving'"
-                  @click="submitRerun('retry_implementation', event.id)"
-                >
-                  {{ rerunButtonLabel('retry_implementation', event.eventType, event.sourceEventType) }}
-                </button>
-                <button
-                  v-if="event.availableActions.includes('retry_review')"
-                  class="button button-secondary"
-                  type="button"
-                  :disabled="reviewRerunState === 'saving'"
-                  @click="submitRerun('retry_review', event.id)"
-                >
-                  {{ rerunButtonLabel('retry_review', event.eventType, event.sourceEventType) }}
-                </button>
-                <button
-                  v-if="event.availableActions.includes('retry_pr')"
-                  class="button button-secondary"
-                  type="button"
-                  :disabled="prRerunState === 'saving'"
-                  @click="submitRerun('retry_pr', event.id)"
-                >
-                  {{ rerunButtonLabel('retry_pr', event.eventType, event.sourceEventType) }}
-                </button>
-              </div>
-              <span v-else>-</span>
-            </td>
           </tr>
           <tr v-if="data.events.length === 0">
-            <td colspan="5" class="text-muted">イベントはまだありません。</td>
+            <td colspan="4" class="text-muted">イベントはまだありません。</td>
           </tr>
         </DataTable>
+
+        <div v-if="designArtifactModalOpen && data.designArtifact" class="modal-backdrop" @click.self="designArtifactModalOpen = false">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">Design Artifact</h3>
+                <p class="text-muted"><code>{{ data.designArtifact.path }}</code></p>
+              </div>
+              <button class="button button-secondary" type="button" @click="designArtifactModalOpen = false">閉じる</button>
+            </div>
+            <div class="stack-sm">
+              <pre class="artifact-view">{{ data.designArtifact.content }}</pre>
+              <label class="field field-full">
+                <span class="field__label">Comment</span>
+                <textarea
+                  v-model="designArtifactComment"
+                  class="field__control field__control--textarea"
+                  rows="4"
+                  placeholder="再実行や承認時のコメントを入力してください。"
+                  spellcheck="false"
+                />
+              </label>
+              <div class="modal-actions">
+                <div class="button-row">
+                  <button v-if="canReviewDesign" class="button button-primary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('approved', designArtifactComment)">
+                    {{ approvalState === 'saving' ? '承認中...' : '承認' }}
+                  </button>
+                  <button class="button button-secondary" type="button" :disabled="designRerunState === 'saving'" @click="submitDesignArtifactRerun">
+                    {{ designRerunState === 'saving' ? '再実行中...' : '再実行' }}
+                  </button>
+                </div>
+                <div v-if="canReviewDesign" class="modal-actions__right">
+                  <button class="button button-secondary" type="button" :disabled="approvalState === 'saving'" @click="sendApproval('rejected', designArtifactComment)">
+                    {{ approvalState === 'saving' ? '却下中...' : '却下' }}
+                  </button>
+                </div>
+              </div>
+              <p v-if="designRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_design') }}: {{ designRerunError }}</p>
+              <p v-if="approvalState === 'error'" class="notice notice-danger">{{ approvalError }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="issueBodyModalOpen" class="modal-backdrop" @click.self="issueBodyModalOpen = false">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">Issue</h3>
+              </div>
+              <button class="button button-secondary" type="button" @click="issueBodyModalOpen = false">閉じる</button>
+            </div>
+            <pre class="artifact-view">{{ formatIssueBody(data.issueBody) }}</pre>
+          </div>
+        </div>
+
+        <div v-if="implementationArtifactModalOpen && data.implementationArtifact" class="modal-backdrop" @click.self="implementationArtifactModalOpen = false">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">{{ isPRFeedbackJob ? '修正結果' : 'Implementation Artifact' }}</h3>
+                <p class="text-muted"><code>{{ data.implementationArtifact.path }}</code></p>
+              </div>
+              <button class="button button-secondary" type="button" @click="implementationArtifactModalOpen = false">閉じる</button>
+            </div>
+            <div class="stack-sm">
+              <pre class="artifact-view">{{ data.implementationArtifact.content }}</pre>
+              <label class="field field-full">
+                <span class="field__label">Comment</span>
+                <textarea
+                  v-model="implementationArtifactComment"
+                  class="field__control field__control--textarea"
+                  rows="4"
+                  placeholder="再実行や承認時のコメントを入力してください。"
+                  spellcheck="false"
+                />
+              </label>
+              <div class="modal-actions">
+                <div class="button-row">
+                  <button v-if="canReviewImplementation" class="button button-primary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('approved', implementationArtifactComment, 'implementation')">
+                    {{ finalApprovalState === 'saving' ? '承認中...' : '承認' }}
+                  </button>
+                  <button class="button button-secondary" type="button" :disabled="implementationRerunState === 'saving'" @click="submitImplementationArtifactRerun">
+                    {{ implementationRerunState === 'saving' ? '再実行中...' : '再実行' }}
+                  </button>
+                </div>
+                <div v-if="canReviewImplementation" class="modal-actions__right">
+                  <button class="button button-secondary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('rejected', implementationArtifactComment, 'implementation')">
+                    {{ finalApprovalState === 'saving' ? '却下中...' : '却下' }}
+                  </button>
+                </div>
+              </div>
+              <p v-if="implementationRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_implementation') }}: {{ implementationRerunError }}</p>
+              <p v-if="finalApprovalWarning && canReviewImplementation" class="notice notice-danger">{{ finalApprovalWarning }}</p>
+              <p v-if="finalApprovalState === 'error'" class="notice notice-danger">{{ finalApprovalError }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="selectedLog" class="modal-backdrop" @click.self="selectedLog = null">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">{{ selectedLog.groupTitle }}</h3>
+                <p class="text-muted">{{ formatLogName(selectedLog.log.name) }} <code>{{ selectedLog.log.path }}</code></p>
+              </div>
+              <button class="button button-secondary" type="button" @click="selectedLog = null">閉じる</button>
+            </div>
+            <pre class="artifact-view">{{ selectedLog.log.content }}</pre>
+          </div>
+        </div>
+
+        <div v-if="testReportModalOpen && data.testReport" class="modal-backdrop" @click.self="testReportModalOpen = false">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">Test Report</h3>
+                <p class="text-muted"><code>{{ data.testReport.path }}</code></p>
+              </div>
+              <button class="button button-secondary" type="button" @click="testReportModalOpen = false">閉じる</button>
+            </div>
+            <div class="stack-sm">
+              <pre class="artifact-view">{{ testReportMarkdown }}</pre>
+              <label class="field field-full">
+                <span class="field__label">Comment</span>
+                <textarea
+                  v-model="testReportComment"
+                  class="field__control field__control--textarea"
+                  rows="4"
+                  placeholder="再実行や承認時のコメントを入力してください。"
+                  spellcheck="false"
+                />
+              </label>
+              <div class="modal-actions">
+                <div class="button-row">
+                  <button v-if="canReviewImplementation" class="button button-primary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('approved', testReportComment, 'test-report')">
+                    {{ finalApprovalState === 'saving' ? '承認中...' : '承認' }}
+                  </button>
+                  <button class="button button-secondary" type="button" :disabled="implementationRerunState === 'saving'" @click="submitTestReportRerun">
+                    {{ implementationRerunState === 'saving' ? '再実行中...' : '再実行' }}
+                  </button>
+                </div>
+                <div v-if="canReviewImplementation" class="modal-actions__right">
+                  <button class="button button-secondary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('rejected', testReportComment, 'test-report')">
+                    {{ finalApprovalState === 'saving' ? '却下中...' : '却下' }}
+                  </button>
+                </div>
+              </div>
+              <p v-if="implementationRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_implementation') }}: {{ implementationRerunError }}</p>
+              <p v-if="finalApprovalWarning && canReviewImplementation" class="notice notice-danger">{{ finalApprovalWarning }}</p>
+              <p v-if="finalApprovalState === 'error'" class="notice notice-danger">{{ finalApprovalError }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="reviewArtifactModalOpen && data.reviewArtifact" class="modal-backdrop" @click.self="reviewArtifactModalOpen = false">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">Review Artifact</h3>
+                <p class="text-muted"><code>{{ data.reviewArtifact.path }}</code></p>
+              </div>
+              <button class="button button-secondary" type="button" @click="reviewArtifactModalOpen = false">閉じる</button>
+            </div>
+            <div class="stack-sm">
+              <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>
+              <label class="field field-full">
+                <span class="field__label">Comment</span>
+                <textarea
+                  v-model="reviewArtifactComment"
+                  class="field__control field__control--textarea"
+                  rows="10"
+                  placeholder="GitHub に返すレビューコメント"
+                  spellcheck="false"
+                />
+              </label>
+              <div class="button-row review-button-row">
+                <button v-if="canApproveReview" class="button button-primary" type="button" :disabled="reviewApproveState === 'saving'" @click="sendReviewApproval">
+                  {{ reviewApproveState === 'saving' ? '承認中...' : '承認' }}
+                </button>
+                <button class="button button-secondary" type="button" :disabled="reviewRerunState === 'saving'" @click="submitReviewArtifactRerun">
+                  {{ reviewRerunState === 'saving' ? '再実行中...' : '再実行' }}
+                </button>
+                <button v-if="canSubmitReviewComment" class="button button-secondary review-button-row__submit" type="button" :disabled="reviewSubmitState === 'saving'" @click="sendReviewComment">
+                  {{ reviewSubmitState === 'saving' ? 'レビューコメントを送信中...' : 'レビューコメントを送信' }}
+                </button>
+              </div>
+              <p v-if="reviewRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_review') }}: {{ reviewRerunError }}</p>
+              <p v-if="reviewSubmitState === 'error'" class="notice notice-danger">{{ reviewSubmitError }}</p>
+              <p v-if="reviewApproveState === 'error'" class="notice notice-danger">{{ reviewApproveError }}</p>
+            </div>
+          </div>
+        </div>
       </template>
     </AsyncState>
   </AppShell>

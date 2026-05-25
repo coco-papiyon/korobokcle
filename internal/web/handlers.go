@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -90,7 +91,6 @@ type watchRuleResponse struct {
 	Name           string                      `json:"name"`
 	Repositories   []string                    `json:"repositories"`
 	Target         string                      `json:"target"`
-	Branch         string                      `json:"branch"`
 	ProjectName    string                      `json:"projectName"`
 	Labels         []string                    `json:"labels"`
 	ProjectFilters []config.ProjectFieldFilter `json:"projectFilters"`
@@ -106,6 +106,11 @@ type watchRuleResponse struct {
 	Enabled        bool                        `json:"enabled"`
 }
 
+type testProfileResponse struct {
+	Name     string   `json:"name"`
+	Commands []string `json:"commands"`
+}
+
 type providerSpecResponse struct {
 	Name   string   `json:"name"`
 	Models []string `json:"models"`
@@ -113,6 +118,7 @@ type providerSpecResponse struct {
 
 type monitoredRepositoryResponse struct {
 	Repository string `json:"repository"`
+	Branch     string `json:"branch"`
 	Workers    int    `json:"workers"`
 }
 
@@ -275,7 +281,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	out.Logs = append(out.Logs, s.loadLogResponses("implementation", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("fix", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerFix), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("pr", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerPR), []string{"git-push.log", "gh-pr-create.log"})...)
-	out.Logs = append(out.Logs, s.loadLogResponses("review", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerReview), []string{"stdout.log", "stderr.log", "gh-pr-review.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("review", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerReview), []string{"stdout.log", "stderr.log", "gh-pr-comment.log"})...)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -307,6 +313,21 @@ func (s *Server) handleDesignApproval(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("status must be approved or rejected"))
 		return
+	}
+
+	if job, _, err := s.orchestrator.JobDetail(r.Context(), jobID); err == nil {
+		if artifact, err := s.loadDesignArtifact(jobID); err == nil && strings.TrimSpace(artifact.Content) != "" {
+			if s.commenter != nil {
+				if err := s.commenter.Submit(r.Context(), IssueCommentSubmitRequest{
+					Repository:  job.Repository,
+					IssueNumber: job.GitHubNumber,
+					Body:        artifact.Content,
+					ArtifactDir: artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerDesign),
+				}); err != nil {
+					log.Printf("design approval issue comment failed job=%s error=%v", jobID, err)
+				}
+			}
+		}
 	}
 
 	s.handleJobDetail(w, r)
@@ -427,6 +448,20 @@ func (s *Server) handleReviewRerun(w http.ResponseWriter, r *http.Request) {
 	s.handleJobDetail(w, r)
 }
 
+func (s *Server) handleReviewApproval(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	if err := s.orchestrator.ApproveReview(r.Context(), jobID); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, orchestrator.ErrInvalidStateTransition) {
+			status = http.StatusBadRequest
+		}
+		writeJSONError(w, status, err)
+		return
+	}
+
+	s.handleJobDetail(w, r)
+}
+
 func (s *Server) handleSubmitReviewComment(w http.ResponseWriter, r *http.Request) {
 	jobID := mux.Vars(r)["id"]
 	job, _, err := s.orchestrator.JobDetail(r.Context(), jobID)
@@ -464,7 +499,7 @@ func (s *Server) handleSubmitReviewComment(w http.ResponseWriter, r *http.Reques
 		Repository:  job.Repository,
 		PullNumber:  job.GitHubNumber,
 		Body:        comment,
-		ArtifactDir: filepath.Dir(artifact.Path),
+		ArtifactDir: artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, jobID, artifacts.WorkerReview),
 	}); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
@@ -486,7 +521,6 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 			Name:           rule.Name,
 			Repositories:   sliceOrEmpty(rule.Repositories),
 			Target:         target,
-			Branch:         rule.Branch,
 			ProjectName:    rule.ProjectName,
 			Labels:         sliceOrEmpty(rule.Labels),
 			ProjectFilters: append([]config.ProjectFieldFilter(nil), rule.ProjectFilters...),
@@ -503,6 +537,18 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, rules)
+}
+
+func (s *Server) handleTestProfiles(w http.ResponseWriter, _ *http.Request) {
+	testProfiles := s.config.TestProfiles()
+	profiles := make([]testProfileResponse, 0, len(testProfiles.Profiles))
+	for _, profile := range testProfiles.Profiles {
+		profiles = append(profiles, testProfileResponse{
+			Name:     profile.Name,
+			Commands: sliceOrEmpty(profile.Commands),
+		})
+	}
+	writeJSON(w, http.StatusOK, profiles)
 }
 
 func (s *Server) handleAppConfig(w http.ResponseWriter, _ *http.Request) {
@@ -880,7 +926,6 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			Name:           strings.TrimSpace(rule.Name),
 			Repositories:   repositories,
 			Target:         target,
-			Branch:         strings.TrimSpace(rule.Branch),
 			ProjectName:    strings.TrimSpace(rule.ProjectName),
 			Labels:         compactStrings(rule.Labels),
 			ProjectFilters: compactProjectFilters(rule.ProjectFilters),
@@ -904,6 +949,26 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 	s.handleWatchRules(w, r)
 }
 
+func (s *Server) handleSaveTestProfiles(w http.ResponseWriter, r *http.Request) {
+	var payload []testProfileResponse
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode test profiles: %w", err))
+		return
+	}
+
+	file, err := normalizeTestProfiles(payload)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := s.config.UpdateTestProfiles(file); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.handleTestProfiles(w, r)
+}
+
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("ok"))
@@ -911,7 +976,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 	if !s.hasStaticDist() {
-		http.Error(w, "frontend dist is missing; run npm install && npm run build in frontend", http.StatusServiceUnavailable)
+		s.writeStaticDistMissing(w)
 		return
 	}
 
@@ -933,6 +998,11 @@ func (s *Server) handleSPA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.ServeFile(w, r, filepath.Join(s.staticDir, "index.html"))
+}
+
+func (s *Server) writeStaticDistMissing(w http.ResponseWriter) {
+	log.Printf("frontend dist is missing: expected %s; run npm install && npm run build in frontend", s.staticDir)
+	http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 }
 
 const timeFormat = "2006-01-02T15:04:05Z07:00"
@@ -1028,6 +1098,44 @@ func normalizeStringSlice(values []string) []string {
 	return normalized
 }
 
+func normalizeTestProfiles(values []testProfileResponse) (config.TestProfiles, error) {
+	out := config.TestProfiles{
+		Profiles: make([]config.TestProfile, 0, len(values)),
+	}
+	seen := make(map[string]struct{}, len(values))
+	for index, value := range values {
+		name := strings.TrimSpace(value.Name)
+		if name == "" {
+			return config.TestProfiles{}, fmt.Errorf("profile[%d].name is required", index)
+		}
+		if _, ok := seen[name]; ok {
+			return config.TestProfiles{}, fmt.Errorf("profile[%d].name must be unique: %q", index, name)
+		}
+		commands := normalizeTestProfileCommands(value.Commands)
+		if len(commands) == 0 {
+			return config.TestProfiles{}, fmt.Errorf("profile[%d].commands must include at least one command", index)
+		}
+		seen[name] = struct{}{}
+		out.Profiles = append(out.Profiles, config.TestProfile{
+			Name:     name,
+			Commands: commands,
+		})
+	}
+	return out, nil
+}
+
+func normalizeTestProfileCommands(commands []string) []string {
+	normalized := make([]string, 0, len(commands))
+	for _, command := range commands {
+		trimmed := strings.TrimSpace(command)
+		if trimmed == "" {
+			continue
+		}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
+}
+
 func normalizeDefaultModelValue(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" || strings.EqualFold(trimmed, "default") {
@@ -1077,6 +1185,7 @@ func toMonitoredRepositoryResponses(values []config.MonitoredRepository) []monit
 		}
 		out = append(out, monitoredRepositoryResponse{
 			Repository: repository,
+			Branch:     strings.TrimSpace(value.Branch),
 			Workers:    workers,
 		})
 	}
@@ -1094,6 +1203,7 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 		if _, ok := seen[repository]; ok {
 			continue
 		}
+		branch := strings.TrimSpace(value.Branch)
 		workers := value.Workers
 		if workers < 1 {
 			return nil, fmt.Errorf("item[%d].workers must be at least 1", index)
@@ -1101,6 +1211,7 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 		seen[repository] = struct{}{}
 		out = append(out, config.MonitoredRepository{
 			Repository: repository,
+			Branch:     branch,
 			Workers:    workers,
 		})
 	}
@@ -1237,7 +1348,7 @@ func (s *Server) loadArtifact(path string) (*artifactResponse, error) {
 		return nil, err
 	}
 	return &artifactResponse{
-		Path:    path,
+		Path:    s.displayPath(path),
 		Content: string(raw),
 	}, nil
 }
@@ -1259,7 +1370,7 @@ func (s *Server) loadTestReport(jobID string, events []domain.Event) (*artifactR
 		raw, err := os.ReadFile(path)
 		if err == nil {
 			return &artifactResponse{
-				Path:    path,
+				Path:    s.displayPath(path),
 				Content: string(raw),
 			}, nil
 		}
@@ -1389,11 +1500,25 @@ func (s *Server) loadLogResponses(phase string, dir string, names []string) []lo
 		logs = append(logs, logResponse{
 			Name:    name,
 			Phase:   phase,
-			Path:    path,
+			Path:    s.displayPath(path),
 			Content: string(raw),
 		})
 	}
 	return logs
+}
+
+func (s *Server) displayPath(path string) string {
+	root := filepath.Clean(s.config.Root())
+	cleanPath := filepath.Clean(path)
+
+	rel, err := filepath.Rel(root, cleanPath)
+	if err == nil && rel != "." && !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel) {
+		return filepath.ToSlash(rel)
+	}
+	if err == nil && rel == "." {
+		return "."
+	}
+	return filepath.ToSlash(cleanPath)
 }
 
 func (s *Server) loadFirstArtifact(dir string, names ...string) (*artifactResponse, error) {

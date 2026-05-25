@@ -337,6 +337,17 @@ func (o *Orchestrator) ApproveFinal(ctx context.Context, jobID string, comment s
 	})
 }
 
+func (o *Orchestrator) ApproveReview(ctx context.Context, jobID string) error {
+	job, err := o.store.GetJob(ctx, jobID)
+	if err != nil {
+		return err
+	}
+	if job.State != domain.StateReviewReady {
+		return fmt.Errorf("%w: review approval is not available for this state", ErrInvalidStateTransition)
+	}
+	return o.UpdateJobState(ctx, jobID, domain.StateCompleted, "review_approved", nil)
+}
+
 func (o *Orchestrator) RejectFinal(ctx context.Context, jobID string, comment string) error {
 	if err := o.ensureFinalApprovalAllowed(ctx, jobID); err != nil {
 		return err
@@ -602,6 +613,8 @@ func notificationTitle(job domain.Job, event domain.Event) string {
 		return fmt.Sprintf("Review ready: %s#%d", job.Repository, job.GitHubNumber)
 	case "review_completed":
 		return fmt.Sprintf("Review completed: %s#%d", job.Repository, job.GitHubNumber)
+	case "review_approved":
+		return fmt.Sprintf("Review approved: %s#%d", job.Repository, job.GitHubNumber)
 	case "pr_created":
 		return fmt.Sprintf("PR created: %s#%d", job.Repository, job.GitHubNumber)
 	case "pr_updated":

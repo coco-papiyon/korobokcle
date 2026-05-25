@@ -218,6 +218,160 @@ func TestSyncRepositoryWorkspaceUsesPullRequestBranchForPRFeedback(t *testing.T)
 	}
 }
 
+func TestSyncRepositoryWorkspaceUsesConfiguredMonitoredRepositoryBranch(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile main error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add main error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit main error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "-b", "release/1.x"); err != nil {
+		t.Fatalf("git checkout release error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("release\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile release error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add release error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "release"); err != nil {
+		t.Fatalf("git commit release error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "main"); err != nil {
+		t.Fatalf("git checkout main error = %v", err)
+	}
+
+	cfg := config.DefaultFiles()
+	cfg.App.MonitoredRepositories = []config.MonitoredRepository{
+		{Repository: "owner/repo", Branch: "release/1.x", Workers: 1},
+	}
+	svc := config.NewService(root, cfg)
+	workerDir, err := cloneRepositoryWorkspace(context.Background(), svc, source, 0)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
+	}
+
+	job := domain.Job{
+		ID:         "job-branch",
+		Type:       domain.JobTypeIssue,
+		Repository: "owner/repo",
+		State:      domain.StateDetected,
+	}
+	if err := syncRepositoryWorkspace(context.Background(), svc, job, workerDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("syncRepositoryWorkspace() error = %v", err)
+	}
+
+	currentBranch, err := runGitCommand(context.Background(), workerDir, "git", "branch", "--show-current")
+	if err != nil {
+		t.Fatalf("git branch --show-current error = %v", err)
+	}
+	if strings.TrimSpace(currentBranch) != "release/1.x" {
+		t.Fatalf("expected release/1.x branch, got %q", currentBranch)
+	}
+
+	readmeRaw, err := os.ReadFile(filepath.Join(workerDir, "README.md"))
+	if err != nil {
+		t.Fatalf("ReadFile README.md error = %v", err)
+	}
+	if string(readmeRaw) != "release\n" {
+		t.Fatalf("expected synced release README, got %q", string(readmeRaw))
+	}
+}
+
+func TestSyncRepositoryWorkspaceUsesDefaultBranchWhenMonitoringBranchIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile main error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add main error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit main error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "-b", "release/1.x"); err != nil {
+		t.Fatalf("git checkout release error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("release\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile release error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add release error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "release"); err != nil {
+		t.Fatalf("git commit release error = %v", err)
+	}
+
+	cfg := config.DefaultFiles()
+	cfg.App.MonitoredRepositories = []config.MonitoredRepository{
+		{Repository: "owner/repo", Branch: "", Workers: 1},
+	}
+	svc := config.NewService(root, cfg)
+	workerDir, err := cloneRepositoryWorkspace(context.Background(), svc, source, 0)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
+	}
+	if err := runGit(t, workerDir, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"); err != nil {
+		t.Fatalf("git symbolic-ref origin/HEAD error = %v", err)
+	}
+
+	job := domain.Job{
+		ID:         "job-default-branch",
+		Type:       domain.JobTypeIssue,
+		Repository: "owner/repo",
+		State:      domain.StateDetected,
+	}
+	if err := syncRepositoryWorkspace(context.Background(), svc, job, workerDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("syncRepositoryWorkspace() error = %v", err)
+	}
+
+	currentBranch, err := runGitCommand(context.Background(), workerDir, "git", "branch", "--show-current")
+	if err != nil {
+		t.Fatalf("git branch --show-current error = %v", err)
+	}
+	if strings.TrimSpace(currentBranch) != "main" {
+		t.Fatalf("expected main branch, got %q", currentBranch)
+	}
+
+	readmeRaw, err := os.ReadFile(filepath.Join(workerDir, "README.md"))
+	if err != nil {
+		t.Fatalf("ReadFile README.md error = %v", err)
+	}
+	if string(readmeRaw) != "main\n" {
+		t.Fatalf("expected synced main README, got %q", string(readmeRaw))
+	}
+}
+
 func TestRepositoryWorkerDirUsesOwnerRepoName(t *testing.T) {
 	t.Parallel()
 
@@ -231,14 +385,15 @@ func TestRepositoryWorkerDirUsesOwnerRepoName(t *testing.T) {
 func TestRepositoryWorkerSourceAndLogPaths(t *testing.T) {
 	t.Parallel()
 
+	startedAt := time.Date(2026, 5, 19, 14, 52, 0, 0, time.Local)
 	sourceDir := artifacts.RepositoryWorkerSourceDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
 	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "source")
 	if sourceDir != wantSourceDir {
 		t.Fatalf("expected source dir %q, got %q", wantSourceDir, sourceDir)
 	}
 
-	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	wantLogPath := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "logs", "worker.log")
+	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
+	wantLogPath := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "logs", "2026-05-19", "2026-05-19_14-52-00.log")
 	if logPath != wantLogPath {
 		t.Fatalf("expected log path %q, got %q", wantLogPath, logPath)
 	}
@@ -251,8 +406,9 @@ func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
 	cfg := config.NewService(root, config.DefaultFiles())
 	var fallback bytes.Buffer
 	fallbackLogger := log.New(&fallback, "", 0)
+	startedAt := time.Date(2026, 5, 19, 14, 52, 0, 0, time.Local)
 
-	logger, cleanup, err := newRepositoryWorkerLogger(cfg, fallbackLogger, "https://github.com/coco-papiyon/korobokcle.git", 2)
+	logger, cleanup, err := newRepositoryWorkerLogger(cfg, fallbackLogger, "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
 	if err != nil {
 		t.Fatalf("newRepositoryWorkerLogger() error = %v", err)
 	}
@@ -264,7 +420,12 @@ func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
 		t.Fatalf("expected no fallback log output, got %q", fallback.String())
 	}
 
-	data, err := os.ReadFile(artifacts.RepositoryWorkerLogPath(root, cfg.App().ArtifactsDir, "https://github.com/coco-papiyon/korobokcle.git", 2))
+	logPath := artifacts.RepositoryWorkerLogPath(root, cfg.App().ArtifactsDir, "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
+	if _, err := os.Stat(filepath.Dir(logPath)); err != nil {
+		t.Fatalf("expected log directory to exist: %v", err)
+	}
+
+	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("ReadFile(worker log) error = %v", err)
 	}

@@ -100,6 +100,17 @@ func (s *Service) UpdateNotifications(file Notifications) error {
 	return nil
 }
 
+func (s *Service) UpdateTestProfiles(file TestProfiles) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := saveYAML(filepath.Join(s.root, testProfilesPath), file); err != nil {
+		return err
+	}
+	s.files.TestProfiles = cloneTestProfiles(file)
+	return nil
+}
+
 func cloneFiles(files Files) Files {
 	files.App = cloneApp(files.App)
 	files.WatchRules = cloneWatchRulesFile(files.WatchRules)
@@ -120,6 +131,7 @@ func cloneMonitoredRepositories(values []MonitoredRepository) []MonitoredReposit
 	for _, repository := range values {
 		cloned = append(cloned, MonitoredRepository{
 			Repository: repository.Repository,
+			Branch:     repository.Branch,
 			Workers:    repository.Workers,
 		})
 	}

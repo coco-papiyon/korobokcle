@@ -64,3 +64,31 @@ func TestAppUnmarshalYAMLUsesIntegerSecondsAndFallsBackForInvalidValues(t *testi
 		t.Fatalf("expected invalid shutdown timeout to keep previous value, got %s", got)
 	}
 }
+
+func TestAppMonitoredRepositoryBranchRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	app := DefaultFiles().App
+	app.MonitoredRepositories = []MonitoredRepository{
+		{Repository: "owner/repo", Branch: "release/1.x", Workers: 2},
+	}
+
+	raw, err := yaml.Marshal(app)
+	if err != nil {
+		t.Fatalf("yaml.Marshal() error = %v", err)
+	}
+	if !strings.Contains(string(raw), "branch: release/1.x") {
+		t.Fatalf("expected branch in yaml, got %s", string(raw))
+	}
+
+	var decoded App
+	if err := yaml.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("yaml.Unmarshal() error = %v", err)
+	}
+	if len(decoded.MonitoredRepositories) != 1 {
+		t.Fatalf("expected one monitored repository, got %d", len(decoded.MonitoredRepositories))
+	}
+	if got := decoded.MonitoredRepositories[0].Branch; got != "release/1.x" {
+		t.Fatalf("expected monitored repository branch release/1.x, got %q", got)
+	}
+}

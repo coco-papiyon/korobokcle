@@ -48,6 +48,7 @@ const refreshIntervalMs = computed(() => {
 })
 
 const showDeletedOnly = ref(false)
+const showCompleted = ref(false)
 const selectedJobIds = ref<string[]>([])
 const bulkActionState = ref<'idle' | 'saving' | 'error'>('idle')
 const bulkActionError = ref<string | null>(null)
@@ -57,7 +58,7 @@ const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetc
   mergeData: mergeJobs,
 })
 
-watch(showDeletedOnly, () => {
+watch([showDeletedOnly, showCompleted], () => {
   selectedJobIds.value = []
   bulkActionError.value = null
   void reload()
@@ -65,7 +66,15 @@ watch(showDeletedOnly, () => {
 
 const jobs = computed(() => data.value ?? [])
 const visibleJobs = computed(() =>
-  jobs.value.filter((job) => (showDeletedOnly.value ? !!job.deletedAt : !job.deletedAt)),
+  jobs.value.filter((job) => {
+    if (showDeletedOnly.value ? !job.deletedAt : !!job.deletedAt) {
+      return false
+    }
+    if (!showCompleted.value && job.state.includes('completed')) {
+      return false
+    }
+    return true
+  }),
 )
 const visibleJobIds = computed(() => visibleJobs.value.map((job) => job.id))
 const selectedVisibleJobs = computed(() =>
@@ -226,6 +235,14 @@ async function submitBulkRestore() {
             class="button button-secondary"
             type="button"
             :disabled="isBulkActionRunning"
+            @click="showCompleted = !showCompleted"
+          >
+            {{ showCompleted ? '完了ジョブを隠す' : '完了ジョブも表示' }}
+          </button>
+          <button
+            class="button button-secondary"
+            type="button"
+            :disabled="isBulkActionRunning"
             @click="showDeletedOnly = !showDeletedOnly"
           >
             {{ showDeletedOnly ? '表示を通常に戻す' : '削除済みジョブを表示' }}
@@ -289,7 +306,7 @@ async function submitBulkRestore() {
         </tr>
         <tr v-if="visibleJobs.length === 0">
           <td colspan="6" class="text-muted">
-            {{ showDeletedOnly ? '削除済みジョブはまだありません。' : 'ジョブはまだありません。' }}
+            {{ showDeletedOnly ? '表示条件に一致する削除済みジョブはまだありません。' : '表示条件に一致するジョブはまだありません。' }}
           </td>
         </tr>
       </DataTable>

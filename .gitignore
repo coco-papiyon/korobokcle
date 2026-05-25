@@ -11,5 +11,9 @@ frontend/dist/
 frontend/.npm-cache/
 frontend/.vite-dist-temp/
 release/
+exec/
+!test/
+!test/data/
+!test/data/**
 
 *.exe
