@@ -291,6 +291,16 @@ function parseIntegerField(value: string, label: string) {
       <section class="panel stack-md">
         <div class="rule-editor__header">
           <div>
+            <h2>関連ページ</h2>
+            <p class="text-muted">test-profile の編集は専用ページから行います。</p>
+          </div>
+          <RouterLink class="button button-primary" to="/settings/test-profiles">Test Profiles を開く</RouterLink>
+        </div>
+      </section>
+
+      <section class="panel stack-md">
+        <div class="rule-editor__header">
+          <div>
             <h2>通知設定</h2>
             <p class="text-muted">通知チャネルごとに、どのタイミングで通知するかを切り替えます。</p>
           </div>
