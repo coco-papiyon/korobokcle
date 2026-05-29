@@ -364,7 +364,6 @@ func TestProviderForClaudeReturnsCLIProvider(t *testing.T) {
 		t.Fatalf("expected provider instance")
 	}
 }
-
 func writeProviderScript(t *testing.T, dir string, baseName string, windowsBody string, unixBody string) string {
 	t.Helper()
 
