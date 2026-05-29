@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -154,8 +156,8 @@ func TestRunWrapperExecModePassesPromptAsArgument(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	scriptPath := dir + `\exec-provider.cmd`
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho exec-arg: %2\r\n"), 0o644); err != nil {
+	scriptPath, scriptBody := execProviderScript(dir)
+	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
@@ -179,12 +181,19 @@ func TestRunWrapperExecModePassesPromptAsArgument(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 output lines, got %d: %q", len(lines), output.String())
 	}
-	if !strings.Contains(lines[0], `"type":"result"`) || !strings.Contains(lines[0], `exec-arg: \"hello exec\"`) {
+	if !strings.Contains(lines[0], `"type":"result"`) || !strings.Contains(lines[0], `exec-arg: hello exec`) {
 		t.Fatalf("unexpected result event %q", lines[0])
 	}
 	if !strings.Contains(lines[1], `"type":"end"`) {
 		t.Fatalf("unexpected end event %q", lines[1])
 	}
+}
+
+func execProviderScript(dir string) (string, string) {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(dir, "exec-provider.cmd"), "@echo off\r\necho exec-arg: %~2\r\n"
+	}
+	return filepath.Join(dir, "exec-provider.sh"), "#!/usr/bin/env sh\nprintf 'exec-arg: %s\\n' \"$2\"\n"
 }
 
 func TestAgentWrapperHelperProcess(t *testing.T) {

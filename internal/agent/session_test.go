@@ -5,11 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mattn/go-isatty"
 )
 
 func TestSessionSendReadsStdoutAndStderr(t *testing.T) {
@@ -106,6 +105,37 @@ func TestSessionSendJSONLReadsStructuredEvents(t *testing.T) {
 	}
 	if !strings.Contains(response.Stderr, "jsonl-stderr: jsonl") {
 		t.Fatalf("unexpected stderr %q", response.Stderr)
+	}
+}
+
+func TestSessionSendUsesPTYWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	cfg := SessionConfig{
+		Command:           os.Args[0],
+		Args:              []string{"-test.run=TestAgentSessionHelperProcess"},
+		Env:               append(os.Environ(), "GO_WANT_AGENT_HELPER_PROCESS=1", "GO_AGENT_HELPER_MODE=tty"),
+		RequestTerminator: "\n",
+		IdleTimeout:       50 * time.Millisecond,
+		UsePTY:            true,
+	}
+	session, err := StartSession(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("StartSession() error = %v", err)
+	}
+	defer session.Close()
+
+	response, err := session.Send(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+
+	wantTTY := "false"
+	if runtime.GOOS == "linux" || runtime.GOOS == "windows" {
+		wantTTY = "true"
+	}
+	if !strings.Contains(response.Stdout, "tty="+wantTTY) {
+		t.Fatalf("expected tty=%s, got %q", wantTTY, response.Stdout)
 	}
 }
 
@@ -227,6 +257,14 @@ func runTTYHelper() {
 		if err != nil {
 			return
 		}
-		fmt.Fprintf(os.Stdout, "tty=%t input=%s\n", isatty.IsTerminal(os.Stdout.Fd()), input)
+		fmt.Fprintf(os.Stdout, "tty=%t input=%s\n", isCharDevice(os.Stdout), input)
 	}
+}
+
+func isCharDevice(file *os.File) bool {
+	info, err := file.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }

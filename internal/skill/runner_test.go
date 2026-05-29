@@ -94,10 +94,7 @@ func TestRunImplementationUsesRootAsWorkDirForCodex(t *testing.T) {
 		t.Fatalf("WriteFile(prompt) error = %v", err)
 	}
 
-	scriptPath := filepath.Join(root, "cwd-provider.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %cd%\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile(script) error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, root, "cwd-provider", "@echo off\r\necho %cd%\r\n", "#!/usr/bin/env sh\npwd\n")
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `[]`)
 
@@ -131,10 +128,7 @@ func TestRunImplementationUsesRootAsWorkDirForCopilot(t *testing.T) {
 		t.Fatalf("WriteFile(prompt) error = %v", err)
 	}
 
-	scriptPath := filepath.Join(root, "cwd-provider.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %cd%\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile(script) error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, root, "cwd-provider", "@echo off\r\necho %cd%\r\n", "#!/usr/bin/env sh\npwd\n")
 	t.Setenv("KOROBOKCLE_COPILOT_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_COPILOT_ARGS_JSON", `[]`)
 

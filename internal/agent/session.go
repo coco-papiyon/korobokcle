@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -132,12 +133,18 @@ func (s *Session) SendJSONL(ctx context.Context, input string) (JSONLResponse, e
 
 	var stderr strings.Builder
 	events := make([]JSONLEvent, 0, 8)
+	stdoutCh := s.stdoutCh
+	stderrCh := s.stderrCh
 
 	for {
 		select {
-		case chunk, ok := <-s.stdoutCh:
+		case chunk, ok := <-stdoutCh:
 			if !ok {
-				return JSONLResponse{Events: events, Stderr: stderr.String()}, nil
+				stdoutCh = nil
+				if stderrCh == nil {
+					return JSONLResponse{Events: events, Stderr: stderr.String()}, nil
+				}
+				continue
 			}
 			if chunk.err != nil {
 				return JSONLResponse{Events: events, Stderr: stderr.String()}, chunk.err
@@ -153,9 +160,13 @@ func (s *Session) SendJSONL(ctx context.Context, input string) (JSONLResponse, e
 					return JSONLResponse{Events: events, Stderr: stderr.String()}, nil
 				}
 			}
-		case chunk, ok := <-s.stderrCh:
+		case chunk, ok := <-stderrCh:
 			if !ok {
-				return JSONLResponse{Events: events, Stderr: stderr.String()}, nil
+				stderrCh = nil
+				if stdoutCh == nil {
+					return JSONLResponse{Events: events, Stderr: stderr.String()}, nil
+				}
+				continue
 			}
 			if chunk.err != nil {
 				return JSONLResponse{Events: events, Stderr: stderr.String()}, chunk.err
@@ -190,21 +201,31 @@ func (s *Session) collectUntilIdle(ctx context.Context) (Response, error) {
 
 	var stdout strings.Builder
 	var stderr strings.Builder
+	stdoutCh := s.stdoutCh
+	stderrCh := s.stderrCh
 
 	for {
 		select {
-		case chunk, ok := <-s.stdoutCh:
+		case chunk, ok := <-stdoutCh:
 			if !ok {
-				return Response{Stdout: stdout.String(), Stderr: stderr.String()}, nil
+				stdoutCh = nil
+				if stderrCh == nil {
+					return Response{Stdout: stdout.String(), Stderr: stderr.String()}, nil
+				}
+				continue
 			}
 			if chunk.err != nil {
 				return Response{Stdout: stdout.String(), Stderr: stderr.String()}, chunk.err
 			}
 			stdout.WriteString(chunk.text)
 			resetTimer(timer, s.idleTimeout)
-		case chunk, ok := <-s.stderrCh:
+		case chunk, ok := <-stderrCh:
 			if !ok {
-				return Response{Stdout: stdout.String(), Stderr: stderr.String()}, nil
+				stderrCh = nil
+				if stdoutCh == nil {
+					return Response{Stdout: stdout.String(), Stderr: stderr.String()}, nil
+				}
+				continue
 			}
 			if chunk.err != nil {
 				return Response{Stdout: stdout.String(), Stderr: stderr.String()}, chunk.err
@@ -228,6 +249,8 @@ func (s *Session) collectUntilIdle(ctx context.Context) (Response, error) {
 func (s *Session) collectUntilMarker(ctx context.Context, input string) (Response, error) {
 	var stdout strings.Builder
 	var stderr strings.Builder
+	stdoutCh := s.stdoutCh
+	stderrCh := s.stderrCh
 	timer := time.NewTimer(s.idleTimeout)
 	if !timer.Stop() {
 		select {
@@ -239,9 +262,13 @@ func (s *Session) collectUntilMarker(ctx context.Context, input string) (Respons
 
 	for {
 		select {
-		case chunk, ok := <-s.stdoutCh:
+		case chunk, ok := <-stdoutCh:
 			if !ok {
-				return Response{Stdout: stdout.String(), Stderr: stderr.String()}, nil
+				stdoutCh = nil
+				if stderrCh == nil {
+					return Response{Stdout: stdout.String(), Stderr: stderr.String()}, nil
+				}
+				continue
 			}
 			if chunk.err != nil {
 				return Response{Stdout: stdout.String(), Stderr: stderr.String()}, chunk.err
@@ -252,9 +279,13 @@ func (s *Session) collectUntilMarker(ctx context.Context, input string) (Respons
 				resetTimer(timer, s.idleTimeout)
 				markerTimer = timer.C
 			}
-		case chunk, ok := <-s.stderrCh:
+		case chunk, ok := <-stderrCh:
 			if !ok {
-				return Response{Stdout: stdout.String(), Stderr: stderr.String()}, nil
+				stderrCh = nil
+				if stdoutCh == nil {
+					return Response{Stdout: stdout.String(), Stderr: stderr.String()}, nil
+				}
+				continue
 			}
 			if chunk.err != nil {
 				return Response{Stdout: stdout.String(), Stderr: stderr.String()}, chunk.err
@@ -320,7 +351,7 @@ func (s *Session) readStream(reader io.Reader, out chan<- streamChunk) {
 			out <- streamChunk{text: string(buffer[:n])}
 		}
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) || errors.Is(err, os.ErrClosed) {
 				return
 			}
 			out <- streamChunk{err: err}

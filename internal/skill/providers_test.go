@@ -5,16 +5,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestExternalCLIProviderReadsStdout(t *testing.T) {
 	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "stdout-provider.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %1\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, dir, "stdout-provider", "@echo off\r\necho %1\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$1\"\n")
 
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["{{prompt}}"]`)
@@ -36,10 +34,7 @@ func TestExternalCLIProviderReadsStdout(t *testing.T) {
 
 func TestCodexCLIProviderUsesWritableSandboxByDefault(t *testing.T) {
 	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "echo-codex.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %*\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, dir, "echo-codex", "@echo off\r\necho %*\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$*\"\n")
 
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", "")
@@ -65,10 +60,7 @@ func TestCodexCLIProviderUsesWritableSandboxByDefault(t *testing.T) {
 
 func TestExternalCLIProviderReadsOutputFileFallback(t *testing.T) {
 	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "file-provider.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\n>\"%1\" echo %~2\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, dir, "file-provider", "@echo off\r\n>\"%1\" echo %~2\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$2\" > \"$1\"\n")
 
 	outputPath := filepath.Join(dir, "result.md")
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
@@ -91,10 +83,7 @@ func TestExternalCLIProviderReadsOutputFileFallback(t *testing.T) {
 
 func TestExternalCLIProviderExpandsPromptArgument(t *testing.T) {
 	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "echo-args.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %1\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, dir, "echo-args", "@echo off\r\necho %1\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$1\"\n")
 
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["{{prompt}}"]`)
@@ -116,10 +105,7 @@ func TestExternalCLIProviderExpandsPromptArgument(t *testing.T) {
 
 func TestCodexCLIProviderSendsPromptViaStdinByDefault(t *testing.T) {
 	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "stdin-provider.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\nset /p INPUT=\r\necho %INPUT%\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, dir, "stdin-provider", "@echo off\r\nset /p INPUT=\r\necho %INPUT%\r\n", "#!/usr/bin/env sh\nIFS= read -r input\nprintf '%s\\n' \"$input\"\n")
 
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", "")
@@ -141,10 +127,7 @@ func TestCodexCLIProviderSendsPromptViaStdinByDefault(t *testing.T) {
 
 func TestExternalCLIProviderExpandsModelArgument(t *testing.T) {
 	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "echo-model.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %1 %2 %3\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, dir, "echo-model", "@echo off\r\necho %1 %2 %3\r\n", "#!/usr/bin/env sh\nprintf '%s %s %s\\n' \"$1\" \"$2\" \"$3\"\n")
 
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["suggest","{{model_flag}}","{{model}}","{{prompt}}"]`)
@@ -167,10 +150,7 @@ func TestExternalCLIProviderExpandsModelArgument(t *testing.T) {
 
 func TestExternalCLIProviderOmitsDefaultModelArgument(t *testing.T) {
 	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "echo-args.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %*\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, dir, "echo-args", "@echo off\r\necho %*\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$*\"\n")
 
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["{{model_flag}}","{{model}}","{{prompt}}"]`)
@@ -210,10 +190,7 @@ func TestModelFlagTreatsDefaultAsEmpty(t *testing.T) {
 
 func TestCopilotCLIProviderUsesAutomationFlagsByDefault(t *testing.T) {
 	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "echo-copilot.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %*\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, dir, "echo-copilot", "@echo off\r\necho %*\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$*\"\n")
 
 	t.Setenv("KOROBOKCLE_COPILOT_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_COPILOT_ARGS_JSON", "")
@@ -257,10 +234,7 @@ func TestCopilotCLIProviderUsesAutomationFlagsByDefault(t *testing.T) {
 
 func TestCopilotCLIProviderWritesDebugLogsWhenEnabled(t *testing.T) {
 	dir := t.TempDir()
-	scriptPath := filepath.Join(dir, "echo-copilot.cmd")
-	if err := os.WriteFile(scriptPath, []byte("@echo off\r\necho %*\r\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
+	scriptPath := writeProviderScript(t, dir, "echo-copilot", "@echo off\r\necho %*\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$*\"\n")
 
 	t.Setenv("KOROBOKCLE_COPILOT_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_COPILOT_ARGS_JSON", "")
@@ -287,6 +261,25 @@ func TestCopilotCLIProviderWritesDebugLogsWhenEnabled(t *testing.T) {
 	if !strings.Contains(result.Stderr, "prompt=debug prompt") {
 		t.Fatalf("expected prompt contents in debug logs, got %q", result.Stderr)
 	}
+}
+
+func writeProviderScript(t *testing.T, dir string, baseName string, windowsBody string, unixBody string) string {
+	t.Helper()
+
+	ext := ".sh"
+	body := unixBody
+	mode := os.FileMode(0o755)
+	if runtime.GOOS == "windows" {
+		ext = ".cmd"
+		body = windowsBody
+		mode = 0o644
+	}
+
+	scriptPath := filepath.Join(dir, baseName+ext)
+	if err := os.WriteFile(scriptPath, []byte(body), mode); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	return scriptPath
 }
 
 func TestCopilotCLIProviderRunsGoTestCommandWithRealCopilot(t *testing.T) {
