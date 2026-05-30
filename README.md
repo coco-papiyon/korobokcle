@@ -190,7 +190,7 @@ Linux / macOS の場合:
 
 SQLite ファイルはデフォルトで `data/korobokcle.db` に作成されます。
 
-`config/app.yaml` の `provider` は `mock` / `copilot` / `codex` を指定できます。
+`config/app.yaml` の `provider` は `mock` / `copilot` / `claude` / `codex` を指定できます。
 provider と model の候補はコード内の provider catalog を参照します。
 `model` は省略可能で、未指定ならツールの既定モデルを使います。
 Web UI の `Settings` 画面からも切り替え可能です。
@@ -201,16 +201,19 @@ Web UI の `Settings` 画面からも切り替え可能です。
 `config/watch-rules.yaml` の各ルールでも `provider` / `model` を指定でき、未指定時は `config/app.yaml` の設定を使います。
 watch rule 側の provider / model の候補も、コード内の provider catalog を元に表示されます。
 
-`copilot` と `codex` は外部 CLI を実行します。
-デフォルトでは `copilot -p ... -s --allow-all-tools --no-ask-user` と `codex exec` を呼びますが、
+`copilot` / `claude` / `codex` は外部 CLI を実行します。
+デフォルトでは `copilot -p ... -s --allow-all-tools --no-ask-user`、`claude`、`codex exec` を呼びますが、
 model を指定した場合は `--model` を付けて実行します。
 `codex` の prompt はデフォルトで標準入力から渡します。
 `copilot` は監視対象リポジトリを作業ディレクトリとして実行し、`artifacts/.../prompt.md` を読んでその指示に従います。
 設定・成果物・スキル定義はツール配置ディレクトリの `config/`、`artifacts/`、`skills/` を参照します。
 `copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定できます。必要ならここで制限できます。
+`claude` は `KOROBOKCLE_CLAUDE_BIN` / `KOROBOKCLE_CLAUDE_ARGS_JSON` で上書きできます。
+`claude` の prompt はデフォルトで標準入力から渡します。
 `codex` は `codex exec --sandbox workspace-write` で実行し、標準入力にプロンプト本文を渡します。
 Linux では対話CLI向けに擬似端末経由で起動します。
 環境に応じて `KOROBOKCLE_COPILOT_BIN` / `KOROBOKCLE_COPILOT_ARGS_JSON`、
+`KOROBOKCLE_CLAUDE_BIN` / `KOROBOKCLE_CLAUDE_ARGS_JSON`、
 `KOROBOKCLE_CODEX_BIN` / `KOROBOKCLE_CODEX_ARGS_JSON` で上書きできます。
 `KOROBOKCLE_TOOL_ROOT` を指定すると、ツール配置ディレクトリを明示できます。
 `dataDir`、`artifactsDir`、`sqlitePath` の相対パスは `KOROBOKCLE_TOOL_ROOT` で指定した

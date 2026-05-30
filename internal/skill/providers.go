@@ -53,6 +53,25 @@ func (p *CopilotCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 	return provider.Run(ctx, req)
 }
 
+type ClaudeCLIProvider struct{}
+
+func NewClaudeCLIProvider() *ClaudeCLIProvider {
+	return &ClaudeCLIProvider{}
+}
+
+func (p *ClaudeCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, error) {
+	provider := ExternalCLIProvider{
+		Name:       "claude",
+		EnvPrefix:  "KOROBOKCLE_CLAUDE",
+		DefaultBin: "claude",
+		DefaultArgs: []string{
+			"{{model_flag}}",
+			"{{model}}",
+		},
+	}
+	return provider.Run(ctx, req)
+}
+
 type CodexCLIProvider struct{}
 
 func NewCodexCLIProvider() *CodexCLIProvider {
@@ -282,6 +301,8 @@ func ProviderFor(name string) (AIProvider, error) {
 		return NewMockProvider(), nil
 	case "copilot":
 		return NewCopilotCLIProvider(), nil
+	case "claude":
+		return NewClaudeCLIProvider(), nil
 	case "codex":
 		return NewCodexCLIProvider(), nil
 	default:

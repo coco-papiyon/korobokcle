@@ -246,7 +246,7 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	if got.Model != "" {
 		t.Fatalf("expected default model to be normalized away, got %q", got.Model)
 	}
-	if len(got.Providers) != 3 || got.Providers[0].Name != "copilot" || len(got.Providers[0].Models) != 5 {
+	if len(got.Providers) != 4 || got.Providers[0].Name != "copilot" || len(got.Providers[0].Models) != 5 {
 		t.Fatalf("unexpected provider catalog: %#v", got.Providers)
 	}
 	wantModels := []string{"claude-sonnet-4.6", "claude-opus-4.6", "gpt-5.4", "gpt-5-mini", "gpt-4.1"}
@@ -254,6 +254,9 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 		if got.Providers[0].Models[i] != want {
 			t.Fatalf("unexpected provider catalog: %#v", got.Providers)
 		}
+	}
+	if got.Providers[1].Name != "claude" || len(got.Providers[1].Models) != 2 {
+		t.Fatalf("unexpected claude provider catalog: %#v", got.Providers)
 	}
 	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].Workers != 1 {
 		t.Fatalf("unexpected monitored repositories: %#v", got.MonitoredRepositories)
@@ -524,6 +527,32 @@ func TestHandleSaveAppConfigAcceptsNewCopilotModels(t *testing.T) {
 	}
 }
 
+func TestHandleSaveAppConfigAcceptsClaudeProviderModels(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.Provider = "mock"
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"claude","model":"claude-opus-4.6","pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+	if got := svc.App().Provider; got != "claude" {
+		t.Fatalf("expected saved provider claude, got %q", got)
+	}
+	if got := svc.App().Model; got != "claude-opus-4.6" {
+		t.Fatalf("expected saved model claude-opus-4.6, got %q", got)
+	}
+}
+
 func TestHandleSaveAppConfigRejectsInvalidModelForProvider(t *testing.T) {
 	t.Parallel()
 
@@ -533,6 +562,25 @@ func TestHandleSaveAppConfigRejectsInvalidModelForProvider(t *testing.T) {
 	server := &Server{config: svc}
 
 	body := []byte(`{"provider":"copilot","model":"gpt-4.5"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
+
+	server.handleSaveAppConfig(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
+	}
+}
+
+func TestHandleSaveAppConfigRejectsInvalidClaudeModel(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"provider":"claude","model":"gpt-5.4"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -1148,6 +1196,31 @@ func TestHandleSaveWatchRulesAcceptsNewCopilotModels(t *testing.T) {
 	}
 }
 
+func TestHandleSaveWatchRulesAcceptsClaudeProviderModels(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"claude","model":"claude-sonnet-4.6","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
+
+	server.handleSaveWatchRules(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+	if got := svc.WatchRules().Rules[0].Provider; got != "claude" {
+		t.Fatalf("expected saved provider claude, got %q", got)
+	}
+	if got := svc.WatchRules().Rules[0].Model; got != "claude-sonnet-4.6" {
+		t.Fatalf("expected saved model claude-sonnet-4.6, got %q", got)
+	}
+}
+
 func TestHandleSaveWatchRulesRejectsInvalidModelForProvider(t *testing.T) {
 	t.Parallel()
 
@@ -1157,6 +1230,25 @@ func TestHandleSaveWatchRulesRejectsInvalidModelForProvider(t *testing.T) {
 	server := &Server{config: svc}
 
 	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"copilot","model":"gpt-4.5","skillSet":"default","testProfile":"go-default","enabled":true}]`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
+
+	server.handleSaveWatchRules(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, recorder.Code)
+	}
+}
+
+func TestHandleSaveWatchRulesRejectsInvalidClaudeModel(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`[{"id":"rule-1","name":"Rule 1","repositories":["owner/repository"],"target":"issue","labels":[],"titlePattern":"","authors":[],"assignees":[],"reviewers":[],"excludeDraftPR":true,"provider":"claude","model":"gpt-5.4","skillSet":"default","testProfile":"go-default","enabled":true}]`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/watch-rules", bytes.NewReader(body))
 

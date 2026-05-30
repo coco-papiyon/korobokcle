@@ -93,3 +93,19 @@ func TestServiceUpdateToolCommandsPersistsAndClones(t *testing.T) {
 		}
 	}
 }
+
+func TestProviderByNameReturnsClaude(t *testing.T) {
+	t.Parallel()
+
+	svc := NewService(t.TempDir(), DefaultFiles())
+	spec, ok := svc.ProviderByName("claude")
+	if !ok {
+		t.Fatalf("expected claude provider to be registered")
+	}
+	if spec.Name != "claude" {
+		t.Fatalf("expected provider name claude, got %q", spec.Name)
+	}
+	if len(spec.Models) != 2 {
+		t.Fatalf("expected claude provider models, got %#v", spec.Models)
+	}
+}
