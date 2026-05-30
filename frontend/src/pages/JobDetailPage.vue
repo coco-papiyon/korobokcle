@@ -10,6 +10,7 @@ import {
   fetchAppConfig,
   fetchJobDetail,
   fetchToolCommands,
+  fetchWatchRules,
   purgeJob,
   restoreJob,
   startToolCommand,
@@ -34,6 +35,7 @@ const router = useRouter()
 const jobID = computed(() => String(route.params.id))
 const { data: appConfig } = useAsyncData(fetchAppConfig)
 const { data: toolCommands } = useAsyncData(fetchToolCommands)
+const { data: watchRules } = useAsyncData(fetchWatchRules)
 const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetchJobDetail(jobID.value))
 let refreshTimer: number | null = null
 const refreshIntervalMs = computed(() => {
@@ -229,8 +231,19 @@ const groupedLogs = computed(() => {
 const canSubmitReviewComment = computed(() => data.value?.job.type === 'pr_review' && data.value?.job.state === 'review_ready' && !!data.value?.reviewArtifact)
 const canApproveReview = computed(() => data.value?.job.type === 'pr_review' && data.value?.job.state === 'review_ready' && !!data.value?.reviewArtifact)
 const isPRFeedbackJob = computed(() => data.value?.job.type === 'pr_feedback')
+const isIssueJob = computed(() => data.value?.job.type === 'issue')
 const hasReviewComments = computed(() => (data.value?.reviewComments?.length ?? 0) > 0)
 const hasIssueBody = computed(() => (data.value?.issueBody?.trim().length ?? 0) > 0)
+const watchRuleNameByID = computed(() => {
+  return new Map((watchRules.value ?? []).map((rule) => [rule.id, rule.name.trim() || rule.id]))
+})
+const watchRuleDisplayName = computed(() => {
+  const watchRuleId = data.value?.job.watchRuleId?.trim() ?? ''
+  if (!watchRuleId) {
+    return '-'
+  }
+  return watchRuleNameByID.value.get(watchRuleId) ?? watchRuleId
+})
 
 watch(
   () => data.value?.reviewArtifact?.content,
@@ -730,8 +743,8 @@ function openPRCreateModal() {
               <h3 class="job-summary__title">{{ data.job.title || '-' }}</h3>
               <p class="job-summary__id text-muted">ID: <code>{{ data.job.id || '-' }}</code></p>
               <p class="text-muted">{{ data.job.repository }} #{{ data.job.githubNumber }}</p>
-              <p class="text-muted">Branch: <code>{{ data.job.branchName }}</code></p>
-              <p class="text-muted">Watch Rule: <code>{{ data.job.watchRuleId }}</code></p>
+              <p v-if="isIssueJob" class="text-muted">Branch: <code>{{ data.job.branchName || '-' }}</code></p>
+              <p class="text-muted">Watch Rule: <code>{{ watchRuleDisplayName }}</code></p>
             </div>
           </PanelCard>
           <PanelCard title="Flow">
