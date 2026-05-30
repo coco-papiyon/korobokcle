@@ -123,7 +123,7 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		Output: strings.TrimSpace(stdout.String()),
 	}
 
-	if output := readProviderOutputFile(req.OutputPath); output != "" && (p.PreferOutputFile || result.Output == "") {
+	if output := readProviderOutputFile(req.OutputPath); output != "" && (p.PreferOutputFile || result.Output == "" || output != result.Output) {
 		result.Output = output
 	}
 
@@ -230,7 +230,7 @@ func debugArgsForLog(args []string) string {
 
 func copilotDefaultArgs(allowTools []string) []string {
 	args := []string{
-		"-p", "Read the instructions in {{artifact_dir}}/prompt.md and follow them. Use the repository root as the working directory and modify the repository files directly. Write the final response to {{output_file}} in the artifact directory. Standard output may be used for progress logs only.",
+		"-p", "Read the instructions in {{artifact_dir}}/prompt.md and follow them. Use the repository root as the working directory and modify the repository files directly. Write the final response to {{output_path}}. Standard output may be used for progress logs only.",
 		"-s",
 		"{{model_flag}}", "{{model}}",
 		"--add-dir",

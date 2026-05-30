@@ -3,6 +3,7 @@ package skill
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -99,7 +100,7 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 		return AIResult{}, err
 	}
 
-	if err := os.WriteFile(outputPath, []byte(result.Output), 0o644); err != nil {
+	if err := persistSkillOutput(outputPath, result.Output); err != nil {
 		return AIResult{}, err
 	}
 	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "stdout.log"), []byte(result.Stdout), 0o644); err != nil {
@@ -163,7 +164,7 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 		return AIResult{}, err
 	}
 
-	if err := os.WriteFile(outputPath, []byte(result.Output), 0o644); err != nil {
+	if err := persistSkillOutput(outputPath, result.Output); err != nil {
 		return AIResult{}, err
 	}
 	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "stdout.log"), []byte(result.Stdout), 0o644); err != nil {
@@ -227,7 +228,7 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 		return AIResult{}, err
 	}
 
-	if err := os.WriteFile(outputPath, []byte(result.Output), 0o644); err != nil {
+	if err := persistSkillOutput(outputPath, result.Output); err != nil {
 		return AIResult{}, err
 	}
 	if err := os.WriteFile(filepath.Join(contextData.ArtifactDir, "stdout.log"), []byte(result.Stdout), 0o644); err != nil {
@@ -265,6 +266,15 @@ func (r *Runner) executionWorkDir(definition Definition, execution ExecutionConf
 		return r.repoRoot
 	}
 	return artifactDir
+}
+
+func persistSkillOutput(path string, output string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return os.WriteFile(path, []byte(output), 0o644)
 }
 
 func (r *Runner) logExecutionStart(phase string, skillName string, provider string, model string, workDir string, artifactDir string, outputPath string) {

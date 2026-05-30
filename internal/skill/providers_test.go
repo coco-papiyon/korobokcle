@@ -81,6 +81,38 @@ func TestExternalCLIProviderReadsOutputFileFallback(t *testing.T) {
 	}
 }
 
+func TestExternalCLIProviderPrefersOutputFileWhenPresent(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := writeProviderScript(
+		t,
+		dir,
+		"stdout-and-file-provider",
+		"@echo off\r\necho noisy stdout\r\n>\"%1\" echo final result\r\n",
+		"#!/usr/bin/env sh\nprintf 'noisy stdout\\n'\nprintf '%s\\n' 'final result' > \"$1\"\n",
+	)
+
+	outputPath := filepath.Join(dir, "result.md")
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["{{output_path}}"]`)
+
+	provider := NewCodexCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:      "ignored",
+		WorkDir:     dir,
+		ArtifactDir: dir,
+		OutputPath:  outputPath,
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if strings.TrimSpace(result.Stdout) != "noisy stdout" {
+		t.Fatalf("expected stdout to keep raw output, got %q", result.Stdout)
+	}
+	if result.Output != "final result" {
+		t.Fatalf("expected output file contents, got %q", result.Output)
+	}
+}
+
 func TestExternalCLIProviderExpandsPromptArgument(t *testing.T) {
 	dir := t.TempDir()
 	scriptPath := writeProviderScript(t, dir, "echo-args", "@echo off\r\necho %1\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$1\"\n")
