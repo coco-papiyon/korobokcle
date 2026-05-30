@@ -132,9 +132,10 @@ export function saveToolCommands(commands: ToolCommand[]): Promise<ToolCommand[]
   })
 }
 
-export function startToolCommand(jobId: string): Promise<JobDetail> {
+export function startToolCommand(jobId: string, toolCommand?: string): Promise<JobDetail> {
   return request<JobDetail>(`/api/jobs/${jobId}/tool/start`, {
     method: 'POST',
+    body: JSON.stringify(toolCommand ? { toolCommand } : {}),
   })
 }
 

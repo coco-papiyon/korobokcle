@@ -9,6 +9,7 @@ import {
   deleteJob,
   fetchAppConfig,
   fetchJobDetail,
+  fetchToolCommands,
   purgeJob,
   restoreJob,
   startToolCommand,
@@ -32,6 +33,7 @@ const route = useRoute()
 const router = useRouter()
 const jobID = computed(() => String(route.params.id))
 const { data: appConfig } = useAsyncData(fetchAppConfig)
+const { data: toolCommands } = useAsyncData(fetchToolCommands)
 const { data, isLoading, isRefreshing, error, reload } = useAsyncData(() => fetchJobDetail(jobID.value))
 let refreshTimer: number | null = null
 const refreshIntervalMs = computed(() => {
@@ -110,7 +112,9 @@ const reviewRerunError = ref<string | null>(null)
 const reviewSubmitError = ref<string | null>(null)
 const reviewApproveError = ref<string | null>(null)
 const toolCommandState = ref<'idle' | 'saving' | 'error'>('idle')
+const toolCommandAction = ref<'start' | 'stop' | null>(null)
 const toolCommandError = ref<string | null>(null)
+const selectedToolCommandName = ref('')
 const popupLoadingState = ref<'idle' | 'loading' | 'error'>('idle')
 const popupLoadingError = ref<string | null>(null)
 const prCreateInfo = computed(() => {
@@ -179,6 +183,14 @@ const finalApprovalWarning = computed(() => {
 })
 const testReportMarkdown = computed(() => formatTestReportMarkdown(data.value?.testReport?.content))
 const configuredToolCommand = computed(() => data.value?.toolCommand ?? null)
+const availableToolCommands = computed(() => toolCommands.value ?? [])
+const selectedToolCommand = computed(() => {
+  const name = selectedToolCommandName.value.trim()
+  if (!name) {
+    return null
+  }
+  return availableToolCommands.value.find((command) => command.name === name) ?? null
+})
 const toolExecution = computed(() => data.value?.toolExecution ?? null)
 const toolStdout = computed(() => data.value?.toolExecution?.stdout ?? null)
 const toolStderr = computed(() => data.value?.toolExecution?.stderr ?? null)
@@ -226,6 +238,17 @@ watch(
     if (typeof content === 'string' && reviewArtifactComment.value.trim() === '') {
       reviewArtifactComment.value = content
     }
+  },
+  { immediate: true },
+)
+
+watch(
+  [configuredToolCommand, toolExecution],
+  ([configured]) => {
+    if (selectedToolCommandName.value.trim()) {
+      return
+    }
+    selectedToolCommandName.value = configured?.name ?? ''
   },
   { immediate: true },
 )
@@ -354,19 +377,16 @@ function formatIssueBody(body?: string) {
   return body && body.trim().length > 0 ? body : 'Issue body is empty.'
 }
 
-function formatToolButtonLabel() {
-  if (toolCommandState.value === 'saving') {
-    return configuredToolCommand.value?.resident && toolExecution.value?.running ? '停止中...' : '起動中...'
+function formatToolButtonLabel(action: 'start' | 'stop') {
+  if (toolCommandState.value === 'saving' && toolCommandAction.value === action) {
+    return action === 'start' ? '起動中...' : '停止中...'
   }
-  if (configuredToolCommand.value?.resident && toolExecution.value?.running) {
-    return '停止'
-  }
-  return '起動'
+  return action === 'start' ? '起動' : '停止'
 }
 
 function formatToolExecutionSummary() {
-  const tool = configuredToolCommand.value
   const execution = toolExecution.value
+  const tool = execution ?? selectedToolCommand.value ?? configuredToolCommand.value
   if (!tool) {
     return ''
   }
@@ -602,18 +622,40 @@ async function purgeArchivedJob() {
   }
 }
 
-async function toggleToolCommand() {
-  if (!configuredToolCommand.value) {
+async function startSelectedToolCommand() {
+  if (!selectedToolCommand.value || toolExecution.value?.running) {
     return
   }
   toolCommandState.value = 'saving'
+  toolCommandAction.value = 'start'
   toolCommandError.value = null
   try {
-    data.value = toolExecution.value?.running ? await stopToolCommand(jobID.value) : await startToolCommand(jobID.value)
+    data.value = await startToolCommand(jobID.value, selectedToolCommand.value.name)
     toolCommandState.value = 'idle'
+    toolCommandAction.value = null
     await reload()
   } catch (err) {
     toolCommandState.value = 'error'
+    toolCommandAction.value = null
+    toolCommandError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+async function stopRunningToolCommand() {
+  if (!toolExecution.value?.running) {
+    return
+  }
+  toolCommandState.value = 'saving'
+  toolCommandAction.value = 'stop'
+  toolCommandError.value = null
+  try {
+    data.value = await stopToolCommand(jobID.value)
+    toolCommandState.value = 'idle'
+    toolCommandAction.value = null
+    await reload()
+  } catch (err) {
+    toolCommandState.value = 'error'
+    toolCommandAction.value = null
     toolCommandError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
@@ -708,19 +750,44 @@ function openPRCreateModal() {
                   </button>
                 </div>
               </template>
-              <template v-if="!isDeletedJob && configuredToolCommand">
+              <template v-if="!isDeletedJob">
                 <div class="stack-sm">
                   <p class="text-muted">
-                    Tool: <code>{{ configuredToolCommand.name }}</code> / {{ formatToolExecutionSummary() }}
+                    Tool Default: <code>{{ configuredToolCommand?.name ?? '-' }}</code>
+                    <span v-if="toolExecution">
+                      / Running: <code>{{ toolExecution.name }}</code>
+                    </span>
+                    / {{ formatToolExecutionSummary() }}
                   </p>
+                  <label class="field field-full">
+                    <span class="field__label">Tool Commands</span>
+                    <select
+                      v-model="selectedToolCommandName"
+                      class="field__control"
+                      :disabled="toolExecution?.running || toolCommandState === 'saving' || availableToolCommands.length === 0"
+                    >
+                      <option value="" disabled>Tool Commands を選択</option>
+                      <option v-for="command in availableToolCommands" :key="command.name" :value="command.name">
+                        {{ command.name }}
+                      </option>
+                    </select>
+                  </label>
                   <div class="button-row">
+                    <button
+                      class="button button-primary"
+                      type="button"
+                      :disabled="toolCommandState === 'saving' || toolExecution?.running || !selectedToolCommand"
+                      @click="startSelectedToolCommand"
+                    >
+                      {{ formatToolButtonLabel('start') }}
+                    </button>
                     <button
                       class="button button-secondary"
                       type="button"
-                      :disabled="toolCommandState === 'saving'"
-                      @click="toggleToolCommand"
+                      :disabled="toolCommandState === 'saving' || !toolExecution?.running"
+                      @click="stopRunningToolCommand"
                     >
-                      {{ formatToolButtonLabel() }}
+                      {{ formatToolButtonLabel('stop') }}
                     </button>
                   </div>
                 </div>
@@ -861,13 +928,14 @@ function openPRCreateModal() {
         </PanelCard>
 
         <PanelCard
-          v-if="configuredToolCommand && (toolExecution || toolStdout || toolStderr)"
+          v-if="toolExecution || toolStdout || toolStderr"
           title="Tool Log"
         >
           <div class="artifact-headline">
             <button class="log-entry-button" type="button" @click="openToolLogModal">Tool log を開く</button>
             <p class="text-muted">
-              <code>{{ configuredToolCommand.name }}</code> / {{ formatToolExecutionSummary() }}
+              <code>{{ toolExecution?.name ?? selectedToolCommand?.name ?? configuredToolCommand?.name ?? '-' }}</code>
+              / {{ formatToolExecutionSummary() }}
             </p>
           </div>
         </PanelCard>
@@ -1035,13 +1103,14 @@ function openPRCreateModal() {
           </div>
         </div>
 
-        <div v-if="toolLogModalOpen && configuredToolCommand && (toolExecution || toolStdout || toolStderr)" class="modal-backdrop" @click.self="toolLogModalOpen = false">
+        <div v-if="toolLogModalOpen && (toolExecution || toolStdout || toolStderr)" class="modal-backdrop" @click.self="toolLogModalOpen = false">
           <div class="modal-panel">
             <div class="modal-panel__header">
               <div>
                 <h3 class="modal-panel__title">Tool Log</h3>
                 <p class="text-muted">
-                  <code>{{ configuredToolCommand.name }}</code> / {{ formatToolExecutionSummary() }}
+                  <code>{{ toolExecution?.name ?? selectedToolCommand?.name ?? configuredToolCommand?.name ?? '-' }}</code>
+                  / {{ formatToolExecutionSummary() }}
                 </p>
                 <p v-if="toolExecution?.startedAt" class="text-muted">
                   Started: {{ formatDateTime(toolExecution.startedAt) }}

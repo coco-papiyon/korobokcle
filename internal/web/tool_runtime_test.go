@@ -45,7 +45,7 @@ func TestToolRuntimeSeparatesStdoutAndStderr(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		var err error
-		got, err = manager.snapshot(svc, job, nil, tool)
+		got, err = manager.snapshot(svc, job, nil)
 		if err != nil {
 			t.Fatalf("snapshot() error = %v", err)
 		}
@@ -57,6 +57,9 @@ func TestToolRuntimeSeparatesStdoutAndStderr(t *testing.T) {
 
 	if got == nil {
 		t.Fatal("expected tool execution snapshot")
+	}
+	if got.Name != tool.Name {
+		t.Fatalf("expected tool name %q, got %q", tool.Name, got.Name)
 	}
 	if got.Stdout == nil || got.Stderr == nil {
 		t.Fatalf("expected stdout and stderr logs, got %#v", got)
@@ -75,9 +78,75 @@ func TestToolRuntimeSeparatesStdoutAndStderr(t *testing.T) {
 	}
 }
 
+func TestToolRuntimeStopMarksExecutionStopped(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.MonitoredRepositories = []config.MonitoredRepository{
+		{Repository: "owner/repository", Branch: "", Workers: 1},
+	}
+	svc := config.NewService(root, files)
+	manager := newToolRuntimeManager()
+	job := domain.Job{
+		ID:          "job-2",
+		Repository:  "owner/repository",
+		WatchRuleID: "rule-1",
+	}
+	workerDir := artifacts.RepositoryWorkerSourceDir(root, files.App.ArtifactsDir, job.Repository, 0)
+	if err := os.MkdirAll(workerDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	tool := config.ToolCommand{Name: "fixture-stop", Command: toolStopTestCommand(), Resident: false}
+	if err := manager.start(context.Background(), svc, job, nil, tool); err != nil {
+		t.Fatalf("start() error = %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err := manager.snapshot(svc, job, nil)
+		if err != nil {
+			t.Fatalf("snapshot() error = %v", err)
+		}
+		if got != nil && got.Running {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if err := manager.stop(job.ID); err != nil {
+		t.Fatalf("stop() error = %v", err)
+	}
+
+	got, err := manager.snapshot(svc, job, nil)
+	if err != nil {
+		t.Fatalf("snapshot() after stop error = %v", err)
+	}
+	if got == nil {
+		t.Fatal("expected tool execution snapshot after stop")
+	}
+	if got.Name != tool.Name {
+		t.Fatalf("expected tool name %q, got %q", tool.Name, got.Name)
+	}
+	if got.Running {
+		t.Fatalf("expected stopped execution, got running snapshot %+v", got)
+	}
+	if got.FinishedAt == "" {
+		t.Fatalf("expected finishedAt to be recorded, got %+v", got)
+	}
+}
+
 func toolLogTestCommand() string {
 	if runtime.GOOS == "windows" {
 		return "[Console]::Out.WriteLine('stdout line'); [Console]::Error.WriteLine('stderr line')"
 	}
 	return "printf 'stdout line\\n'; printf 'stderr line\\n' 1>&2"
+}
+
+func toolStopTestCommand() string {
+	if runtime.GOOS == "windows" {
+		return "Start-Sleep -Seconds 30"
+	}
+	return "sleep 30"
 }
