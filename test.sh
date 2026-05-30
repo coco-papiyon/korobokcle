@@ -16,4 +16,4 @@ mkdir -p ${KOROBOKCLE_TOOL_ROOT}/skills
 cp -rf skills/default ${KOROBOKCLE_TOOL_ROOT}/skills/default
 
 go build ./cmd/korobokcle
-./korobokcle
+./korobokcle --port "${KOROBOKCLE_PORT}"
