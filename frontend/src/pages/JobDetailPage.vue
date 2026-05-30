@@ -111,6 +111,8 @@ const reviewSubmitError = ref<string | null>(null)
 const reviewApproveError = ref<string | null>(null)
 const toolCommandState = ref<'idle' | 'saving' | 'error'>('idle')
 const toolCommandError = ref<string | null>(null)
+const popupLoadingState = ref<'idle' | 'loading' | 'error'>('idle')
+const popupLoadingError = ref<string | null>(null)
 const prCreateInfo = computed(() => {
   const raw = data.value?.prCreateArtifact?.content
   if (!raw) {
@@ -615,6 +617,61 @@ async function toggleToolCommand() {
     toolCommandError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
+
+async function openPopup(setOpen: (value: boolean) => void) {
+  popupLoadingState.value = 'loading'
+  popupLoadingError.value = null
+  try {
+    await reload({ silent: true })
+    setOpen(true)
+    popupLoadingState.value = 'idle'
+  } catch (err) {
+    popupLoadingState.value = 'error'
+    popupLoadingError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
+
+function openIssueBodyModal() {
+  void openPopup((value) => {
+    issueBodyModalOpen.value = value
+  })
+}
+
+function openDesignArtifactModal() {
+  void openPopup((value) => {
+    designArtifactModalOpen.value = value
+  })
+}
+
+function openImplementationArtifactModal() {
+  void openPopup((value) => {
+    implementationArtifactModalOpen.value = value
+  })
+}
+
+function openReviewArtifactModal() {
+  void openPopup((value) => {
+    reviewArtifactModalOpen.value = value
+  })
+}
+
+function openTestReportModal() {
+  void openPopup((value) => {
+    testReportModalOpen.value = value
+  })
+}
+
+function openToolLogModal() {
+  void openPopup((value) => {
+    toolLogModalOpen.value = value
+  })
+}
+
+function openPRCreateModal() {
+  void openPopup((value) => {
+    prCreateModalOpen.value = value
+  })
+}
 </script>
 
 <template>
@@ -718,7 +775,7 @@ async function toggleToolCommand() {
           title="Issue"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="issueBodyModalOpen = true">Issue body を開く</button>
+            <button class="log-entry-button" type="button" @click="openIssueBodyModal">Issue body を開く</button>
             <p class="text-muted">元の issue 内容です。</p>
           </div>
         </PanelCard>
@@ -751,7 +808,7 @@ async function toggleToolCommand() {
           title="Design Artifact"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="designArtifactModalOpen = true">設計結果を開く</button>
+            <button class="log-entry-button" type="button" @click="openDesignArtifactModal">設計結果を開く</button>
             <p class="text-muted">生成された設計成果物です。承認前に内容を確認します。</p>
           </div>
         </PanelCard>
@@ -761,7 +818,7 @@ async function toggleToolCommand() {
           :title="isPRFeedbackJob ? '修正結果' : 'Implementation Artifact'"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="implementationArtifactModalOpen = true">{{ isPRFeedbackJob ? '修正結果を開く' : '実装結果を開く' }}</button>
+            <button class="log-entry-button" type="button" @click="openImplementationArtifactModal">{{ isPRFeedbackJob ? '修正結果を開く' : '実装結果を開く' }}</button>
             <p class="text-muted">{{ isPRFeedbackJob ? 'PR review コメントに対する修正結果です。' : '実装フェーズの成果物サマリです。最終承認前に確認します。' }}</p>
           </div>
         </PanelCard>
@@ -782,7 +839,7 @@ async function toggleToolCommand() {
           title="Review Artifact"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="reviewArtifactModalOpen = true">レビュー結果を開く</button>
+            <button class="log-entry-button" type="button" @click="openReviewArtifactModal">レビュー結果を開く</button>
             <p class="text-muted">PR review フェーズの成果物です。総評コメントとして GitHub へ返せます。</p>
           </div>
           <div class="stack-sm">
@@ -798,7 +855,7 @@ async function toggleToolCommand() {
           title="Test Report"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="testReportModalOpen = true">テスト結果を開く</button>
+            <button class="log-entry-button" type="button" @click="openTestReportModal">テスト結果を開く</button>
             <p class="text-muted">設定された test profile の実行結果です。</p>
           </div>
         </PanelCard>
@@ -808,7 +865,7 @@ async function toggleToolCommand() {
           title="Tool Log"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="toolLogModalOpen = true">Tool log を開く</button>
+            <button class="log-entry-button" type="button" @click="openToolLogModal">Tool log を開く</button>
             <p class="text-muted">
               <code>{{ configuredToolCommand.name }}</code> / {{ formatToolExecutionSummary() }}
             </p>
@@ -820,7 +877,7 @@ async function toggleToolCommand() {
           title="Pull Request"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="prCreateModalOpen = true">PR作成結果を開く</button>
+            <button class="log-entry-button" type="button" @click="openPRCreateModal">PR作成結果を開く</button>
             <p class="text-muted">作成された Pull Request の情報を確認できます。</p>
           </div>
         </PanelCard>
@@ -1007,6 +1064,9 @@ async function toggleToolCommand() {
             </div>
           </div>
         </div>
+
+        <p v-if="popupLoadingState === 'loading'" class="text-muted">最新ファイルを取得しています...</p>
+        <p v-if="popupLoadingState === 'error'" class="notice notice-danger">{{ popupLoadingError }}</p>
 
         <div v-if="testReportModalOpen && data.testReport" class="modal-backdrop" @click.self="testReportModalOpen = false">
           <div class="modal-panel">

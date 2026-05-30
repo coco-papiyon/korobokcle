@@ -6,6 +6,7 @@ export KOROBOKCLE_PORT="${KOROBOKCLE_PORT:-8080}"
 export KOROBOKCLE_TOOL_ROOT="tests/data"
 
 cd frontend
+npm ci
 npm run build
 cd ..
 
