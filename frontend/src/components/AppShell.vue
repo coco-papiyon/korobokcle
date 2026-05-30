@@ -14,12 +14,9 @@ defineProps<{
         <RouterLink class="nav-tabs__link" to="/settings/workers">Workers</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings/watch-rules">Watch Rules</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings/skillsets">Skill Sets</RouterLink>
-<<<<<<< Updated upstream
         <RouterLink class="nav-tabs__link" to="/settings/test-profiles">Test Profiles</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings/tool-commands">Tool Commands</RouterLink>
-=======
         <RouterLink class="nav-tabs__link" to="/guide">Guide</RouterLink>
->>>>>>> Stashed changes
       </nav>
       <p class="hero__description">{{ description }}</p>
     </header>
