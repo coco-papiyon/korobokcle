@@ -111,6 +111,7 @@ type watchRuleResponse struct {
 }
 
 type testProfileResponse struct {
+	ID       string   `json:"id,omitempty"`
 	Name     string   `json:"name"`
 	Commands []string `json:"commands"`
 }
@@ -128,7 +129,8 @@ type toolExecutionResponse struct {
 	StartedAt  string            `json:"startedAt,omitempty"`
 	FinishedAt string            `json:"finishedAt,omitempty"`
 	ExitCode   *int              `json:"exitCode,omitempty"`
-	Log        *artifactResponse `json:"log,omitempty"`
+	Stdout     *artifactResponse `json:"stdout,omitempty"`
+	Stderr     *artifactResponse `json:"stderr,omitempty"`
 }
 
 type providerSpecResponse struct {
@@ -575,6 +577,7 @@ func (s *Server) handleTestProfiles(w http.ResponseWriter, _ *http.Request) {
 	profiles := make([]testProfileResponse, 0, len(testProfiles.Profiles))
 	for _, profile := range testProfiles.Profiles {
 		profiles = append(profiles, testProfileResponse{
+			ID:       profile.ID,
 			Name:     profile.Name,
 			Commands: sliceOrEmpty(profile.Commands),
 		})
@@ -1224,6 +1227,7 @@ func normalizeTestProfiles(values []testProfileResponse) (config.TestProfiles, e
 		}
 		seen[name] = struct{}{}
 		out.Profiles = append(out.Profiles, config.TestProfile{
+			ID:       fmt.Sprintf("profile-%d", index+1),
 			Name:     name,
 			Commands: commands,
 		})

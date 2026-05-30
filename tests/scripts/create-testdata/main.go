@@ -34,9 +34,16 @@ func main() {
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
 		{Repository: "coco-papiyon/korobokcle", Branch: "main", Workers: 1},
 	}
+	files.ToolCommands.Commands = []config.ToolCommand{
+		{
+			Name:     "fixture-test",
+			Command:  "export KOROBOKCLE_PORT=8081\n./test.sh",
+			Resident: false,
+		},
+	}
 	files.WatchRules.Rules = []config.WatchRule{
 		{
-			ID:             "fixture-issues",
+			ID:             "rule-1",
 			Name:           "Fixture Issue Rule",
 			Repositories:   []string{"coco-papiyon/korobokcle"},
 			Target:         "issue",
@@ -44,10 +51,11 @@ func main() {
 			ExcludeDraftPR: true,
 			SkillSet:       "default",
 			TestProfile:    "go-default",
+			ToolCommand:    "fixture-test",
 			Enabled:        true,
 		},
 		{
-			ID:             "fixture-reviews",
+			ID:             "rule-2",
 			Name:           "Fixture Review Rule",
 			Repositories:   []string{"coco-papiyon/korobokcle"},
 			Target:         "pull_request",
@@ -55,6 +63,7 @@ func main() {
 			ExcludeDraftPR: true,
 			SkillSet:       "default",
 			TestProfile:    "go-default",
+			ToolCommand:    "fixture-test",
 			Enabled:        true,
 		},
 	}
@@ -116,7 +125,7 @@ func buildFixtures() []jobFixture {
 		State:        domain.StateWaitingDesignApproval,
 		Title:        "Add test fixture viewer",
 		BranchName:   "issue_101",
-		WatchRuleID:  "fixture-issues",
+		WatchRuleID:  "rule-1",
 		CreatedAt:    base,
 		UpdatedAt:    base.Add(3 * time.Minute),
 	}
@@ -129,7 +138,7 @@ func buildFixtures() []jobFixture {
 		State:        domain.StateWaitingFinalApproval,
 		Title:        "Support manual test fixtures",
 		BranchName:   "issue_102",
-		WatchRuleID:  "fixture-issues",
+		WatchRuleID:  "rule-1",
 		CreatedAt:    base.Add(10 * time.Minute),
 		UpdatedAt:    base.Add(18 * time.Minute),
 	}
@@ -142,7 +151,7 @@ func buildFixtures() []jobFixture {
 		State:        domain.StateFailed,
 		Title:        "Reproduce flaky approval flow",
 		BranchName:   "issue_103",
-		WatchRuleID:  "fixture-issues",
+		WatchRuleID:  "rule-1",
 		CreatedAt:    base.Add(20 * time.Minute),
 		UpdatedAt:    base.Add(28 * time.Minute),
 	}
@@ -155,7 +164,7 @@ func buildFixtures() []jobFixture {
 		State:        domain.StateReviewReady,
 		Title:        "Review API response cleanup",
 		BranchName:   "korobokcle/pr-review-104",
-		WatchRuleID:  "fixture-reviews",
+		WatchRuleID:  "rule-2",
 		CreatedAt:    base.Add(30 * time.Minute),
 		UpdatedAt:    base.Add(35 * time.Minute),
 	}
@@ -169,7 +178,7 @@ func buildFixtures() []jobFixture {
 		State:        domain.StateWaitingDesignApproval,
 		Title:        "Archive removed fixture job",
 		BranchName:   "issue_105",
-		WatchRuleID:  "fixture-issues",
+		WatchRuleID:  "rule-1",
 		DeletedAt:    &deletedJobDeletedAt,
 		CreatedAt:    base.Add(40 * time.Minute),
 		UpdatedAt:    base.Add(44 * time.Minute),
@@ -261,6 +270,7 @@ func writeConfigFiles(root string, files config.Files) error {
 		{path: filepath.Join(root, "config", "watch-rules.yaml"), value: files.WatchRules},
 		{path: filepath.Join(root, "config", "notifications.yaml"), value: files.Notifications},
 		{path: filepath.Join(root, "config", "test-profiles.yaml"), value: files.TestProfiles},
+		{path: filepath.Join(root, "config", "tool-commands.yaml"), value: files.ToolCommands},
 	}
 
 	for _, target := range targets {
@@ -327,7 +337,7 @@ func domainEvent(jobID string, eventType string, stateFrom string, stateTo strin
 
 func issuePayload(repository string, number int, title string, target domain.MonitoredTarget) string {
 	return marshalJSON(map[string]any{
-		"ruleId":     "fixture-issues",
+		"ruleId":     "rule-1",
 		"ruleName":   "Fixture Issue Rule",
 		"repository": repository,
 		"number":     number,
@@ -345,7 +355,7 @@ func issuePayload(repository string, number int, title string, target domain.Mon
 
 func pullRequestPayload(repository string, number int, title string) string {
 	return marshalJSON(map[string]any{
-		"ruleId":     "fixture-reviews",
+		"ruleId":     "rule-2",
 		"ruleName":   "Fixture Review Rule",
 		"repository": repository,
 		"number":     number,

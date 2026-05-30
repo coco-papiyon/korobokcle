@@ -88,6 +88,7 @@ const jobPurgeError = ref<string | null>(null)
 const designArtifactModalOpen = ref(false)
 const implementationArtifactModalOpen = ref(false)
 const testReportModalOpen = ref(false)
+const toolLogModalOpen = ref(false)
 const prCreateModalOpen = ref(false)
 const reviewArtifactModalOpen = ref(false)
 const issueBodyModalOpen = ref(false)
@@ -177,7 +178,10 @@ const finalApprovalWarning = computed(() => {
 const testReportMarkdown = computed(() => formatTestReportMarkdown(data.value?.testReport?.content))
 const configuredToolCommand = computed(() => data.value?.toolCommand ?? null)
 const toolExecution = computed(() => data.value?.toolExecution ?? null)
-const toolLogContent = computed(() => data.value?.toolExecution?.log?.content ?? '')
+const toolStdout = computed(() => data.value?.toolExecution?.stdout ?? null)
+const toolStderr = computed(() => data.value?.toolExecution?.stderr ?? null)
+const toolStdoutContent = computed(() => data.value?.toolExecution?.stdout?.content ?? '')
+const toolStderrContent = computed(() => data.value?.toolExecution?.stderr?.content ?? '')
 const groupedLogs = computed(() => {
   const logs = data.value?.logs ?? []
   return [
@@ -800,21 +804,15 @@ async function toggleToolCommand() {
         </PanelCard>
 
         <PanelCard
-          v-if="configuredToolCommand && (toolExecution || toolLogContent)"
+          v-if="configuredToolCommand && (toolExecution || toolStdout || toolStderr)"
           title="Tool Log"
         >
           <div class="artifact-headline">
-            <div>
-              <p class="text-muted">
-                <code>{{ configuredToolCommand.name }}</code> / {{ formatToolExecutionSummary() }}
-              </p>
-              <p v-if="toolExecution?.startedAt" class="text-muted">
-                Started: {{ formatDateTime(toolExecution.startedAt) }}
-                <span v-if="toolExecution.finishedAt"> / Finished: {{ formatDateTime(toolExecution.finishedAt) }}</span>
-              </p>
-            </div>
+            <button class="log-entry-button" type="button" @click="toolLogModalOpen = true">Tool log を開く</button>
+            <p class="text-muted">
+              <code>{{ configuredToolCommand.name }}</code> / {{ formatToolExecutionSummary() }}
+            </p>
           </div>
-          <pre class="artifact-view">{{ toolLogContent || 'No tool log yet.' }}</pre>
         </PanelCard>
 
         <PanelCard
@@ -977,6 +975,36 @@ async function toggleToolCommand() {
               <button class="button button-secondary" type="button" @click="selectedLog = null">閉じる</button>
             </div>
             <pre class="artifact-view">{{ selectedLog.log.content }}</pre>
+          </div>
+        </div>
+
+        <div v-if="toolLogModalOpen && configuredToolCommand && (toolExecution || toolStdout || toolStderr)" class="modal-backdrop" @click.self="toolLogModalOpen = false">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">Tool Log</h3>
+                <p class="text-muted">
+                  <code>{{ configuredToolCommand.name }}</code> / {{ formatToolExecutionSummary() }}
+                </p>
+                <p v-if="toolExecution?.startedAt" class="text-muted">
+                  Started: {{ formatDateTime(toolExecution.startedAt) }}
+                  <span v-if="toolExecution.finishedAt"> / Finished: {{ formatDateTime(toolExecution.finishedAt) }}</span>
+                </p>
+              </div>
+              <button class="button button-secondary" type="button" @click="toolLogModalOpen = false">閉じる</button>
+            </div>
+            <div class="stack-sm">
+              <section class="stack-sm">
+                <h4>Stdout</h4>
+                <p v-if="toolExecution?.stdout?.path" class="text-muted"><code>{{ toolExecution.stdout.path }}</code></p>
+                <pre class="artifact-view">{{ toolStdoutContent || 'No stdout log yet.' }}</pre>
+              </section>
+              <section class="stack-sm">
+                <h4>Stderr</h4>
+                <p v-if="toolExecution?.stderr?.path" class="text-muted"><code>{{ toolExecution.stderr.path }}</code></p>
+                <pre class="artifact-view">{{ toolStderrContent || 'No stderr log yet.' }}</pre>
+              </section>
+            </div>
           </div>
         </div>
 

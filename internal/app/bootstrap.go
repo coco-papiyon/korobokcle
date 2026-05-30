@@ -33,6 +33,7 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 		infoLogger.Printf("debug mode enabled")
 	}
 	debugLogger := log.New(debugWriter, "DEBUG ", log.LstdFlags)
+	logEnvironment(infoLogger)
 
 	store, err := sqlite.Open(resolvePath(toolRoot, configService.App().SQLitePath))
 	if err != nil {
@@ -91,4 +92,20 @@ func resolvePath(root string, target string) string {
 		return filepath.Clean(target)
 	}
 	return filepath.Join(root, target)
+}
+
+func logEnvironment(logger *log.Logger) {
+	for _, key := range []string{
+		"KOROBOKCLE_TOOL_ROOT",
+		"KOROBOKCLE_CODEX_BIN",
+		"KOROBOKCLE_CODEX_ARGS_JSON",
+		"KOROBOKCLE_CODEX_DEBUG",
+		"KOROBOKCLE_COPILOT_BIN",
+		"KOROBOKCLE_COPILOT_ARGS_JSON",
+		"KOROBOKCLE_COPILOT_DEBUG",
+	} {
+		if value, ok := os.LookupEnv(key); ok {
+			logger.Printf("env %s=%s", key, value)
+		}
+	}
 }

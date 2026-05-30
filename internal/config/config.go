@@ -76,6 +76,7 @@ type TestProfiles struct {
 }
 
 type TestProfile struct {
+	ID       string   `yaml:"id"`
 	Name     string   `yaml:"name"`
 	Commands []string `yaml:"commands"`
 }

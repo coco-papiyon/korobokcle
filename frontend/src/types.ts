@@ -115,7 +115,8 @@ export type ToolExecution = {
   startedAt?: string
   finishedAt?: string
   exitCode?: number
-  log?: Artifact
+  stdout?: Artifact
+  stderr?: Artifact
 }
 
 export type AppConfig = {

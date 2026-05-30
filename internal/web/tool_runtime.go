@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	toolLogFileName  = "tool.log"
-	toolMetaFileName = "tool-run.json"
+	toolStdoutFileName = "tool.stdout.log"
+	toolStderrFileName = "tool.stderr.log"
+	toolMetaFileName   = "tool-run.json"
 )
 
 type toolRuntimeManager struct {
@@ -33,20 +34,21 @@ type toolRuntimeManager struct {
 }
 
 type toolRunState struct {
-	jobID     string
-	toolName  string
-	command   string
-	resident  bool
-	artifact  string
-	workDir   string
-	logPath   string
-	metaPath  string
-	startedAt time.Time
-	finished  time.Time
-	running   bool
-	exitCode  *int
-	cmd       *exec.Cmd
-	done      chan struct{}
+	jobID      string
+	toolName   string
+	command    string
+	resident   bool
+	artifact   string
+	workDir    string
+	stdoutPath string
+	stderrPath string
+	metaPath   string
+	startedAt  time.Time
+	finished   time.Time
+	running    bool
+	exitCode   *int
+	cmd        *exec.Cmd
+	done       chan struct{}
 }
 
 type toolRunMetadata struct {
@@ -57,7 +59,8 @@ type toolRunMetadata struct {
 	StartedAt  string `json:"startedAt,omitempty"`
 	FinishedAt string `json:"finishedAt,omitempty"`
 	ExitCode   *int   `json:"exitCode,omitempty"`
-	LogPath    string `json:"logPath,omitempty"`
+	StdoutPath string `json:"stdoutPath,omitempty"`
+	StderrPath string `json:"stderrPath,omitempty"`
 }
 
 func newToolRuntimeManager() *toolRuntimeManager {
@@ -76,57 +79,68 @@ func (m *toolRuntimeManager) start(ctx context.Context, cfg *config.Service, job
 		return err
 	}
 
-	logPath := filepath.Join(artifactDir, toolLogFileName)
 	metaPath := filepath.Join(artifactDir, toolMetaFileName)
-	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	stdoutPath := filepath.Join(artifactDir, toolStdoutFileName)
+	stderrPath := filepath.Join(artifactDir, toolStderrFileName)
+	stdoutFile, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
 	if err != nil {
+		return err
+	}
+	stderrFile, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		_ = stdoutFile.Close()
 		return err
 	}
 
 	cmd := shellExecCommand(ctx, tool.Command)
 	cmd.Dir = workDir
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	cmd.Stdout = stdoutFile
+	cmd.Stderr = stderrFile
 
 	m.mu.Lock()
 	if running := m.runs[job.ID]; running != nil && running.running {
 		m.mu.Unlock()
-		_ = logFile.Close()
+		_ = stdoutFile.Close()
+		_ = stderrFile.Close()
 		return fmt.Errorf("tool command %q is already running", running.toolName)
 	}
 
 	state := &toolRunState{
-		jobID:     job.ID,
-		toolName:  tool.Name,
-		command:   tool.Command,
-		resident:  tool.Resident,
-		artifact:  artifactDir,
-		workDir:   workDir,
-		logPath:   logPath,
-		metaPath:  metaPath,
-		startedAt: time.Now().UTC(),
-		running:   true,
-		cmd:       cmd,
-		done:      make(chan struct{}),
+		jobID:      job.ID,
+		toolName:   tool.Name,
+		command:    tool.Command,
+		resident:   tool.Resident,
+		artifact:   artifactDir,
+		workDir:    workDir,
+		stdoutPath: stdoutPath,
+		stderrPath: stderrPath,
+		metaPath:   metaPath,
+		startedAt:  time.Now().UTC(),
+		running:    true,
+		cmd:        cmd,
+		done:       make(chan struct{}),
 	}
 	m.runs[job.ID] = state
 	m.mu.Unlock()
 
 	if err := writeToolRunMetadata(metaPath, state); err != nil {
-		_ = logFile.Close()
+		_ = stdoutFile.Close()
+		_ = stderrFile.Close()
 		m.clear(job.ID, state)
 		return err
 	}
 
 	if err := cmd.Start(); err != nil {
-		_ = logFile.Close()
+		_ = stdoutFile.Close()
+		_ = stderrFile.Close()
 		m.finishWithError(job.ID, state, -1)
 		return fmt.Errorf("start tool command: %w", err)
 	}
 
 	go func() {
 		err := cmd.Wait()
-		_ = logFile.Close()
+		_ = stdoutFile.Close()
+		_ = stderrFile.Close()
 		exitCode := 0
 		if err != nil {
 			var exitErr *exec.ExitError
@@ -168,7 +182,8 @@ func (m *toolRuntimeManager) stop(jobID string) error {
 func (m *toolRuntimeManager) snapshot(cfg *config.Service, job domain.Job, events []domain.Event, tool config.ToolCommand) (*toolExecutionResponse, error) {
 	artifactDir := resolveTestReportArtifactDir(cfg, job.ID, events)
 	metaPath := filepath.Join(artifactDir, toolMetaFileName)
-	logPath := filepath.Join(artifactDir, toolLogFileName)
+	stdoutPath := filepath.Join(artifactDir, toolStdoutFileName)
+	stderrPath := filepath.Join(artifactDir, toolStderrFileName)
 
 	metadata, err := readToolRunMetadata(metaPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -195,6 +210,12 @@ func (m *toolRuntimeManager) snapshot(cfg *config.Service, job domain.Job, event
 		out.StartedAt = metadata.StartedAt
 		out.FinishedAt = metadata.FinishedAt
 		out.ExitCode = metadata.ExitCode
+		if metadata.StdoutPath != "" {
+			stdoutPath = resolveStoredToolPath(cfg.Root(), metadata.StdoutPath)
+		}
+		if metadata.StderrPath != "" {
+			stderrPath = resolveStoredToolPath(cfg.Root(), metadata.StderrPath)
+		}
 	}
 	if live != nil && live.toolName == tool.Name {
 		out.Running = live.running
@@ -205,10 +226,17 @@ func (m *toolRuntimeManager) snapshot(cfg *config.Service, job domain.Job, event
 		out.ExitCode = live.exitCode
 	}
 
-	rawLog, err := os.ReadFile(logPath)
-	if err == nil {
-		out.Log = &artifactResponse{
-			Path:    displayPathAgainstRoot(cfg.Root(), logPath),
+	if rawLog, err := os.ReadFile(stdoutPath); err == nil {
+		out.Stdout = &artifactResponse{
+			Path:    displayPathAgainstRoot(cfg.Root(), stdoutPath),
+			Content: string(rawLog),
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if rawLog, err := os.ReadFile(stderrPath); err == nil {
+		out.Stderr = &artifactResponse{
+			Path:    displayPathAgainstRoot(cfg.Root(), stderrPath),
 			Content: string(rawLog),
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -249,12 +277,13 @@ func (m *toolRuntimeManager) finish(jobID string, state *toolRunState, exitCode 
 
 func writeToolRunMetadata(path string, state *toolRunState) error {
 	payload := toolRunMetadata{
-		ToolName: state.toolName,
-		Command:  state.command,
-		Resident: state.resident,
-		Running:  state.running,
-		LogPath:  state.logPath,
-		ExitCode: state.exitCode,
+		ToolName:   state.toolName,
+		Command:    state.command,
+		Resident:   state.resident,
+		Running:    state.running,
+		StdoutPath: state.stdoutPath,
+		StderrPath: state.stderrPath,
+		ExitCode:   state.exitCode,
 	}
 	if !state.startedAt.IsZero() {
 		payload.StartedAt = state.startedAt.Format(timeFormat)
@@ -364,4 +393,11 @@ func displayPathAgainstRoot(root string, value string) string {
 		return filepath.ToSlash(rel)
 	}
 	return filepath.ToSlash(cleanValue)
+}
+
+func resolveStoredToolPath(root string, value string) string {
+	if filepath.IsAbs(value) {
+		return filepath.Clean(value)
+	}
+	return filepath.Clean(filepath.Join(root, filepath.FromSlash(value)))
 }
