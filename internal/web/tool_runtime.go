@@ -179,7 +179,7 @@ func (m *toolRuntimeManager) stop(jobID string) error {
 	}
 }
 
-func (m *toolRuntimeManager) snapshot(cfg *config.Service, job domain.Job, events []domain.Event, tool config.ToolCommand) (*toolExecutionResponse, error) {
+func (m *toolRuntimeManager) snapshot(cfg *config.Service, job domain.Job, events []domain.Event) (*toolExecutionResponse, error) {
 	artifactDir := resolveTestReportArtifactDir(cfg, job.ID, events)
 	metaPath := filepath.Join(artifactDir, toolMetaFileName)
 	stdoutPath := filepath.Join(artifactDir, toolStdoutFileName)
@@ -197,15 +197,11 @@ func (m *toolRuntimeManager) snapshot(cfg *config.Service, job domain.Job, event
 	if metadata == nil && live == nil {
 		return nil, nil
 	}
-	if metadata != nil && metadata.ToolName != "" && metadata.ToolName != tool.Name {
-		metadata = nil
-	}
 
-	out := &toolExecutionResponse{
-		Name:     tool.Name,
-		Resident: tool.Resident,
-	}
+	out := &toolExecutionResponse{}
 	if metadata != nil {
+		out.Name = metadata.ToolName
+		out.Resident = metadata.Resident
 		out.Running = metadata.Running
 		out.StartedAt = metadata.StartedAt
 		out.FinishedAt = metadata.FinishedAt
@@ -217,7 +213,9 @@ func (m *toolRuntimeManager) snapshot(cfg *config.Service, job domain.Job, event
 			stderrPath = resolveStoredToolPath(cfg.Root(), metadata.StderrPath)
 		}
 	}
-	if live != nil && live.toolName == tool.Name {
+	if live != nil {
+		out.Name = live.toolName
+		out.Resident = live.resident
 		out.Running = live.running
 		out.StartedAt = live.startedAt.Format(timeFormat)
 		if !live.finished.IsZero() {

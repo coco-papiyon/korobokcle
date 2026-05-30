@@ -69,6 +69,10 @@ type reviewSubmitRequest struct {
 	Comment string `json:"comment"`
 }
 
+type toolStartRequest struct {
+	ToolCommand string `json:"toolCommand"`
+}
+
 type artifactResponse struct {
 	Path    string `json:"path"`
 	Content string `json:"content"`
@@ -302,8 +306,12 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 			Command:  tool.Command,
 			Resident: tool.Resident,
 		}
-		if execution, err := s.tools.snapshot(s.config, job, events, *tool); err == nil {
-			out.ToolExecution = execution
+	}
+	if s.tools != nil {
+		if execution, err := s.tools.snapshot(s.config, job, events); err == nil {
+			if execution != nil {
+				out.ToolExecution = execution
+			}
 		}
 	}
 	if artifact, err := s.loadPRCreateArtifact(job.ID); err == nil {
@@ -1058,7 +1066,22 @@ func (s *Server) handleStartToolCommand(w http.ResponseWriter, r *http.Request) 
 		writeJSONError(w, http.StatusNotFound, err)
 		return
 	}
-	tool := s.selectedToolCommand(job.WatchRuleID)
+	var payload toolStartRequest
+	if err := decodeOptionalJSON(r, &payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode tool start request: %w", err))
+		return
+	}
+	toolName := strings.TrimSpace(payload.ToolCommand)
+	var tool *config.ToolCommand
+	if toolName != "" {
+		tool = s.toolCommandByName(toolName)
+		if tool == nil {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("tool command %q is not configured", toolName))
+			return
+		}
+	} else {
+		tool = s.selectedToolCommand(job.WatchRuleID)
+	}
 	if tool == nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("tool command is not configured"))
 		return
@@ -1282,6 +1305,17 @@ func normalizeDefaultModelValue(value string) string {
 	return trimmed
 }
 
+func decodeOptionalJSON(r *http.Request, payload any) error {
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(payload); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func (s *Server) selectedToolCommand(watchRuleID string) *config.ToolCommand {
 	rule, ok := s.config.WatchRuleByID(watchRuleID)
 	if !ok {
@@ -1293,6 +1327,20 @@ func (s *Server) selectedToolCommand(watchRuleID string) *config.ToolCommand {
 	}
 	for _, command := range s.config.ToolCommands().Commands {
 		if strings.TrimSpace(command.Name) == name {
+			copy := command
+			return &copy
+		}
+	}
+	return nil
+}
+
+func (s *Server) toolCommandByName(name string) *config.ToolCommand {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return nil
+	}
+	for _, command := range s.config.ToolCommands().Commands {
+		if strings.TrimSpace(command.Name) == trimmed {
 			copy := command
 			return &copy
 		}
