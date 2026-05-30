@@ -1,10 +1,2 @@
 name: design
 provider: mock
-inputs:
-  - issue
-  - repository_context
-  - rerun_comment
-outputs:
-  - design_doc
-artifacts:
-output_file: result.md

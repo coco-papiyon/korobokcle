@@ -44,10 +44,11 @@ func NewCopilotCLIProvider() *CopilotCLIProvider {
 
 func (p *CopilotCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, error) {
 	provider := ExternalCLIProvider{
-		Name:        "copilot",
-		EnvPrefix:   "KOROBOKCLE_COPILOT",
-		DefaultBin:  "copilot",
-		DefaultArgs: copilotDefaultArgs(req.CopilotAllowTools),
+		Name:             "copilot",
+		EnvPrefix:        "KOROBOKCLE_COPILOT",
+		DefaultBin:       "copilot",
+		DefaultArgs:      copilotDefaultArgs(req.CopilotAllowTools),
+		PreferOutputFile: true,
 	}
 	return provider.Run(ctx, req)
 }
@@ -75,10 +76,11 @@ func (p *CodexCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, er
 }
 
 type ExternalCLIProvider struct {
-	Name        string
-	EnvPrefix   string
-	DefaultBin  string
-	DefaultArgs []string
+	Name             string
+	EnvPrefix        string
+	DefaultBin       string
+	DefaultArgs      []string
+	PreferOutputFile bool
 }
 
 func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, error) {
@@ -121,10 +123,8 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		Output: strings.TrimSpace(stdout.String()),
 	}
 
-	if result.Output == "" {
-		if raw, readErr := os.ReadFile(req.OutputPath); readErr == nil {
-			result.Output = string(raw)
-		}
+	if output := readProviderOutputFile(req.OutputPath); output != "" && (p.PreferOutputFile || result.Output == "") {
+		result.Output = output
 	}
 
 	if err != nil {
@@ -230,7 +230,7 @@ func debugArgsForLog(args []string) string {
 
 func copilotDefaultArgs(allowTools []string) []string {
 	args := []string{
-		"-p", "Read the instructions in {{artifact_dir}}/prompt.md and follow them. Use the repository root as the working directory and modify the repository files directly.",
+		"-p", "Read the instructions in {{artifact_dir}}/prompt.md and follow them. Use the repository root as the working directory and modify the repository files directly. Write the final response to {{output_file}} in the artifact directory. Standard output may be used for progress logs only.",
 		"-s",
 		"{{model_flag}}", "{{model}}",
 		"--add-dir",
@@ -266,6 +266,14 @@ func normalizeCopilotAllowTools(values []string) []string {
 		normalized = append(normalized, trimmed)
 	}
 	return normalized
+}
+
+func readProviderOutputFile(path string) string {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
 }
 
 func ProviderFor(name string) (AIProvider, error) {

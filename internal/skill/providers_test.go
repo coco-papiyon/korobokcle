@@ -212,6 +212,9 @@ func TestCopilotCLIProviderUsesAutomationFlagsByDefault(t *testing.T) {
 	if !strings.Contains(result.Output, "Read the instructions in") || !strings.Contains(result.Output, "prompt.md") {
 		t.Fatalf("expected prompt to reference artifact prompt.md, got %q", result.Output)
 	}
+	if !strings.Contains(result.Output, "Write the final response to") || !strings.Contains(result.Output, "out.txt") {
+		t.Fatalf("expected prompt to reference output file, got %q", result.Output)
+	}
 	if !strings.Contains(result.Output, "--add-dir") || !strings.Contains(result.Output, dir) {
 		t.Fatalf("expected add-dir for artifact dir, got %q", result.Output)
 	}
@@ -229,6 +232,38 @@ func TestCopilotCLIProviderUsesAutomationFlagsByDefault(t *testing.T) {
 	}
 	if strings.Contains(result.Output, "automation prompt") {
 		t.Fatalf("expected request prompt to stay out of copilot args, got %q", result.Output)
+	}
+}
+
+func TestCopilotCLIProviderPrefersOutputFileOverStdout(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := writeProviderScript(
+		t,
+		dir,
+		"copilot-file-output",
+		"@echo off\r\necho thinking out loud\r\n>\"%1\" echo final artifact\r\n",
+		"#!/usr/bin/env sh\nprintf 'thinking out loud\\n'\nprintf '%s\\n' 'final artifact' > \"$1\"\n",
+	)
+
+	outputPath := filepath.Join(dir, "result.md")
+	t.Setenv("KOROBOKCLE_COPILOT_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_COPILOT_ARGS_JSON", `["{{output_path}}"]`)
+
+	provider := NewCopilotCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:      "ignored",
+		WorkDir:     dir,
+		ArtifactDir: dir,
+		OutputPath:  outputPath,
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if strings.TrimSpace(result.Stdout) != "thinking out loud" {
+		t.Fatalf("expected stdout to keep progress logs, got %q", result.Stdout)
+	}
+	if result.Output != "final artifact" {
+		t.Fatalf("expected output file contents, got %q", result.Output)
 	}
 }
 

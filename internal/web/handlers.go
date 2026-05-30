@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,6 +59,8 @@ type jobDetailResponse struct {
 	FixArtifact            *artifactResponse       `json:"fixArtifact,omitempty"`
 	ReviewArtifact         *artifactResponse       `json:"reviewArtifact,omitempty"`
 	TestReport             *artifactResponse       `json:"testReport,omitempty"`
+	ToolCommand            *toolCommandResponse    `json:"toolCommand,omitempty"`
+	ToolExecution          *toolExecutionResponse  `json:"toolExecution,omitempty"`
 	PRCreateArtifact       *artifactResponse       `json:"prCreateArtifact,omitempty"`
 	Logs                   []logResponse           `json:"logs,omitempty"`
 }
@@ -103,12 +106,29 @@ type watchRuleResponse struct {
 	Model          string                      `json:"model"`
 	SkillSet       string                      `json:"skillSet"`
 	TestProfile    string                      `json:"testProfile"`
+	ToolCommand    string                      `json:"toolCommand"`
 	Enabled        bool                        `json:"enabled"`
 }
 
 type testProfileResponse struct {
 	Name     string   `json:"name"`
 	Commands []string `json:"commands"`
+}
+
+type toolCommandResponse struct {
+	Name     string `json:"name"`
+	Command  string `json:"command"`
+	Resident bool   `json:"resident"`
+}
+
+type toolExecutionResponse struct {
+	Name       string            `json:"name"`
+	Resident   bool              `json:"resident"`
+	Running    bool              `json:"running"`
+	StartedAt  string            `json:"startedAt,omitempty"`
+	FinishedAt string            `json:"finishedAt,omitempty"`
+	ExitCode   *int              `json:"exitCode,omitempty"`
+	Log        *artifactResponse `json:"log,omitempty"`
 }
 
 type providerSpecResponse struct {
@@ -273,6 +293,16 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if artifact, err := s.loadTestReport(job.ID, events); err == nil {
 		out.TestReport = artifact
+	}
+	if tool := s.selectedToolCommand(job.WatchRuleID); tool != nil {
+		out.ToolCommand = &toolCommandResponse{
+			Name:     tool.Name,
+			Command:  tool.Command,
+			Resident: tool.Resident,
+		}
+		if execution, err := s.tools.snapshot(s.config, job, events, *tool); err == nil {
+			out.ToolExecution = execution
+		}
 	}
 	if artifact, err := s.loadPRCreateArtifact(job.ID); err == nil {
 		out.PRCreateArtifact = artifact
@@ -533,6 +563,7 @@ func (s *Server) handleWatchRules(w http.ResponseWriter, r *http.Request) {
 			Model:          rule.Model,
 			SkillSet:       rule.SkillSet,
 			TestProfile:    rule.TestProfile,
+			ToolCommand:    rule.ToolCommand,
 			Enabled:        rule.Enabled,
 		})
 	}
@@ -549,6 +580,19 @@ func (s *Server) handleTestProfiles(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, profiles)
+}
+
+func (s *Server) handleToolCommands(w http.ResponseWriter, _ *http.Request) {
+	toolCommands := s.config.ToolCommands()
+	commands := make([]toolCommandResponse, 0, len(toolCommands.Commands))
+	for _, command := range toolCommands.Commands {
+		commands = append(commands, toolCommandResponse{
+			Name:     command.Name,
+			Command:  command.Command,
+			Resident: command.Resident,
+		})
+	}
+	writeJSON(w, http.StatusOK, commands)
 }
 
 func (s *Server) handleAppConfig(w http.ResponseWriter, _ *http.Request) {
@@ -879,6 +923,13 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 	file := config.WatchRulesFile{
 		Rules: make([]config.WatchRule, 0, len(payload)),
 	}
+	allowedToolCommands := make(map[string]struct{})
+	for _, command := range s.config.ToolCommands().Commands {
+		name := strings.TrimSpace(command.Name)
+		if name != "" {
+			allowedToolCommands[name] = struct{}{}
+		}
+	}
 	for index, rule := range payload {
 		if strings.TrimSpace(rule.ID) == "" {
 			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].id is required", index))
@@ -921,6 +972,13 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 		if target == "pull_request_review_comment" {
 			target = string(domain.TargetPullRequestReview)
 		}
+		toolCommand := strings.TrimSpace(rule.ToolCommand)
+		if toolCommand != "" {
+			if _, ok := allowedToolCommands[toolCommand]; !ok {
+				writeJSONError(w, http.StatusBadRequest, fmt.Errorf("rule[%d].toolCommand references unknown tool command %q", index, toolCommand))
+				return
+			}
+		}
 		file.Rules = append(file.Rules, config.WatchRule{
 			ID:             strings.TrimSpace(rule.ID),
 			Name:           strings.TrimSpace(rule.Name),
@@ -938,6 +996,7 @@ func (s *Server) handleSaveWatchRules(w http.ResponseWriter, r *http.Request) {
 			Model:          model,
 			SkillSet:       strings.TrimSpace(rule.SkillSet),
 			TestProfile:    strings.TrimSpace(rule.TestProfile),
+			ToolCommand:    toolCommand,
 			Enabled:        rule.Enabled,
 		})
 	}
@@ -967,6 +1026,54 @@ func (s *Server) handleSaveTestProfiles(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.handleTestProfiles(w, r)
+}
+
+func (s *Server) handleSaveToolCommands(w http.ResponseWriter, r *http.Request) {
+	var payload []toolCommandResponse
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode tool commands: %w", err))
+		return
+	}
+
+	file, err := normalizeToolCommands(payload)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	if err := s.config.UpdateToolCommands(file); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.handleToolCommands(w, r)
+}
+
+func (s *Server) handleStartToolCommand(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	job, events, err := s.orchestrator.JobDetail(r.Context(), jobID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err)
+		return
+	}
+	tool := s.selectedToolCommand(job.WatchRuleID)
+	if tool == nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("tool command is not configured"))
+		return
+	}
+	if err := s.tools.start(context.Background(), s.config, job, events, *tool); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.handleJobDetail(w, r)
+}
+
+func (s *Server) handleStopToolCommand(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	if err := s.tools.stop(jobID); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.handleJobDetail(w, r)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -1124,6 +1231,33 @@ func normalizeTestProfiles(values []testProfileResponse) (config.TestProfiles, e
 	return out, nil
 }
 
+func normalizeToolCommands(values []toolCommandResponse) (config.ToolCommands, error) {
+	out := config.ToolCommands{
+		Commands: make([]config.ToolCommand, 0, len(values)),
+	}
+	seen := make(map[string]struct{}, len(values))
+	for index, value := range values {
+		name := strings.TrimSpace(value.Name)
+		if name == "" {
+			return config.ToolCommands{}, fmt.Errorf("toolCommand[%d].name is required", index)
+		}
+		if _, ok := seen[name]; ok {
+			return config.ToolCommands{}, fmt.Errorf("toolCommand[%d].name must be unique: %q", index, name)
+		}
+		command := strings.TrimSpace(value.Command)
+		if command == "" {
+			return config.ToolCommands{}, fmt.Errorf("toolCommand[%d].command is required", index)
+		}
+		seen[name] = struct{}{}
+		out.Commands = append(out.Commands, config.ToolCommand{
+			Name:     name,
+			Command:  command,
+			Resident: value.Resident,
+		})
+	}
+	return out, nil
+}
+
 func normalizeTestProfileCommands(commands []string) []string {
 	normalized := make([]string, 0, len(commands))
 	for _, command := range commands {
@@ -1142,6 +1276,24 @@ func normalizeDefaultModelValue(value string) string {
 		return ""
 	}
 	return trimmed
+}
+
+func (s *Server) selectedToolCommand(watchRuleID string) *config.ToolCommand {
+	rule, ok := s.config.WatchRuleByID(watchRuleID)
+	if !ok {
+		return nil
+	}
+	name := strings.TrimSpace(rule.ToolCommand)
+	if name == "" {
+		return nil
+	}
+	for _, command := range s.config.ToolCommands().Commands {
+		if strings.TrimSpace(command.Name) == name {
+			copy := command
+			return &copy
+		}
+	}
+	return nil
 }
 
 func toAppConfigResponse(app config.App) appConfigResponse {

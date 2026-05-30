@@ -22,6 +22,9 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	if options.HTTPPort > 0 {
+		cfg.App.HTTPPort = options.HTTPPort
+	}
 	configService := config.NewService(toolRoot, cfg)
 	infoLogger := log.New(os.Stdout, "", log.LstdFlags)
 	debugWriter := io.Discard

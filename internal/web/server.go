@@ -23,6 +23,7 @@ type Server struct {
 	staticDir    string
 	reviewer     ReviewSubmitter
 	commenter    IssueCommentSubmitter
+	tools        *toolRuntimeManager
 }
 
 type ReviewSubmitter interface {
@@ -61,6 +62,7 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) 
 		staticDir:    staticDir,
 		reviewer:     GHReviewSubmitter{},
 		commenter:    GHIssueCommentSubmitter{},
+		tools:        newToolRuntimeManager(),
 	}
 
 	router := mux.NewRouter()
@@ -78,6 +80,8 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) 
 	api.HandleFunc("/jobs/{id}/reruns/review", s.handleReviewRerun).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/approvals/review", s.handleReviewApproval).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/reviews/submit", s.handleSubmitReviewComment).Methods(http.MethodPost)
+	api.HandleFunc("/jobs/{id}/tool/start", s.handleStartToolCommand).Methods(http.MethodPost)
+	api.HandleFunc("/jobs/{id}/tool/stop", s.handleStopToolCommand).Methods(http.MethodPost)
 	api.HandleFunc("/app-config", s.handleAppConfig).Methods(http.MethodGet)
 	api.HandleFunc("/app-config", s.handleSaveAppConfig).Methods(http.MethodPut)
 	api.HandleFunc("/notification-config", s.handleNotificationConfig).Methods(http.MethodGet)
@@ -86,6 +90,8 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) 
 	api.HandleFunc("/watch-rules", s.handleSaveWatchRules).Methods(http.MethodPut)
 	api.HandleFunc("/test-profiles", s.handleTestProfiles).Methods(http.MethodGet)
 	api.HandleFunc("/test-profiles", s.handleSaveTestProfiles).Methods(http.MethodPut)
+	api.HandleFunc("/tool-commands", s.handleToolCommands).Methods(http.MethodGet)
+	api.HandleFunc("/tool-commands", s.handleSaveToolCommands).Methods(http.MethodPut)
 	api.HandleFunc("/skillsets", s.handleSkillSets).Methods(http.MethodGet)
 	api.HandleFunc("/skillsets", s.handleCreateSkillSet).Methods(http.MethodPost)
 	api.HandleFunc("/skillsets/{name}", s.handleSkillSet).Methods(http.MethodGet)

@@ -13,6 +13,7 @@ const (
 	watchRulesPath    = "config/watch-rules.yaml"
 	notificationsPath = "config/notifications.yaml"
 	testProfilesPath  = "config/test-profiles.yaml"
+	toolCommandsPath  = "config/tool-commands.yaml"
 )
 
 func LoadOrInit(root string) (Files, error) {
@@ -33,6 +34,9 @@ func LoadOrInit(root string) (Files, error) {
 	if err := loadYAML(filepath.Join(root, testProfilesPath), &files.TestProfiles); err != nil {
 		return Files{}, fmt.Errorf("load test profiles: %w", err)
 	}
+	if err := loadYAML(filepath.Join(root, toolCommandsPath), &files.ToolCommands); err != nil {
+		return Files{}, fmt.Errorf("load tool commands: %w", err)
+	}
 	return files, nil
 }
 
@@ -49,6 +53,7 @@ func ensureDefaults(root string, files Files) error {
 		{watchRulesPath, files.WatchRules},
 		{notificationsPath, files.Notifications},
 		{testProfilesPath, files.TestProfiles},
+		{toolCommandsPath, files.ToolCommands},
 	}
 
 	for _, target := range targets {

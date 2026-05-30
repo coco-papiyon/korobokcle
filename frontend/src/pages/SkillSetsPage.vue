@@ -56,9 +56,6 @@ function cloneSkillFile(file: SkillFile): SkillFile {
   return {
     definition: {
       ...file.definition,
-      inputs: [...(file.definition.inputs ?? [])],
-      outputs: [...(file.definition.outputs ?? [])],
-      artifacts: { ...file.definition.artifacts },
     },
     promptTemplate: file.promptTemplate,
   }
@@ -219,26 +216,12 @@ function skillLabel(name: string) {
             <section v-for="skillName in skillOrder" :key="skillName" class="panel stack-md skill-panel">
               <div>
                 <h3>{{ skillLabel(skillName) }}</h3>
-                <p class="text-muted">
-                  Inputs: {{ selectedSet.skills[skillName]?.definition.inputs.join(', ') || 'none' }} / Outputs:
-                  {{ selectedSet.skills[skillName]?.definition.outputs.join(', ') || 'none' }}
-                </p>
               </div>
 
               <div class="form-grid">
                 <label class="field">
                   <span class="field__label">Provider</span>
                   <input v-model="selectedSet.skills[skillName].definition.provider" class="field__control" type="text" :disabled="!selectedSet.mutable" />
-                </label>
-
-                <label class="field">
-                  <span class="field__label">Output File</span>
-                  <input
-                    v-model="selectedSet.skills[skillName].definition.artifacts.output_file"
-                    class="field__control"
-                    type="text"
-                    :disabled="!selectedSet.mutable"
-                  />
                 </label>
 
                 <label class="field field-full">

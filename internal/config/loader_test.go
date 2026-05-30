@@ -32,6 +32,7 @@ func TestLoadOrInitCreatesDefaults(t *testing.T) {
 		"config/watch-rules.yaml",
 		"config/notifications.yaml",
 		"config/test-profiles.yaml",
+		"config/tool-commands.yaml",
 	} {
 		if _, err := os.Stat(filepath.Join(root, path)); err != nil {
 			t.Fatalf("expected file %s to exist: %v", path, err)

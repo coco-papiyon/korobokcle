@@ -4,15 +4,18 @@ import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
-import { fetchAppConfig, fetchSkillSets, fetchWatchRules, saveWatchRules } from '@/lib/api'
+import { fetchAppConfig, fetchSkillSets, fetchTestProfiles, fetchToolCommands, fetchWatchRules, saveWatchRules } from '@/lib/api'
 import { modelOptionsForProvider, watchRuleProviderOptions } from '@/lib/provider-options'
 import type { AppConfig, ProjectFieldFilter, WatchRule, WatchRuleForm } from '@/types'
 
 const { data, isLoading, error, reload } = useAsyncData(fetchWatchRules)
 const { data: appConfig } = useAsyncData(fetchAppConfig)
 const { data: skillSets } = useAsyncData(fetchSkillSets)
+const { data: testProfiles } = useAsyncData(fetchTestProfiles)
+const { data: toolCommands } = useAsyncData(fetchToolCommands)
 const forms = ref<WatchRuleForm[]>([])
 const selectedRuleId = ref('')
+const nextRuleLocalID = ref(1)
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const saveError = ref<string | null>(null)
 
@@ -20,14 +23,14 @@ watch(
   data,
   (rules) => {
     forms.value = (rules ?? []).map(toForm)
-    if (!selectedRuleId.value || !forms.value.some((rule) => rule.id === selectedRuleId.value)) {
-      selectedRuleId.value = forms.value[0]?.id ?? ''
+    if (!selectedRuleId.value || !forms.value.some((rule) => rule.localID === selectedRuleId.value)) {
+      selectedRuleId.value = forms.value[0]?.localID ?? ''
     }
   },
   { immediate: true },
 )
 
-const selectedRule = computed(() => forms.value.find((rule) => rule.id === selectedRuleId.value) ?? null)
+const selectedRule = computed(() => forms.value.find((rule) => rule.localID === selectedRuleId.value) ?? null)
 const availableRepositoryEntries = computed(() => appConfig.value?.monitoredRepositories ?? [])
 const availableRepositories = computed(() =>
   availableRepositoryEntries.value.map((entry) => entry.repository.trim()).filter(Boolean),
@@ -54,6 +57,7 @@ function toForm(rule: WatchRule): WatchRuleForm {
   const normalizedProjectFilters = normalizeProjectFilters(rule.projectFilters)
   const selectedRepository = (rule.repositories ?? []).map((value) => value.trim()).find(Boolean) ?? ''
   return {
+    localID: `watch-rule-${nextRuleLocalID.value++}`,
     ...rule,
     target: normalizeTarget(rule.target),
     repositories: selectedRepository ? [selectedRepository] : [],
@@ -92,6 +96,7 @@ function fromForm(rule: WatchRuleForm): WatchRule {
     model: rule.model.trim(),
     skillSet: rule.skillSet.trim(),
     testProfile: rule.testProfile.trim(),
+    toolCommand: rule.toolCommand.trim(),
     enabled: rule.enabled,
   }
 }
@@ -179,8 +184,9 @@ function selectRule(ruleID: string) {
 
 function addRule() {
   const defaultRepositories = availableRepositories.value.slice(0, 1)
-  const suffix = forms.value.length + 1
+  const suffix = nextRuleLocalID.value
   const rule: WatchRuleForm = {
+    localID: `watch-rule-${nextRuleLocalID.value++}`,
     id: `rule-${suffix}`,
     name: `New Rule ${suffix}`,
     repositories: [...defaultRepositories],
@@ -204,10 +210,11 @@ function addRule() {
     model: '',
     skillSet: 'default',
     testProfile: 'go-default',
+    toolCommand: '',
     enabled: false,
   }
   forms.value = [...forms.value, rule]
-  selectedRuleId.value = rule.id
+  selectedRuleId.value = rule.localID
   saveState.value = 'idle'
   saveError.value = null
 }
@@ -225,8 +232,8 @@ function removeSelectedRule() {
   if (!selectedRule.value) {
     return
   }
-  forms.value = forms.value.filter((rule) => rule.id !== selectedRule.value?.id)
-  selectedRuleId.value = forms.value[0]?.id ?? ''
+  forms.value = forms.value.filter((rule) => rule.localID !== selectedRule.value?.localID)
+  selectedRuleId.value = forms.value[0]?.localID ?? ''
   saveState.value = 'idle'
   saveError.value = null
 }
@@ -237,7 +244,7 @@ async function persistRules() {
   try {
     const saved = await saveWatchRules(forms.value.map(fromForm))
     forms.value = saved.map(toForm)
-    selectedRuleId.value = forms.value[0]?.id ?? ''
+    selectedRuleId.value = forms.value[0]?.localID ?? ''
     saveState.value = 'saved'
     await reload()
   } catch (err) {
@@ -266,17 +273,16 @@ async function persistRules() {
           <div class="stack-sm">
             <button
               v-for="rule in forms"
-              :key="rule.id"
+              :key="rule.localID"
               class="rule-item"
-              :class="{ 'rule-item--active': selectedRuleId === rule.id }"
+              :class="{ 'rule-item--active': selectedRuleId === rule.localID }"
               type="button"
-              @click="selectRule(rule.id)"
+              @click="selectRule(rule.localID)"
             >
               <div class="rule-item__head">
                 <strong>{{ rule.name }}</strong>
                 <StateBadge :state="rule.enabled ? 'enabled' : 'disabled'" />
               </div>
-              <p class="text-muted">{{ rule.id }}</p>
               <p class="text-muted">{{ rule.repositoriesText || 'repository not set' }}</p>
               <p class="text-muted">Provider: {{ rule.provider || 'use setting' }} / Model: {{ rule.model || 'use setting' }}</p>
             </button>
@@ -301,11 +307,6 @@ async function persistRules() {
 
           <template v-if="selectedRule">
             <div class="form-grid">
-              <label class="field">
-                <span class="field__label">Rule ID</span>
-                <input v-model="selectedRule.id" class="field__control" type="text" />
-              </label>
-
               <label class="field">
                 <span class="field__label">Name</span>
                 <input v-model="selectedRule.name" class="field__control" type="text" />
@@ -403,24 +404,41 @@ async function persistRules() {
 
                 <label class="field">
                   <span class="field__label">Test Profile</span>
-                  <input v-model="selectedRule.testProfile" class="field__control" type="text" />
+                  <select v-model="selectedRule.testProfile" class="field__control">
+                    <option value="">None</option>
+                    <option v-for="profile in testProfiles ?? []" :key="profile.name" :value="profile.name">
+                      {{ profile.name }}
+                    </option>
+                  </select>
                 </label>
               </div>
 
-              <label class="field">
-                <span class="field__label">Provider</span>
-                <select v-model="selectedRule.provider" class="field__control">
-                  <option v-for="option in watchRuleProviderOptions(appConfig?.providers ?? [])" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
+              <div class="field field-full" style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4);">
+                <label class="field">
+                  <span class="field__label">Provider</span>
+                  <select v-model="selectedRule.provider" class="field__control">
+                    <option v-for="option in watchRuleProviderOptions(appConfig?.providers ?? [])" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
 
-              <label class="field">
-                <span class="field__label">Model</span>
-                <select v-model="selectedRule.model" class="field__control">
-                  <option v-for="option in availableModelOptions" :key="option.value" :value="option.value">
-                    {{ option.label }}
+                <label class="field">
+                  <span class="field__label">Model</span>
+                  <select v-model="selectedRule.model" class="field__control">
+                    <option v-for="option in availableModelOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="field field-full">
+                <span class="field__label">Tool Command</span>
+                <select v-model="selectedRule.toolCommand" class="field__control">
+                  <option value="">None</option>
+                  <option v-for="command in toolCommands ?? []" :key="command.name" :value="command.name">
+                    {{ command.name }} ({{ command.resident ? 'resident' : 'one-shot' }})
                   </option>
                 </select>
               </label>

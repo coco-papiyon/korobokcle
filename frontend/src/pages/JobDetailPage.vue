@@ -11,6 +11,7 @@ import {
   fetchJobDetail,
   purgeJob,
   restoreJob,
+  startToolCommand,
   submitDesignApproval,
   submitDesignRerun,
   submitFinalApproval,
@@ -19,6 +20,7 @@ import {
   submitReviewApproval,
   submitReviewComment,
   submitReviewRerun,
+  stopToolCommand,
 } from '@/lib/api'
 import { formatDateTime, formatPayloadDisplay } from '@/lib/format'
 import { rerunActionFromEvent, rerunButtonLabel, type RerunAction } from '@/lib/rerun-actions'
@@ -106,6 +108,8 @@ const prRerunError = ref<string | null>(null)
 const reviewRerunError = ref<string | null>(null)
 const reviewSubmitError = ref<string | null>(null)
 const reviewApproveError = ref<string | null>(null)
+const toolCommandState = ref<'idle' | 'saving' | 'error'>('idle')
+const toolCommandError = ref<string | null>(null)
 const prCreateInfo = computed(() => {
   const raw = data.value?.prCreateArtifact?.content
   if (!raw) {
@@ -171,6 +175,9 @@ const finalApprovalWarning = computed(() => {
   return ''
 })
 const testReportMarkdown = computed(() => formatTestReportMarkdown(data.value?.testReport?.content))
+const configuredToolCommand = computed(() => data.value?.toolCommand ?? null)
+const toolExecution = computed(() => data.value?.toolExecution ?? null)
+const toolLogContent = computed(() => data.value?.toolExecution?.log?.content ?? '')
 const groupedLogs = computed(() => {
   const logs = data.value?.logs ?? []
   return [
@@ -339,6 +346,35 @@ function formatLogName(name: string) {
 
 function formatIssueBody(body?: string) {
   return body && body.trim().length > 0 ? body : 'Issue body is empty.'
+}
+
+function formatToolButtonLabel() {
+  if (toolCommandState.value === 'saving') {
+    return configuredToolCommand.value?.resident && toolExecution.value?.running ? '停止中...' : '起動中...'
+  }
+  if (configuredToolCommand.value?.resident && toolExecution.value?.running) {
+    return '停止'
+  }
+  return '起動'
+}
+
+function formatToolExecutionSummary() {
+  const tool = configuredToolCommand.value
+  const execution = toolExecution.value
+  if (!tool) {
+    return ''
+  }
+  if (!execution) {
+    return `${tool.resident ? 'resident' : 'one-shot'} command`
+  }
+
+  const parts: string[] = []
+  parts.push(tool.resident ? 'resident' : 'one-shot')
+  parts.push(execution.running ? 'running' : 'stopped')
+  if (typeof execution.exitCode === 'number') {
+    parts.push(`exit=${execution.exitCode}`)
+  }
+  return parts.join(' / ')
 }
 
 function formatReviewCommentLocation(path?: string, line?: number) {
@@ -559,6 +595,22 @@ async function purgeArchivedJob() {
     jobPurgeError.value = err instanceof Error ? err.message : 'Unknown error'
   }
 }
+
+async function toggleToolCommand() {
+  if (!configuredToolCommand.value) {
+    return
+  }
+  toolCommandState.value = 'saving'
+  toolCommandError.value = null
+  try {
+    data.value = toolExecution.value?.running ? await stopToolCommand(jobID.value) : await startToolCommand(jobID.value)
+    toolCommandState.value = 'idle'
+    await reload()
+  } catch (err) {
+    toolCommandState.value = 'error'
+    toolCommandError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
+}
 </script>
 
 <template>
@@ -595,6 +647,23 @@ async function purgeArchivedJob() {
                   </button>
                 </div>
               </template>
+              <template v-if="!isDeletedJob && configuredToolCommand">
+                <div class="stack-sm">
+                  <p class="text-muted">
+                    Tool: <code>{{ configuredToolCommand.name }}</code> / {{ formatToolExecutionSummary() }}
+                  </p>
+                  <div class="button-row">
+                    <button
+                      class="button button-secondary"
+                      type="button"
+                      :disabled="toolCommandState === 'saving'"
+                      @click="toggleToolCommand"
+                    >
+                      {{ formatToolButtonLabel() }}
+                    </button>
+                  </div>
+                </div>
+              </template>
               <template v-if="isDeletedJob">
                 <p class="notice notice-danger">このジョブは削除済みです。</p>
                 <div class="flow-delete-row">
@@ -621,6 +690,7 @@ async function purgeArchivedJob() {
               <p v-if="jobArchiveState === 'error'" class="notice notice-danger">{{ jobArchiveError }}</p>
               <p v-if="jobPurgeState === 'error'" class="notice notice-danger">{{ jobPurgeError }}</p>
               <p v-if="approvalState === 'error'" class="notice notice-danger">{{ approvalError }}</p>
+              <p v-if="toolCommandState === 'error'" class="notice notice-danger">{{ toolCommandError }}</p>
               <template v-if="canReviewImplementation">
                 <p v-if="finalApprovalWarning" class="notice notice-danger">{{ finalApprovalWarning }}</p>
                 <p v-if="finalApprovalState === 'error'" class="notice notice-danger">{{ finalApprovalError }}</p>
@@ -730,9 +800,26 @@ async function purgeArchivedJob() {
         </PanelCard>
 
         <PanelCard
+          v-if="configuredToolCommand && (toolExecution || toolLogContent)"
+          title="Tool Log"
+        >
+          <div class="artifact-headline">
+            <div>
+              <p class="text-muted">
+                <code>{{ configuredToolCommand.name }}</code> / {{ formatToolExecutionSummary() }}
+              </p>
+              <p v-if="toolExecution?.startedAt" class="text-muted">
+                Started: {{ formatDateTime(toolExecution.startedAt) }}
+                <span v-if="toolExecution.finishedAt"> / Finished: {{ formatDateTime(toolExecution.finishedAt) }}</span>
+              </p>
+            </div>
+          </div>
+          <pre class="artifact-view">{{ toolLogContent || 'No tool log yet.' }}</pre>
+        </PanelCard>
+
+        <PanelCard
           v-if="data.prCreateArtifact"
           title="Pull Request"
-          description="作成された PR の記録です。"
         >
           <div class="artifact-headline">
             <button class="log-entry-button" type="button" @click="prCreateModalOpen = true">PR作成結果を開く</button>

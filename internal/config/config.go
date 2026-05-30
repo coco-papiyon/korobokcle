@@ -52,6 +52,7 @@ type WatchRule struct {
 	Model          string               `yaml:"model"`
 	SkillSet       string               `yaml:"skillSet"`
 	TestProfile    string               `yaml:"testProfile"`
+	ToolCommand    string               `yaml:"toolCommand"`
 	Enabled        bool                 `yaml:"enabled"`
 }
 
@@ -79,9 +80,20 @@ type TestProfile struct {
 	Commands []string `yaml:"commands"`
 }
 
+type ToolCommands struct {
+	Commands []ToolCommand `yaml:"commands"`
+}
+
+type ToolCommand struct {
+	Name     string `yaml:"name"`
+	Command  string `yaml:"command"`
+	Resident bool   `yaml:"resident"`
+}
+
 type Files struct {
 	App           App
 	WatchRules    WatchRulesFile
 	Notifications Notifications
 	TestProfiles  TestProfiles
+	ToolCommands  ToolCommands
 }

@@ -19,9 +19,6 @@ func LoadDefinition(root string, skillName string) (Definition, error) {
 	if definition.Name == "" {
 		return Definition{}, fmt.Errorf("skill %q is missing name", skillName)
 	}
-	if definition.Artifacts.OutputFile == "" {
-		definition.Artifacts.OutputFile = skillName + ".md"
-	}
 	return definition, nil
 }
 
