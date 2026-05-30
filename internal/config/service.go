@@ -219,6 +219,7 @@ func cloneTestProfiles(file TestProfiles) TestProfiles {
 	}
 	for _, profile := range file.Profiles {
 		cloned.Profiles = append(cloned.Profiles, TestProfile{
+			ID:       profile.ID,
 			Name:     profile.Name,
 			Commands: append([]string(nil), profile.Commands...),
 		})

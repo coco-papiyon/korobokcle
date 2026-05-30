@@ -15,6 +15,7 @@ func TestServiceUpdateTestProfilesPersistsAndClones(t *testing.T) {
 	file := TestProfiles{
 		Profiles: []TestProfile{
 			{
+				ID:       "profile-1",
 				Name:     "go-default",
 				Commands: []string{"go test ./...", "go test ./internal/..."},
 			},
@@ -35,6 +36,9 @@ func TestServiceUpdateTestProfilesPersistsAndClones(t *testing.T) {
 	if got.Profiles[0].Name != "go-default" {
 		t.Fatalf("expected cached profile name to remain go-default, got %q", got.Profiles[0].Name)
 	}
+	if got.Profiles[0].ID != "profile-1" {
+		t.Fatalf("expected cached profile id to remain profile-1, got %q", got.Profiles[0].ID)
+	}
 	if got.Profiles[0].Commands[0] != "go test ./..." {
 		t.Fatalf("expected cached command to remain unchanged, got %q", got.Profiles[0].Commands[0])
 	}
@@ -43,7 +47,7 @@ func TestServiceUpdateTestProfilesPersistsAndClones(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	for _, expected := range [][]byte{[]byte("name: go-default"), []byte("- go test ./..."), []byte("- go test ./internal/...")} {
+	for _, expected := range [][]byte{[]byte("id: profile-1"), []byte("name: go-default"), []byte("- go test ./..."), []byte("- go test ./internal/...")} {
 		if !bytes.Contains(raw, expected) {
 			t.Fatalf("expected saved yaml to contain %q, got %s", expected, string(raw))
 		}

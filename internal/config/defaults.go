@@ -76,6 +76,7 @@ func DefaultFiles() Files {
 		TestProfiles: TestProfiles{
 			Profiles: []TestProfile{
 				{
+					ID:       "profile-1",
 					Name:     "go-default",
 					Commands: []string{"go test ./..."},
 				},
