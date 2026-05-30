@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,13 +18,14 @@ import (
 )
 
 type Server struct {
-	httpServer   *http.Server
-	orchestrator *orchestrator.Orchestrator
-	config       *config.Service
-	staticDir    string
-	reviewer     ReviewSubmitter
-	commenter    IssueCommentSubmitter
-	tools        *toolRuntimeManager
+	httpServer       *http.Server
+	orchestrator     *orchestrator.Orchestrator
+	config           *config.Service
+	staticDir        string
+	reviewer         ReviewSubmitter
+	commenter        IssueCommentSubmitter
+	issueBodyFetcher IssueBodyFetcher
+	tools            *toolRuntimeManager
 }
 
 type ReviewSubmitter interface {
@@ -32,6 +34,10 @@ type ReviewSubmitter interface {
 
 type IssueCommentSubmitter interface {
 	Submit(ctx context.Context, req IssueCommentSubmitRequest) error
+}
+
+type IssueBodyFetcher interface {
+	Fetch(ctx context.Context, req IssueBodyFetchRequest) (string, error)
 }
 
 type ReviewSubmitRequest struct {
@@ -48,8 +54,14 @@ type IssueCommentSubmitRequest struct {
 	ArtifactDir string
 }
 
+type IssueBodyFetchRequest struct {
+	Repository  string
+	IssueNumber int
+}
+
 type GHReviewSubmitter struct{}
 type GHIssueCommentSubmitter struct{}
+type GHIssueBodyFetcher struct{}
 
 func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) {
 	staticDir, err := resolveStaticDir()
@@ -57,18 +69,20 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) 
 		return nil, err
 	}
 	s := &Server{
-		orchestrator: orch,
-		config:       cfg,
-		staticDir:    staticDir,
-		reviewer:     GHReviewSubmitter{},
-		commenter:    GHIssueCommentSubmitter{},
-		tools:        newToolRuntimeManager(),
+		orchestrator:     orch,
+		config:           cfg,
+		staticDir:        staticDir,
+		reviewer:         GHReviewSubmitter{},
+		commenter:        GHIssueCommentSubmitter{},
+		issueBodyFetcher: GHIssueBodyFetcher{},
+		tools:            newToolRuntimeManager(),
 	}
 
 	router := mux.NewRouter()
 	api := router.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/jobs", s.handleJobs).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}", s.handleJobDetail).Methods(http.MethodGet)
+	api.HandleFunc("/jobs/{id}/issue-body", s.handleIssueBody).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}/delete", s.handleDeleteJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/restore", s.handleRestoreJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/purge", s.handlePurgeJob).Methods(http.MethodPost)
@@ -190,6 +204,38 @@ func (GHIssueCommentSubmitter) Submit(ctx context.Context, req IssueCommentSubmi
 		return fmt.Errorf("gh issue comment failed: %w: %s", err, output)
 	}
 	return nil
+}
+
+func (GHIssueBodyFetcher) Fetch(ctx context.Context, req IssueBodyFetchRequest) (string, error) {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return "", fmt.Errorf("gh command is not available: %w", err)
+	}
+	if strings.TrimSpace(req.Repository) == "" {
+		return "", fmt.Errorf("repository is required")
+	}
+	if req.IssueNumber < 1 {
+		return "", fmt.Errorf("issue number must be positive")
+	}
+
+	cmd := exec.CommandContext(ctx, "gh", "issue", "view",
+		fmt.Sprintf("%d", req.IssueNumber),
+		"--repo", req.Repository,
+		"--json", "body",
+	)
+	raw, err := cmd.CombinedOutput()
+	output := strings.TrimSpace(string(raw))
+	if err != nil {
+		return "", fmt.Errorf("gh issue view failed: %w: %s", err, output)
+	}
+
+	var payload struct {
+		Body string `json:"body"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", fmt.Errorf("decode gh issue view response: %w", err)
+	}
+
+	return payload.Body, nil
 }
 
 func (s *Server) Start() error {

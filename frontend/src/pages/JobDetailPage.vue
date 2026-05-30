@@ -9,6 +9,7 @@ import {
   deleteJob,
   fetchAppConfig,
   fetchJobDetail,
+  fetchLatestIssueBody,
   fetchToolCommands,
   purgeJob,
   restoreJob,
@@ -117,6 +118,9 @@ const toolCommandError = ref<string | null>(null)
 const selectedToolCommandName = ref('')
 const popupLoadingState = ref<'idle' | 'loading' | 'error'>('idle')
 const popupLoadingError = ref<string | null>(null)
+const issueBodyState = ref<'idle' | 'loading' | 'error'>('idle')
+const issueBodyError = ref<string | null>(null)
+const issueBodyContent = ref('')
 const prCreateInfo = computed(() => {
   const raw = data.value?.prCreateArtifact?.content
   if (!raw) {
@@ -230,7 +234,17 @@ const canSubmitReviewComment = computed(() => data.value?.job.type === 'pr_revie
 const canApproveReview = computed(() => data.value?.job.type === 'pr_review' && data.value?.job.state === 'review_ready' && !!data.value?.reviewArtifact)
 const isPRFeedbackJob = computed(() => data.value?.job.type === 'pr_feedback')
 const hasReviewComments = computed(() => (data.value?.reviewComments?.length ?? 0) > 0)
-const hasIssueBody = computed(() => (data.value?.issueBody?.trim().length ?? 0) > 0)
+const hasIssueBody = computed(() => data.value?.job.type === 'issue' || (data.value?.issueBody?.trim().length ?? 0) > 0)
+
+watch(
+  () => data.value?.issueBody,
+  (content) => {
+    if (!issueBodyModalOpen.value) {
+      issueBodyContent.value = content ?? ''
+    }
+  },
+  { immediate: true },
+)
 
 watch(
   () => data.value?.reviewArtifact?.content,
@@ -675,8 +689,36 @@ async function openPopup(setOpen: (value: boolean) => void) {
 
 function openIssueBodyModal() {
   void openPopup((value) => {
+    if (value) {
+      issueBodyContent.value = data.value?.issueBody ?? ''
+      issueBodyState.value = 'idle'
+      issueBodyError.value = null
+    }
     issueBodyModalOpen.value = value
   })
+}
+
+async function refreshIssueBody() {
+  if (issueBodyState.value === 'loading') {
+    return
+  }
+
+  issueBodyState.value = 'loading'
+  issueBodyError.value = null
+  try {
+    const latest = await fetchLatestIssueBody(jobID.value)
+    issueBodyContent.value = latest.issueBody
+    if (data.value) {
+      data.value = {
+        ...data.value,
+        issueBody: latest.issueBody,
+      }
+    }
+    issueBodyState.value = 'idle'
+  } catch (err) {
+    issueBodyState.value = 'error'
+    issueBodyError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
 }
 
 function openDesignArtifactModal() {
@@ -1043,7 +1085,23 @@ function openPRCreateModal() {
               </div>
               <button class="button button-secondary" type="button" @click="issueBodyModalOpen = false">閉じる</button>
             </div>
-            <pre class="artifact-view">{{ formatIssueBody(data.issueBody) }}</pre>
+            <div class="stack-sm">
+              <div class="modal-actions">
+                <div class="button-row">
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    :disabled="issueBodyState === 'loading'"
+                    @click="refreshIssueBody"
+                  >
+                    {{ issueBodyState === 'loading' ? '取得中...' : '最新を取得' }}
+                  </button>
+                </div>
+              </div>
+              <p v-if="issueBodyState === 'loading'" class="text-muted">GitHub から最新の issue 本文を取得しています...</p>
+              <p v-if="issueBodyState === 'error'" class="notice notice-danger">{{ issueBodyError }}</p>
+              <pre class="artifact-view">{{ formatIssueBody(issueBodyContent) }}</pre>
+            </div>
           </div>
         </div>
 

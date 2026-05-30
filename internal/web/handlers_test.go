@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,20 @@ type recordingReviewSubmitter struct {
 func (r *recordingReviewSubmitter) Submit(_ context.Context, req ReviewSubmitRequest) error {
 	r.req = req
 	return nil
+}
+
+type recordingIssueBodyFetcher struct {
+	req  IssueBodyFetchRequest
+	body string
+	err  error
+}
+
+func (f *recordingIssueBodyFetcher) Fetch(_ context.Context, req IssueBodyFetchRequest) (string, error) {
+	f.req = req
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.body, nil
 }
 
 func toolStartLongRunningCommand() string {
@@ -2043,5 +2058,106 @@ func TestHandleJobDetailDoesNotReusePurgedArtifacts(t *testing.T) {
 	}
 	if detail.DesignArtifact != nil {
 		t.Fatalf("expected recreated job to ignore stale artifact, got %+v", detail.DesignArtifact)
+	}
+}
+
+func TestHandleIssueBodyReturnsLatestBody(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	fetcher := &recordingIssueBodyFetcher{body: "latest issue body"}
+	server := &Server{
+		config:           svc,
+		orchestrator:     orchestrator.New(store, nil),
+		issueBodyFetcher: fetcher,
+	}
+	job := domain.Job{
+		ID:           "job-issue-body",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		State:        domain.StateDetected,
+		Title:        "job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID+"/issue-body", nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handleIssueBody(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+	if fetcher.req.Repository != job.Repository {
+		t.Fatalf("expected repository %q, got %q", job.Repository, fetcher.req.Repository)
+	}
+	if fetcher.req.IssueNumber != job.GitHubNumber {
+		t.Fatalf("expected issue number %d, got %d", job.GitHubNumber, fetcher.req.IssueNumber)
+	}
+
+	var got issueBodyResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.IssueBody != fetcher.body {
+		t.Fatalf("expected body %q, got %q", fetcher.body, got.IssueBody)
+	}
+}
+
+func TestHandleIssueBodyReturnsFetcherError(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	fetcher := &recordingIssueBodyFetcher{err: fmt.Errorf("gh issue view failed: authentication required")}
+	server := &Server{
+		config:           svc,
+		orchestrator:     orchestrator.New(store, nil),
+		issueBodyFetcher: fetcher,
+	}
+	job := domain.Job{
+		ID:           "job-issue-body-error",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		State:        domain.StateDetected,
+		Title:        "job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID+"/issue-body", nil)
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handleIssueBody(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusInternalServerError, recorder.Code, recorder.Body.String())
+	}
+	if !bytes.Contains(recorder.Body.Bytes(), []byte("authentication required")) {
+		t.Fatalf("expected error message to be returned, got %s", recorder.Body.String())
 	}
 }

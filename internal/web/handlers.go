@@ -65,6 +65,10 @@ type jobDetailResponse struct {
 	Logs                   []logResponse           `json:"logs,omitempty"`
 }
 
+type issueBodyResponse struct {
+	IssueBody string `json:"issueBody"`
+}
+
 type reviewSubmitRequest struct {
 	Comment string `json:"comment"`
 }
@@ -323,6 +327,30 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	out.Logs = append(out.Logs, s.loadLogResponses("pr", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerPR), []string{"git-push.log", "gh-pr-create.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("review", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerReview), []string{"stdout.log", "stderr.log", "gh-pr-comment.log"})...)
 	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleIssueBody(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	job, _, err := s.orchestrator.JobDetail(r.Context(), jobID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err)
+		return
+	}
+	if s.issueBodyFetcher == nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("issue body fetcher is not configured"))
+		return
+	}
+
+	body, err := s.issueBodyFetcher.Fetch(r.Context(), IssueBodyFetchRequest{
+		Repository:  job.Repository,
+		IssueNumber: job.GitHubNumber,
+	})
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, issueBodyResponse{IssueBody: body})
 }
 
 type approvalRequest struct {
