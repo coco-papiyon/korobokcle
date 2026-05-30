@@ -757,7 +757,10 @@ async function toggleToolCommand() {
           :title="isPRFeedbackJob ? '修正結果' : 'Implementation Artifact'"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="implementationArtifactModalOpen = true">{{ isPRFeedbackJob ? '修正結果を開く' : '実装結果を開く' }}</button>
+            <div>
+              <button class="log-entry-button" type="button" @click="implementationArtifactModalOpen = true">{{ isPRFeedbackJob ? '修正結果を開く' : '実装結果を開く' }}</button>
+              <p class="text-muted"><code>{{ data.implementationArtifact.path }}</code></p>
+            </div>
             <p class="text-muted">{{ isPRFeedbackJob ? 'PR review コメントに対する修正結果です。' : '実装フェーズの成果物サマリです。最終承認前に確認します。' }}</p>
           </div>
         </PanelCard>
@@ -778,7 +781,10 @@ async function toggleToolCommand() {
           title="Review Artifact"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="reviewArtifactModalOpen = true">レビュー結果を開く</button>
+            <div>
+              <button class="log-entry-button" type="button" @click="reviewArtifactModalOpen = true">レビュー結果を開く</button>
+              <p class="text-muted"><code>{{ data.reviewArtifact.path }}</code></p>
+            </div>
             <p class="text-muted">PR review フェーズの成果物です。総評コメントとして GitHub へ返せます。</p>
           </div>
           <div class="stack-sm">
@@ -794,7 +800,10 @@ async function toggleToolCommand() {
           title="Test Report"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="testReportModalOpen = true">テスト結果を開く</button>
+            <div>
+              <button class="log-entry-button" type="button" @click="testReportModalOpen = true">テスト結果を開く</button>
+              <p class="text-muted"><code>{{ data.testReport.path }}</code></p>
+            </div>
             <p class="text-muted">設定された test profile の実行結果です。</p>
           </div>
         </PanelCard>
@@ -822,7 +831,10 @@ async function toggleToolCommand() {
           title="Pull Request"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="prCreateModalOpen = true">PR作成結果を開く</button>
+            <div>
+              <button class="log-entry-button" type="button" @click="prCreateModalOpen = true">PR作成結果を開く</button>
+              <p class="text-muted"><code>{{ data.prCreateArtifact.path }}</code></p>
+            </div>
             <p class="text-muted">作成された Pull Request の情報を確認できます。</p>
           </div>
         </PanelCard>

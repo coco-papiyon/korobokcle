@@ -950,6 +950,32 @@ func TestLoadImplementationArtifactFallsBackToReviewFixFileName(t *testing.T) {
 	}
 }
 
+func TestLoadImplementationArtifactFallsBackToStdoutLog(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	jobID := "job-implementation-failed"
+	dir := artifacts.WorkerDir(root, "artifacts", jobID, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(implementation) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "stdout.log"), []byte("partial implementation output"), 0o644); err != nil {
+		t.Fatalf("WriteFile(stdout.log) error = %v", err)
+	}
+
+	artifact, err := server.loadImplementationArtifact(jobID)
+	if err != nil {
+		t.Fatalf("loadImplementationArtifact() error = %v", err)
+	}
+	if artifact.Content != "partial implementation output" {
+		t.Fatalf("expected stdout log fallback, got %q", artifact.Content)
+	}
+}
+
 func TestLoadTestReportPrefersLatestImplementationReport(t *testing.T) {
 	t.Parallel()
 

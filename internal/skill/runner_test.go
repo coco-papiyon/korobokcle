@@ -183,3 +183,44 @@ func TestRunDesignWritesExecutionLogsToRunnerLogger(t *testing.T) {
 		t.Fatalf("expected execution completion log, got %q", logOutput)
 	}
 }
+
+func TestRunDesignDoesNotOverwriteExistingResultFile(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "skills", "default", "design")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
+		t.Fatalf("WriteFile(prompt) error = %v", err)
+	}
+
+	scriptPath := writeProviderScript(
+		t,
+		root,
+		"design-provider",
+		"@echo off\r\necho stdout-content\r\n>\"%1\" echo file-content\r\n",
+		"#!/usr/bin/env sh\nprintf 'stdout-content\\n'\nprintf '%s\\n' 'file-content' > \"$1\"\n",
+	)
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["{{output_path}}"]`)
+
+	runner := NewRunner(root, root, "", nil)
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-overwrite", artifacts.WorkerDesign)
+	if _, err := runner.RunDesign(context.Background(), "design", DesignContext{
+		Title:       "My Issue",
+		ArtifactDir: artifactDir,
+	}, ExecutionConfig{Provider: "codex"}); err != nil {
+		t.Fatalf("RunDesign() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(artifactDir, "result.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(result.md) error = %v", err)
+	}
+	if strings.TrimSpace(string(raw)) != "file-content" {
+		t.Fatalf("expected existing result file to be preserved, got %q", string(raw))
+	}
+}
