@@ -86,6 +86,7 @@ const jobPurgeError = ref<string | null>(null)
 const designArtifactModalOpen = ref(false)
 const implementationArtifactModalOpen = ref(false)
 const testReportModalOpen = ref(false)
+const prCreateModalOpen = ref(false)
 const reviewArtifactModalOpen = ref(false)
 const issueBodyModalOpen = ref(false)
 const selectedLog = ref<{ groupTitle: string; log: JobLog } | null>(null)
@@ -111,11 +112,18 @@ const prCreateInfo = computed(() => {
     return null
   }
   try {
-    return JSON.parse(raw) as { url?: string; repository?: string; branchName?: string; title?: string }
+    return JSON.parse(raw) as {
+      url?: string
+      repository?: string
+      branchName?: string
+      title?: string
+      [key: string]: unknown
+    }
   } catch {
     return null
   }
 })
+const prCreateRawContent = computed(() => data.value?.prCreateArtifact?.content ?? '')
 
 const latestEvent = computed(() => {
   const events = data.value?.events ?? []
@@ -726,18 +734,10 @@ async function purgeArchivedJob() {
           title="Pull Request"
           description="作成された PR の記録です。"
         >
-          <details class="stack-sm">
-            <summary class="text-muted">{{ data.prCreateArtifact.path }}</summary>
-            <template v-if="prCreateInfo">
-              <p v-if="prCreateInfo.title"><strong>{{ prCreateInfo.title }}</strong></p>
-              <p v-if="prCreateInfo.repository" class="text-muted">Repository: <code>{{ prCreateInfo.repository }}</code></p>
-              <p v-if="prCreateInfo.branchName" class="text-muted">Branch: <code>{{ prCreateInfo.branchName }}</code></p>
-              <p v-if="prCreateInfo.url">
-                <a class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">Open Pull Request</a>
-              </p>
-            </template>
-            <pre class="artifact-view">{{ data.prCreateArtifact.content }}</pre>
-          </details>
+          <div class="artifact-headline">
+            <button class="log-entry-button" type="button" @click="prCreateModalOpen = true">PR作成結果を開く</button>
+            <p class="text-muted">作成された Pull Request の情報を確認できます。</p>
+          </div>
         </PanelCard>
 
         <PanelCard
@@ -932,6 +932,30 @@ async function purgeArchivedJob() {
               <p v-if="implementationRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_implementation') }}: {{ implementationRerunError }}</p>
               <p v-if="finalApprovalWarning && canReviewImplementation" class="notice notice-danger">{{ finalApprovalWarning }}</p>
               <p v-if="finalApprovalState === 'error'" class="notice notice-danger">{{ finalApprovalError }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="prCreateModalOpen && data.prCreateArtifact" class="modal-backdrop" @click.self="prCreateModalOpen = false">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">Pull Request</h3>
+                <p class="text-muted"><code>{{ data.prCreateArtifact.path }}</code></p>
+              </div>
+              <button class="button button-secondary" type="button" @click="prCreateModalOpen = false">閉じる</button>
+            </div>
+            <div class="stack-sm">
+              <template v-if="prCreateInfo">
+                <p v-if="prCreateInfo.title"><strong>{{ prCreateInfo.title }}</strong></p>
+                <p v-if="prCreateInfo.repository" class="text-muted">Repository: <code>{{ prCreateInfo.repository }}</code></p>
+                <p v-if="prCreateInfo.branchName" class="text-muted">Branch: <code>{{ prCreateInfo.branchName }}</code></p>
+                <p v-if="prCreateInfo.url">
+                  <a class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">Open Pull Request</a>
+                </p>
+              </template>
+              <p v-else class="text-muted">PR 作成結果を構造化表示できなかったため、生データを表示しています。</p>
+              <pre class="artifact-view">{{ prCreateRawContent }}</pre>
             </div>
           </div>
         </div>
