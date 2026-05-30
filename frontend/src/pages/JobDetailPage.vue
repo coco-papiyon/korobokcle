@@ -1530,7 +1530,6 @@ function openPRCreateModal() {
             </div>
           </div>
         </div>
-
         <div v-if="reviewArtifactModalOpen && data.reviewArtifact" class="modal-backdrop" @click.self="reviewArtifactModalOpen = false">
           <div class="modal-panel">
             <div class="modal-panel__header">
