@@ -27,6 +27,12 @@
 npm install -g @github/copilot
 ```
 
+`claude` provider を使う場合は Claude Code も必要です。
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
 ## Directory Layout
 
 ```text

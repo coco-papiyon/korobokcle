@@ -7,6 +7,66 @@
   padding: var(--space-6);
 }
 
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  margin: 0 0 var(--space-4);
+}
+
+.guide-layout {
+  display: grid;
+  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.guide-toc {
+  position: sticky;
+  top: var(--space-6);
+}
+
+.guide-toc__link {
+  display: block;
+  color: var(--accent-deep);
+  text-decoration: none;
+}
+
+.guide-toc__link:hover {
+  text-decoration: underline;
+}
+
+.markdown-content p,
+.markdown-content ul,
+.markdown-content pre {
+  margin: 0 0 var(--space-4);
+}
+
+.markdown-content ul {
+  padding-left: 1.4rem;
+}
+
+.markdown-content li + li {
+  margin-top: 0.35rem;
+}
+
+.markdown-content pre {
+  overflow-x: auto;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: #fff6ee;
+  border: 1px solid var(--line-soft);
+}
+
+@media (max-width: 900px) {
+  .guide-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-toc {
+    position: static;
+  }
+}
+
 .job-summary {
   min-width: 0;
 }
