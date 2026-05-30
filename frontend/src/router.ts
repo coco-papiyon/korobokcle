@@ -4,6 +4,7 @@ import JobDetailPage from './pages/JobDetailPage.vue'
 import SettingsPage from './pages/SettingsPage.vue'
 import SkillSetsPage from './pages/SkillSetsPage.vue'
 import TestProfilesPage from './pages/TestProfilesPage.vue'
+import ToolCommandsPage from './pages/ToolCommandsPage.vue'
 import WorkerSettingsPage from './pages/WorkerSettingsPage.vue'
 import WatchRulesPage from './pages/WatchRulesPage.vue'
 
@@ -15,6 +16,7 @@ export const router = createRouter({
     { path: '/settings', name: 'settings', component: SettingsPage },
     { path: '/settings/workers', name: 'workers', component: WorkerSettingsPage },
     { path: '/settings/test-profiles', name: 'test-profiles', component: TestProfilesPage },
+    { path: '/settings/tool-commands', name: 'tool-commands', component: ToolCommandsPage },
     { path: '/settings/watch-rules', name: 'watch-rules', component: WatchRulesPage },
     { path: '/settings/skillsets', name: 'skillsets', component: SkillSetsPage },
   ],

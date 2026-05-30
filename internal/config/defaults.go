@@ -42,6 +42,7 @@ func DefaultFiles() Files {
 					Model:          "",
 					SkillSet:       "default",
 					TestProfile:    "go-default",
+					ToolCommand:    "",
 					Enabled:        false,
 				},
 				{
@@ -57,6 +58,7 @@ func DefaultFiles() Files {
 					Model:          "",
 					SkillSet:       "default",
 					TestProfile:    "go-default",
+					ToolCommand:    "",
 					Enabled:        false,
 				},
 			},
@@ -78,6 +80,9 @@ func DefaultFiles() Files {
 					Commands: []string{"go test ./..."},
 				},
 			},
+		},
+		ToolCommands: ToolCommands{
+			Commands: []ToolCommand{},
 		},
 	}
 }

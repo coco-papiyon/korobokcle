@@ -12,8 +12,6 @@ cd ..
 mkdir -p exec/base/skills
 cp -R skills/default exec/base/skills/
 
-go build ./cmd/korobokcle
-./korobokcle
 cp -rf skills/default exec/base/skills/default
 
 go build ./cmd/korobokcle

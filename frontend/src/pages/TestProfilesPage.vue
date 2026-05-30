@@ -7,12 +7,14 @@ import { fetchTestProfiles, saveTestProfiles } from '@/lib/api'
 import type { TestProfile } from '@/types'
 
 type TestProfileForm = TestProfile & {
+  id: string
   commandsText: string
 }
 
 const { data, isLoading, error, reload } = useAsyncData(fetchTestProfiles)
 const profiles = ref<TestProfileForm[]>([])
-const selectedName = ref('')
+const selectedID = ref('')
+const nextProfileID = ref(1)
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const saveError = ref<string | null>(null)
 
@@ -20,17 +22,18 @@ watch(
   data,
   (value) => {
     profiles.value = (value ?? []).map(toForm)
-    if (!selectedName.value || !profiles.value.some((profile) => profile.name === selectedName.value)) {
-      selectedName.value = profiles.value[0]?.name ?? ''
+    if (!selectedID.value || !profiles.value.some((profile) => profile.id === selectedID.value)) {
+      selectedID.value = profiles.value[0]?.id ?? ''
     }
   },
   { immediate: true },
 )
 
-const selectedProfile = computed(() => profiles.value.find((profile) => profile.name === selectedName.value) ?? null)
+const selectedProfile = computed(() => profiles.value.find((profile) => profile.id === selectedID.value) ?? null)
 
 function toForm(profile: TestProfile): TestProfileForm {
   return {
+    id: `profile-${nextProfileID.value++}`,
     ...profile,
     commands: [...(profile.commands ?? [])],
     commandsText: (profile.commands ?? []).join('\n'),
@@ -55,19 +58,20 @@ function previewCommands(value: string): string {
   return splitCommands(value).slice(0, 2).join(' / ')
 }
 
-function selectProfile(name: string) {
-  selectedName.value = name
+function selectProfile(id: string) {
+  selectedID.value = id
 }
 
 function addProfile() {
-  const suffix = profiles.value.length + 1
+  const suffix = nextProfileID.value
   const profile: TestProfileForm = {
+    id: `profile-${nextProfileID.value++}`,
     name: `profile-${suffix}`,
     commands: ['go test ./...'],
     commandsText: 'go test ./...',
   }
   profiles.value = [...profiles.value, profile]
-  selectedName.value = profile.name
+  selectedID.value = profile.id
   saveState.value = 'idle'
   saveError.value = null
 }
@@ -76,8 +80,8 @@ function removeSelectedProfile() {
   if (!selectedProfile.value) {
     return
   }
-  profiles.value = profiles.value.filter((profile) => profile.name !== selectedProfile.value?.name)
-  selectedName.value = profiles.value[0]?.name ?? ''
+  profiles.value = profiles.value.filter((profile) => profile.id !== selectedProfile.value?.id)
+  selectedID.value = profiles.value[0]?.id ?? ''
   saveState.value = 'idle'
   saveError.value = null
 }
@@ -110,14 +114,14 @@ async function persistProfiles() {
 
   const selectedIndex = Math.max(
     0,
-    profiles.value.findIndex((profile) => profile.name === selectedName.value),
+    profiles.value.findIndex((profile) => profile.id === selectedID.value),
   )
   saveState.value = 'saving'
   saveError.value = null
   try {
     const saved = await saveTestProfiles(profiles.value.map(fromForm))
     profiles.value = saved.map(toForm)
-    selectedName.value = profiles.value[selectedIndex]?.name ?? profiles.value[0]?.name ?? ''
+    selectedID.value = profiles.value[selectedIndex]?.id ?? profiles.value[0]?.id ?? ''
     saveState.value = 'saved'
     await reload()
   } catch (err) {
@@ -145,12 +149,12 @@ async function persistProfiles() {
 
           <div class="stack-sm">
             <button
-              v-for="(profile, index) in profiles"
-              :key="`${index}-${profile.name}`"
+              v-for="profile in profiles"
+              :key="profile.id"
               class="rule-item"
-              :class="{ 'rule-item--active': selectedName === profile.name }"
+              :class="{ 'rule-item--active': selectedID === profile.id }"
               type="button"
-              @click="selectProfile(profile.name)"
+              @click="selectProfile(profile.id)"
             >
               <div class="rule-item__head">
                 <strong>{{ profile.name }}</strong>

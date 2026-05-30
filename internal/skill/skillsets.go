@@ -184,9 +184,6 @@ func writeSkillFile(root string, setName string, skillName string, file SkillFil
 	definition := file.Definition
 	definition.Name = skillName
 	definition.PromptFile = ""
-	if definition.Artifacts.OutputFile == "" {
-		definition.Artifacts.OutputFile = skillName + ".md"
-	}
 
 	skillDir := filepath.Join(root, "skills", setName, skillName)
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {

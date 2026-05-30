@@ -15,6 +15,7 @@ import (
 
 func main() {
 	debug := flag.Bool("debug", false, "enable debug logging")
+	port := flag.Int("port", 0, "override HTTP port")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -29,7 +30,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := app.Run(ctx, repoRoot, toolRoot, app.Options{Debug: *debug}); err != nil {
+	if err := app.Run(ctx, repoRoot, toolRoot, app.Options{
+		Debug:    *debug,
+		HTTPPort: *port,
+	}); err != nil {
 		log.Fatal(err)
 	}
 }

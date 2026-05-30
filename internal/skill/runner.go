@@ -24,6 +24,8 @@ type ExecutionConfig struct {
 	Model    string
 }
 
+const defaultSkillOutputFile = "result.md"
+
 func NewRunner(repoRoot string, toolRoot string, defaultProviderName string, copilotAllowTools []string) *Runner {
 	return &Runner{
 		defaultProviderName: defaultProviderName,
@@ -79,7 +81,7 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 		return AIResult{}, err
 	}
 	workDir := r.executionWorkDir(definition, execution, contextData.ArtifactDir)
-	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
+	outputPath := filepath.Join(contextData.ArtifactDir, defaultSkillOutputFile)
 	runStart := time.Now()
 	r.logExecutionStart("design", definition.Name, r.providerNameForDefinition(definition, execution), execution.Model, workDir, contextData.ArtifactDir, outputPath)
 
@@ -143,7 +145,7 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 		return AIResult{}, err
 	}
 	workDir := r.executionWorkDir(definition, execution, contextData.ArtifactDir)
-	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
+	outputPath := filepath.Join(contextData.ArtifactDir, defaultSkillOutputFile)
 	runStart := time.Now()
 	r.logExecutionStart("implementation", definition.Name, r.providerNameForDefinition(definition, execution), execution.Model, workDir, contextData.ArtifactDir, outputPath)
 
@@ -207,7 +209,7 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 		return AIResult{}, err
 	}
 	workDir := r.executionWorkDir(definition, execution, contextData.ArtifactDir)
-	outputPath := filepath.Join(contextData.ArtifactDir, definition.Artifacts.OutputFile)
+	outputPath := filepath.Join(contextData.ArtifactDir, defaultSkillOutputFile)
 	runStart := time.Now()
 	r.logExecutionStart("review", definition.Name, r.providerNameForDefinition(definition, execution), execution.Model, workDir, contextData.ArtifactDir, outputPath)
 

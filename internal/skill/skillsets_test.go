@@ -47,11 +47,6 @@ func TestCreateAndDeleteSkillSet(t *testing.T) {
 		Definition: Definition{
 			Name:     "design",
 			Provider: "codex",
-			Inputs:   []string{"issue"},
-			Outputs:  []string{"design_doc"},
-			Artifacts: ArtifactBlock{
-				OutputFile: "result.md",
-			},
 		},
 		PromptTemplate: "updated prompt",
 	}
@@ -84,7 +79,7 @@ func writeSkillFixture(t *testing.T, dir string, prompt string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "skill.yaml"), []byte("name: "+filepath.Base(dir)+"\nprovider: mock\ninputs:\n  - issue\noutputs:\n  - doc\nartifacts:\n  output_file: out.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "skill.yaml"), []byte("name: "+filepath.Base(dir)+"\nprovider: mock\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "prompt.md.tmpl"), []byte(prompt), 0o644); err != nil {

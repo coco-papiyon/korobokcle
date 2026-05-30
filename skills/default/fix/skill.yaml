@@ -1,11 +1,2 @@
 name: fix
 provider: mock
-inputs:
-  - issue
-  - approved_design
-  - previous_failure
-  - previous_test_report
-outputs:
-  - fix_summary
-artifacts:
-output_file: result.md

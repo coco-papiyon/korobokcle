@@ -1,5 +1,6 @@
 package app
 
 type Options struct {
-	Debug bool
+	Debug    bool
+	HTTPPort int
 }

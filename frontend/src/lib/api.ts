@@ -1,4 +1,4 @@
-import type { AppConfig, Job, JobDetail, NotificationConfig, SkillSet, SkillSetSummary, TestProfile, WatchRule } from '@/types'
+import type { AppConfig, Job, JobDetail, NotificationConfig, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -118,6 +118,29 @@ export function saveTestProfiles(profiles: TestProfile[]): Promise<TestProfile[]
   return request<TestProfile[]>('/api/test-profiles', {
     method: 'PUT',
     body: JSON.stringify(profiles),
+  })
+}
+
+export function fetchToolCommands(): Promise<ToolCommand[]> {
+  return request<ToolCommand[]>('/api/tool-commands')
+}
+
+export function saveToolCommands(commands: ToolCommand[]): Promise<ToolCommand[]> {
+  return request<ToolCommand[]>('/api/tool-commands', {
+    method: 'PUT',
+    body: JSON.stringify(commands),
+  })
+}
+
+export function startToolCommand(jobId: string): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${jobId}/tool/start`, {
+    method: 'POST',
+  })
+}
+
+export function stopToolCommand(jobId: string): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${jobId}/tool/stop`, {
+    method: 'POST',
   })
 }
 

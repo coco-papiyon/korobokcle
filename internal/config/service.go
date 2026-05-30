@@ -42,6 +42,12 @@ func (s *Service) TestProfiles() TestProfiles {
 	return cloneTestProfiles(s.files.TestProfiles)
 }
 
+func (s *Service) ToolCommands() ToolCommands {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneToolCommands(s.files.ToolCommands)
+}
+
 func (s *Service) Notifications() Notifications {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -111,11 +117,23 @@ func (s *Service) UpdateTestProfiles(file TestProfiles) error {
 	return nil
 }
 
+func (s *Service) UpdateToolCommands(file ToolCommands) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := saveYAML(filepath.Join(s.root, toolCommandsPath), file); err != nil {
+		return err
+	}
+	s.files.ToolCommands = cloneToolCommands(file)
+	return nil
+}
+
 func cloneFiles(files Files) Files {
 	files.App = cloneApp(files.App)
 	files.WatchRules = cloneWatchRulesFile(files.WatchRules)
 	files.Notifications = cloneNotifications(files.Notifications)
 	files.TestProfiles = cloneTestProfiles(files.TestProfiles)
+	files.ToolCommands = cloneToolCommands(files.ToolCommands)
 	return files
 }
 
@@ -203,6 +221,20 @@ func cloneTestProfiles(file TestProfiles) TestProfiles {
 		cloned.Profiles = append(cloned.Profiles, TestProfile{
 			Name:     profile.Name,
 			Commands: append([]string(nil), profile.Commands...),
+		})
+	}
+	return cloned
+}
+
+func cloneToolCommands(file ToolCommands) ToolCommands {
+	cloned := ToolCommands{
+		Commands: make([]ToolCommand, 0, len(file.Commands)),
+	}
+	for _, command := range file.Commands {
+		cloned.Commands = append(cloned.Commands, ToolCommand{
+			Name:     command.Name,
+			Command:  command.Command,
+			Resident: command.Resident,
 		})
 	}
 	return cloned

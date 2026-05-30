@@ -34,6 +34,8 @@ export type JobDetail = {
   fixArtifact?: Artifact
   reviewArtifact?: Artifact
   testReport?: Artifact
+  toolCommand?: ToolCommand
+  toolExecution?: ToolExecution
   prCreateArtifact?: Artifact
   logs?: JobLog[]
 }
@@ -80,10 +82,12 @@ export type WatchRule = {
   model: string
   skillSet: string
   testProfile: string
+  toolCommand: string
   enabled: boolean
 }
 
 export type WatchRuleForm = WatchRule & {
+  localID: string
   selectedRepository: string
   repositoriesText: string
   projectFiltersText: string
@@ -96,6 +100,22 @@ export type WatchRuleForm = WatchRule & {
 export type TestProfile = {
   name: string
   commands: string[]
+}
+
+export type ToolCommand = {
+  name: string
+  command: string
+  resident: boolean
+}
+
+export type ToolExecution = {
+  name: string
+  resident: boolean
+  running: boolean
+  startedAt?: string
+  finishedAt?: string
+  exitCode?: number
+  log?: Artifact
 }
 
 export type AppConfig = {
@@ -125,11 +145,6 @@ export type ProviderSpec = {
 export type SkillDefinition = {
   name: string
   provider: string
-  inputs: string[]
-  outputs: string[]
-  artifacts: {
-    output_file: string
-  }
 }
 
 export type SkillFile = {

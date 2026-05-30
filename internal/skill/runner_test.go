@@ -20,7 +20,7 @@ func TestRunDesignWritesArtifacts(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
@@ -55,7 +55,7 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nprovider: mock\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nprovider: mock\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
@@ -87,7 +87,7 @@ func TestRunImplementationUsesRootAsWorkDirForCodex(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: implement\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: implement\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
@@ -121,7 +121,7 @@ func TestRunImplementationUsesRootAsWorkDirForCopilot(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: implement\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: implement\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
@@ -157,7 +157,7 @@ func TestRunDesignWritesExecutionLogsToRunnerLogger(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nartifacts:\n  output_file: result.md\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
