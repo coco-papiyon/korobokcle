@@ -64,6 +64,64 @@ func TestResolveExecutionConfigUsesWatchRuleOverrides(t *testing.T) {
 	}
 }
 
+func TestResolveExecutionConfigUsesClaudeProviderFromAppSettings(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		App: config.App{
+			Provider: "claude",
+			Model:    "claude-sonnet-4.6",
+		},
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{ID: "rule-1"},
+			},
+		},
+	})
+
+	got, err := resolveExecutionConfig(cfg, "rule-1")
+	if err != nil {
+		t.Fatalf("resolveExecutionConfig() error = %v", err)
+	}
+	if got.Provider != "claude" {
+		t.Fatalf("expected provider claude, got %q", got.Provider)
+	}
+	if got.Model != "claude-sonnet-4.6" {
+		t.Fatalf("expected model claude-sonnet-4.6, got %q", got.Model)
+	}
+}
+
+func TestResolveExecutionConfigUsesClaudeProviderOverride(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		App: config.App{
+			Provider: "mock",
+			Model:    "",
+		},
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{
+					ID:       "rule-1",
+					Provider: "claude",
+					Model:    "claude-sonnet-4.6",
+				},
+			},
+		},
+	})
+
+	got, err := resolveExecutionConfig(cfg, "rule-1")
+	if err != nil {
+		t.Fatalf("resolveExecutionConfig() error = %v", err)
+	}
+	if got.Provider != "claude" {
+		t.Fatalf("expected provider claude, got %q", got.Provider)
+	}
+	if got.Model != "claude-sonnet-4.6" {
+		t.Fatalf("expected model claude-sonnet-4.6, got %q", got.Model)
+	}
+}
+
 func TestResolveExecutionConfigUsesEmptyModelWhenAppModelEmpty(t *testing.T) {
 	t.Parallel()
 
@@ -104,5 +162,25 @@ func TestResolveExecutionConfigRejectsInvalidModelForMockProvider(t *testing.T) 
 
 	if _, err := resolveExecutionConfig(cfg, "rule-1"); err == nil {
 		t.Fatalf("expected resolveExecutionConfig() to reject invalid mock model")
+	}
+}
+
+func TestResolveExecutionConfigRejectsInvalidModelForClaudeProvider(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		App: config.App{
+			Provider: "claude",
+			Model:    "gpt-5.4",
+		},
+		WatchRules: config.WatchRulesFile{
+			Rules: []config.WatchRule{
+				{ID: "rule-1"},
+			},
+		},
+	})
+
+	if _, err := resolveExecutionConfig(cfg, "rule-1"); err == nil {
+		t.Fatalf("expected resolveExecutionConfig() to reject invalid claude model")
 	}
 }

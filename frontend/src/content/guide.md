@@ -23,6 +23,7 @@
 ## Notes
 
 - `copilot` を使う場合、成果物は artifact directory 配下に保存されます。
+- `claude` は標準入力で prompt を受け取り、必要に応じて `result.md` を返します。
 - `codex` は最終結果を返し、runner が `result.md` に保存します。
 - 失敗時も `Implementation Artifact` や `stdout.log` から再実行できる場合があります。
 

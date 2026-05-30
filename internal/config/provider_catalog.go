@@ -8,6 +8,10 @@ var providerCatalog = []ProviderSpec{
 		Models: []string{"claude-sonnet-4.6", "claude-opus-4.6", "gpt-5.4", "gpt-5-mini", "gpt-4.1"},
 	},
 	{
+		Name:   "claude",
+		Models: []string{"claude-sonnet-4.6", "claude-opus-4.6"},
+	},
+	{
 		Name:   "codex",
 		Models: []string{"gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"},
 	},
