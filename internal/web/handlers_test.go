@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -28,6 +29,70 @@ type recordingReviewSubmitter struct {
 func (r *recordingReviewSubmitter) Submit(_ context.Context, req ReviewSubmitRequest) error {
 	r.req = req
 	return nil
+}
+
+func toolStartLongRunningCommand() string {
+	if runtime.GOOS == "windows" {
+		return "Start-Sleep -Seconds 30"
+	}
+	return "sleep 30"
+}
+
+func setupToolCommandJobServer(t *testing.T) (*Server, *domain.Job) {
+	t.Helper()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.MonitoredRepositories = []config.MonitoredRepository{
+		{Repository: "owner/repository", Branch: "", Workers: 1},
+	}
+	files.WatchRules.Rules = []config.WatchRule{
+		{
+			ID:          "rule-1",
+			Name:        "rule-1",
+			ToolCommand: "default-tool",
+			Enabled:     true,
+		},
+	}
+	files.ToolCommands.Commands = []config.ToolCommand{
+		{Name: "default-tool", Command: toolStartLongRunningCommand(), Resident: false},
+		{Name: "alt-tool", Command: toolStartLongRunningCommand(), Resident: false},
+	}
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	server := &Server{
+		config:       svc,
+		orchestrator: orchestrator.New(store, nil),
+		tools:        newToolRuntimeManager(),
+	}
+	job := &domain.Job{
+		ID:           "job-tool-start",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 1,
+		State:        domain.StateDetected,
+		Title:        "tool job",
+		WatchRuleID:  "rule-1",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), *job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	workerDir := artifacts.RepositoryWorkerSourceDir(root, svc.App().ArtifactsDir, job.Repository, 0)
+	if err := os.MkdirAll(workerDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+
+	return server, job
 }
 
 func TestAvailableActionsForEvent(t *testing.T) {
@@ -1717,6 +1782,106 @@ func TestHandleDeleteAndRestoreJob(t *testing.T) {
 	}
 	if restored.Job.DeletedAt != "" {
 		t.Fatalf("expected deletedAt to be cleared, got %+v", restored.Job)
+	}
+}
+
+func TestHandleStartToolCommandUsesRequestedToolCommandAndStop(t *testing.T) {
+	t.Parallel()
+
+	server, job := setupToolCommandJobServer(t)
+
+	startBody := []byte(`{"toolCommand":"alt-tool"}`)
+	startRecorder := httptest.NewRecorder()
+	startRequest := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/tool/start", bytes.NewReader(startBody))
+	startRequest = mux.SetURLVars(startRequest, map[string]string{"id": job.ID})
+
+	server.handleStartToolCommand(startRecorder, startRequest)
+
+	if startRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, startRecorder.Code, startRecorder.Body.String())
+	}
+
+	var started jobDetailResponse
+	if err := json.NewDecoder(bytes.NewReader(startRecorder.Body.Bytes())).Decode(&started); err != nil {
+		t.Fatalf("Decode(start response) error = %v", err)
+	}
+	t.Cleanup(func() {
+		stopRecorder := httptest.NewRecorder()
+		stopRequest := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/tool/stop", nil)
+		stopRequest = mux.SetURLVars(stopRequest, map[string]string{"id": job.ID})
+		server.handleStopToolCommand(stopRecorder, stopRequest)
+	})
+	if started.ToolCommand == nil || started.ToolCommand.Name != "default-tool" {
+		t.Fatalf("expected watch rule default tool command, got %+v", started.ToolCommand)
+	}
+	if started.ToolExecution == nil || started.ToolExecution.Name != "alt-tool" || !started.ToolExecution.Running {
+		t.Fatalf("expected requested tool command to be running, got %+v", started.ToolExecution)
+	}
+
+	stopRecorder := httptest.NewRecorder()
+	stopRequest := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/tool/stop", nil)
+	stopRequest = mux.SetURLVars(stopRequest, map[string]string{"id": job.ID})
+
+	server.handleStopToolCommand(stopRecorder, stopRequest)
+
+	if stopRecorder.Code != http.StatusOK {
+		t.Fatalf("expected stop status %d, got %d body=%s", http.StatusOK, stopRecorder.Code, stopRecorder.Body.String())
+	}
+
+	var stopped jobDetailResponse
+	if err := json.NewDecoder(bytes.NewReader(stopRecorder.Body.Bytes())).Decode(&stopped); err != nil {
+		t.Fatalf("Decode(stop response) error = %v", err)
+	}
+	if stopped.ToolExecution == nil || stopped.ToolExecution.Name != "alt-tool" || stopped.ToolExecution.Running {
+		t.Fatalf("expected stopped tool execution to keep the requested name, got %+v", stopped.ToolExecution)
+	}
+}
+
+func TestHandleStartToolCommandFallsBackToWatchRuleAndRejectsUnknownCommand(t *testing.T) {
+	t.Parallel()
+
+	server, job := setupToolCommandJobServer(t)
+
+	startRecorder := httptest.NewRecorder()
+	startRequest := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/tool/start", bytes.NewReader([]byte(`{}`)))
+	startRequest = mux.SetURLVars(startRequest, map[string]string{"id": job.ID})
+
+	server.handleStartToolCommand(startRecorder, startRequest)
+
+	if startRecorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, startRecorder.Code, startRecorder.Body.String())
+	}
+
+	var started jobDetailResponse
+	if err := json.NewDecoder(bytes.NewReader(startRecorder.Body.Bytes())).Decode(&started); err != nil {
+		t.Fatalf("Decode(start response) error = %v", err)
+	}
+	t.Cleanup(func() {
+		stopRecorder := httptest.NewRecorder()
+		stopRequest := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/tool/stop", nil)
+		stopRequest = mux.SetURLVars(stopRequest, map[string]string{"id": job.ID})
+		server.handleStopToolCommand(stopRecorder, stopRequest)
+	})
+	if started.ToolExecution == nil || started.ToolExecution.Name != "default-tool" {
+		t.Fatalf("expected watch rule default tool command, got %+v", started.ToolExecution)
+	}
+
+	stopRecorder := httptest.NewRecorder()
+	stopRequest := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/tool/stop", nil)
+	stopRequest = mux.SetURLVars(stopRequest, map[string]string{"id": job.ID})
+	server.handleStopToolCommand(stopRecorder, stopRequest)
+	if stopRecorder.Code != http.StatusOK {
+		t.Fatalf("expected stop status %d, got %d body=%s", http.StatusOK, stopRecorder.Code, stopRecorder.Body.String())
+	}
+
+	unknownRecorder := httptest.NewRecorder()
+	unknownRequest := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/tool/start", bytes.NewReader([]byte(`{"toolCommand":"missing-tool"}`)))
+	unknownRequest = mux.SetURLVars(unknownRequest, map[string]string{"id": job.ID})
+
+	server.handleStartToolCommand(unknownRecorder, unknownRequest)
+
+	if unknownRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected unknown command to be rejected, got %d body=%s", unknownRecorder.Code, unknownRecorder.Body.String())
 	}
 }
 
