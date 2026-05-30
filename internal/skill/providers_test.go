@@ -180,6 +180,29 @@ func TestExternalCLIProviderExpandsModelArgument(t *testing.T) {
 	}
 }
 
+func TestClaudeCLIProviderSendsPromptViaStdinByDefault(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := writeProviderScript(t, dir, "echo-claude", "@echo off\r\nset /p INPUT=\r\necho %INPUT%\r\n", "#!/usr/bin/env sh\nIFS= read -r input\nprintf '%s\\n' \"$input\"\n")
+
+	t.Setenv("KOROBOKCLE_CLAUDE_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CLAUDE_ARGS_JSON", "")
+
+	provider := NewClaudeCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:      "claude prompt",
+		Model:       "claude-sonnet-4.6",
+		WorkDir:     dir,
+		ArtifactDir: dir,
+		OutputPath:  filepath.Join(dir, "out.txt"),
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if !strings.Contains(result.Output, "claude prompt") {
+		t.Fatalf("expected stdin output, got %q", result.Output)
+	}
+}
+
 func TestExternalCLIProviderOmitsDefaultModelArgument(t *testing.T) {
 	dir := t.TempDir()
 	scriptPath := writeProviderScript(t, dir, "echo-args", "@echo off\r\necho %*\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$*\"\n")
@@ -327,6 +350,18 @@ func TestCopilotCLIProviderWritesDebugLogsWhenEnabled(t *testing.T) {
 	}
 	if !strings.Contains(result.Stderr, "prompt=debug prompt") {
 		t.Fatalf("expected prompt contents in debug logs, got %q", result.Stderr)
+	}
+}
+
+func TestProviderForClaudeReturnsCLIProvider(t *testing.T) {
+	t.Parallel()
+
+	provider, err := ProviderFor("claude")
+	if err != nil {
+		t.Fatalf("ProviderFor() error = %v", err)
+	}
+	if provider == nil {
+		t.Fatalf("expected provider instance")
 	}
 }
 
