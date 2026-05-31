@@ -25,6 +25,7 @@ type Server struct {
 	reviewer         ReviewSubmitter
 	commenter        IssueCommentSubmitter
 	tools            *toolRuntimeManager
+	prepareRepositoryWorkspaces func(context.Context, config.App) error
 }
 
 type IssueBodyFetcher interface {
@@ -113,6 +114,10 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator, issueBodyFetcher 
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	return s, nil
+}
+
+func (s *Server) SetRepositoryWorkspacePreparer(fn func(context.Context, config.App) error) {
+	s.prepareRepositoryWorkspaces = fn
 }
 
 func resolveStaticDir() (string, error) {

@@ -32,7 +32,7 @@ func TestRepositoryWorkerPathsUseWorkerRootAndWorkspace(t *testing.T) {
 
 	root := filepath.Join("workspace", "tool")
 	workerDir := RepositoryWorkerDir(root, "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	wantWorkerDir := filepath.Join(root, "artifacts", "coco-papiyon-korobokcle", "worker-2")
+	wantWorkerDir := filepath.Join(root, "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2")
 	if workerDir != wantWorkerDir {
 		t.Fatalf("RepositoryWorkerDir() = %q, want %q", workerDir, wantWorkerDir)
 	}

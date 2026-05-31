@@ -33,11 +33,27 @@ func WorkersDir(root string, artifactsDir string) string {
 
 func RepositoryWorkerDir(root string, artifactsDir string, repository string, workerIndex int) string {
 	sanitized := repositoryWorkerComponent(repository)
-	return filepath.Join(resolveAgainstRoot(root, artifactsDir), sanitized, workerName(workerIndex))
+	return filepath.Join(WorkersDir(root, artifactsDir), sanitized, workerName(workerIndex))
+}
+
+func RepositoryWorkerWorkDir(root string, artifactsDir string, repository string, configuredWorkDir string) string {
+	trimmed := strings.TrimSpace(configuredWorkDir)
+	if trimmed == "" || trimmed == "." {
+		sanitized := repositoryWorkerComponent(repository)
+		return filepath.Join(WorkersDir(root, artifactsDir), sanitized, "work")
+	}
+	if filepath.IsAbs(trimmed) {
+		return filepath.Clean(trimmed)
+	}
+	return resolveAgainstRoot(root, trimmed)
+}
+
+func RepositoryWorkerBaseDir(root string, artifactsDir string, repository string, workerIndex int) string {
+	return RepositoryWorkerWorkDir(root, artifactsDir, repository, "")
 }
 
 func RepositoryWorkerSourceDir(root string, artifactsDir string, repository string, workerIndex int) string {
-	return RepositoryWorkerDir(root, artifactsDir, repository, workerIndex)
+	return filepath.Join(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), "source")
 }
 
 func RepositoryWorkerWorkspaceDir(workerDir string, workspaceDir string) string {
@@ -47,6 +63,9 @@ func RepositoryWorkerWorkspaceDir(workerDir string, workspaceDir string) string 
 	}
 	if filepath.IsAbs(trimmed) {
 		return filepath.Clean(trimmed)
+	}
+	if trimmed == "." {
+		trimmed = ".workspace"
 	}
 	return filepath.Join(workerDir, trimmed)
 }
@@ -59,14 +78,14 @@ func RepositoryWorkerArtifactDir(workerDir string, workspaceDir string, issueNum
 	return filepath.Join(RepositoryWorkerIssueDir(workerDir, workspaceDir, issueNumber), phase)
 }
 
-func RepositoryWorkerLogsDir(root string, artifactsDir string, workspaceDir string, repository string, workerIndex int) string {
-	return filepath.Join(RepositoryWorkerWorkspaceDir(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), workspaceDir), "logs")
+func RepositoryWorkerLogsDir(root string, artifactsDir string, repository string, workerIndex int) string {
+	return filepath.Join(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), "logs")
 }
 
-func RepositoryWorkerLogPath(root string, artifactsDir string, workspaceDir string, repository string, workerIndex int, startedAt time.Time) string {
+func RepositoryWorkerLogPath(root string, artifactsDir string, repository string, workerIndex int, startedAt time.Time) string {
 	dateDir := startedAt.Format("2006-01-02")
 	fileName := startedAt.Format("2006-01-02_15-04-05") + ".log"
-	return filepath.Join(RepositoryWorkerLogsDir(root, artifactsDir, workspaceDir, repository, workerIndex), dateDir, fileName)
+	return filepath.Join(RepositoryWorkerLogsDir(root, artifactsDir, repository, workerIndex), dateDir, fileName)
 }
 
 func RepositoryWorkerLogsDirFromWorkerDir(workerDir string, workspaceDir string) string {

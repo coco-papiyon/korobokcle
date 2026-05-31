@@ -18,35 +18,43 @@ watch(
     monitoredRepositories.value = (config?.monitoredRepositories ?? []).map((entry) => ({
       repository: entry.repository ?? '',
       branch: entry.branch ?? '',
+      workDir: entry.workDir ?? '',
       workers: Math.max(1, Number(entry.workers) || 1),
-      workerDirs: normalizeWorkerDirs(entry.workerDirs ?? [], entry.workerDir ?? '', Math.max(1, Number(entry.workers) || 1)),
     }))
   },
   { immediate: true },
 )
 
 function addMonitoredRepository() {
-  monitoredRepositories.value = [...monitoredRepositories.value, { repository: '', branch: '', workers: 1, workerDirs: [''] }]
+  monitoredRepositories.value = [...monitoredRepositories.value, { repository: '', branch: '', workDir: '', workers: 1 }]
 }
 
 function removeMonitoredRepository(index: number) {
   monitoredRepositories.value = monitoredRepositories.value.filter((_, currentIndex) => currentIndex !== index)
 }
 
-function normalizeWorkerDirs(workerDirs: string[], legacyWorkerDir: string, count: number) {
-  const safeCount = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
-  const normalized = Array.from({ length: safeCount }, (_, index) => (workerDirs[index] ?? '').trim())
-  const fallback = legacyWorkerDir.trim()
-  if (!normalized.some((value) => value.length > 0) && fallback.length > 0) {
-    return normalized.map(() => fallback)
+function repositoryWorkDirComponent(repository: string) {
+  const trimmed = repository.trim()
+  if (!trimmed) {
+    return 'owner-repository'
   }
-  return normalized
-}
 
-function resizeWorkerDirs(entry: MonitoredRepository) {
-  const nextCount = Number.isFinite(Number(entry.workers)) && Number(entry.workers) >= 1 ? Math.floor(Number(entry.workers)) : 1
-  entry.workers = nextCount
-  entry.workerDirs = normalizeWorkerDirs(entry.workerDirs ?? [], entry.workerDir ?? '', nextCount)
+  try {
+    const url = new URL(trimmed)
+    const path = url.pathname.replace(/^\/+/, '').replace(/\.git$/i, '')
+    if (path) {
+      return path.replace(/[\\/]/g, '-')
+    }
+  } catch {
+    // Not a URL. Fall through to the generic normalizer.
+  }
+
+  return trimmed
+    .replace(/^git@[^:]+:/i, '')
+    .replace(/^https?:\/\/[^/]+\//i, '')
+    .replace(/\.git$/i, '')
+    .replace(/[\\/]/g, '-')
+    .replace(/[:@?#]/g, '-')
 }
 
 function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
@@ -54,16 +62,15 @@ function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
     .map((entry) => ({
       repository: entry.repository.trim(),
       branch: entry.branch.trim(),
+      workDir: entry.workDir.trim(),
       workers: Math.floor(Number(entry.workers)),
-      workerDirs: entry.workerDirs ?? [],
-      workerDir: entry.workerDir ?? '',
     }))
     .filter((entry) => entry.repository.length > 0)
     .map((entry) => ({
       repository: entry.repository,
       branch: entry.branch,
+      workDir: entry.workDir,
       workers: Number.isInteger(entry.workers) && entry.workers >= 1 ? entry.workers : 1,
-      workerDirs: normalizeWorkerDirs(entry.workerDirs, entry.workerDir, Number.isInteger(entry.workers) && entry.workers >= 1 ? entry.workers : 1),
     }))
     .filter((entry, index, items) => items.findIndex((candidate) => candidate.repository === entry.repository) === index)
 }
@@ -78,8 +85,8 @@ async function persistConfig() {
     monitoredRepositories.value = (saved.monitoredRepositories ?? []).map((entry) => ({
       repository: entry.repository ?? '',
       branch: entry.branch ?? '',
+      workDir: entry.workDir ?? '',
       workers: Math.max(1, Number(entry.workers) || 1),
-      workerDirs: normalizeWorkerDirs(entry.workerDirs ?? [], entry.workerDir ?? '', Math.max(1, Number(entry.workers) || 1)),
     }))
     saveState.value = 'saved'
     await reload()
@@ -93,14 +100,14 @@ async function persistConfig() {
 <template>
   <AppShell
     title="ワーカー設定"
-    description="監視対象リポジトリと、各リポジトリに割り当てるワーカー数を設定します。"
+    description="監視対象リポジトリと、各リポジトリの作業ディレクトリとワーカー数を設定します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <section class="panel stack-md">
         <div class="rule-editor__header">
           <div>
             <h2>ワーカー設定</h2>
-            <p class="text-muted">1 行につき 1 リポジトリを追加し、1 以上のワーカー数を指定します。</p>
+            <p class="text-muted">1 行につき 1 リポジトリを追加し、作業ディレクトリと 1 以上のワーカー数を指定します。</p>
           </div>
           <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistConfig">
             {{ saveState === 'saving' ? '保存中...' : 'ワーカー設定を保存' }}
@@ -122,23 +129,23 @@ async function persistConfig() {
                 <span class="field__label">ブランチ</span>
                 <input v-model="entry.branch" class="field__control" type="text" placeholder="main" />
               </label>
+              <label class="field field-full">
+                <span class="field__label">作業ディレクトリ</span>
+                <input
+                  v-model="entry.workDir"
+                  class="field__control"
+                  type="text"
+                  :placeholder="`artifacts/workers/${repositoryWorkDirComponent(entry.repository)}/work`"
+                />
+              </label>
               <label class="field">
                 <span class="field__label">ワーカー数</span>
-                <input v-model.number="entry.workers" class="field__control" type="number" min="1" step="1" @change="resizeWorkerDirs(entry)" />
+                <input v-model.number="entry.workers" class="field__control" type="number" min="1" step="1" />
               </label>
-              <div class="field field-full">
-                <span class="field__label">ワーカー領域</span>
-                <div class="stack-xs">
-                  <label v-for="(workerDir, workerIndex) in entry.workerDirs" :key="`${index}-${workerIndex}`" class="field field-full">
-                    <span class="field__label">worker-{{ workerIndex }}</span>
-                    <input v-model="entry.workerDirs[workerIndex]" class="field__control" type="text" :placeholder="`artifacts/custom/repository-${workerIndex}`" />
-                  </label>
-                </div>
-              </div>
               <button class="button button-secondary" type="button" @click="removeMonitoredRepository(index)">削除</button>
             </div>
           </div>
-          <p class="text-muted">ワーカー数は 1 以上の整数です。ワーカー領域はワーカーごとに指定できます。各入力欄で指定したディレクトリの下に <code>worker-&#60;id&#62;</code> を付けて配置します。ブランチを空にするとリモートの既定ブランチを使います。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
+          <p class="text-muted">作業ディレクトリを空にすると既定の `artifacts/workers/&lt;repo&gt;/work` を使います。`&lt;repo&gt;` は `owner-repository` のようなリポジトリ識別子です。ブランチを空にするとリモートの既定ブランチを使います。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
         </div>
 
         <div v-if="saveState === 'saved'" class="notice notice-success">ワーカー設定を更新しました。</div>

@@ -21,6 +21,7 @@
 - npm `10` 系推奨
 - GitHub CLI `gh`
 
+
 `copilot` provider を使う場合は GitHub Copilot CLI も必要です。
 
 ```bash
@@ -207,7 +208,7 @@ watch rule 側の provider / model の候補も、コード内の provider catal
 デフォルトでは `copilot -p ... -s --allow-all-tools --no-ask-user`、`claude`、`codex exec` を呼びますが、
 model を指定した場合は `--model` を付けて実行します。
 `codex` の prompt はデフォルトで標準入力から渡します。
-`copilot` は監視対象リポジトリの worker root を作業ディレクトリとして実行し、`worker-root/.workspace/issue_<issue番号>/.../prompt.md` を読んでその指示に従います。
+`copilot` は監視対象リポジトリのワーカー作業ディレクトリで実行し、`artifacts/.../prompt.md` を読んでその指示に従います。
 設定・成果物・スキル定義はツール配置ディレクトリの `config/`、`artifacts/`、`skills/` を参照します。
 `copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定できます。必要ならここで制限できます。
 `claude` は `KOROBOKCLE_CLAUDE_BIN` / `KOROBOKCLE_CLAUDE_ARGS_JSON` で上書きできます。

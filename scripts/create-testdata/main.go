@@ -33,7 +33,7 @@ func main() {
 
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "coco-papiyon/korobokcle", Branch: "main", Workers: 1},
+		{Repository: "coco-papiyon/korobokcle", Branch: "main", WorkDir: "artifacts/workers/coco-papiyon_korobokcle/work", Workers: 1},
 	}
 	files.ToolCommands.Commands = []config.ToolCommand{
 		{
@@ -96,7 +96,7 @@ func main() {
 				fail(err)
 			}
 		}
-		if err := writeArtifacts(fixtureRoot, files.App.ArtifactsDir, files.App.WorkspaceDir, fixture.job.Repository, fixture.job.GitHubNumber, fixture.artifacts); err != nil {
+		if err := writeRepositoryArtifacts(fixtureRoot, files.App.ArtifactsDir, files.App.WorkspaceDir, files.App.MonitoredRepositories[0].WorkDir, fixture.job.Repository, fixture.job.GitHubNumber, fixture.artifacts); err != nil {
 			fail(err)
 		}
 	}
@@ -210,8 +210,8 @@ func buildFixtures(artifactsDir string, workspaceDir string) []jobFixture {
 			events: []domain.Event{
 				domainEvent(designJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 101, designJob.Title, domain.TargetIssue), base),
 				domainEvent(designJob.ID, "design_started", string(domain.StateDetected), string(domain.StateDesignRunning), `{"provider":"mock","model":""}`, base.Add(1*time.Minute)),
-				domainEvent(designJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), artifactPayload(artifactsDir, workspaceDir, repository, designJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(2*time.Minute)),
-				domainEvent(designJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), artifactPayload(artifactsDir, workspaceDir, repository, designJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(3*time.Minute)),
+				domainEvent(designJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), `{"artifactDir":"artifacts/workers/coco-papiyon_korobokcle/work/.workspace/issue_101/design","skill":"design"}`, base.Add(2*time.Minute)),
+				domainEvent(designJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), `{"artifactDir":"artifacts/workers/coco-papiyon_korobokcle/work/.workspace/issue_101/design","skill":"design"}`, base.Add(3*time.Minute)),
 			},
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerDesign, name: "result.md", content: "# Design\n\n- Add a dedicated fixture dataset.\n- Keep states visible on the dashboard.\n"},
@@ -223,11 +223,11 @@ func buildFixtures(artifactsDir string, workspaceDir string) []jobFixture {
 			job: implementationJob,
 			events: []domain.Event{
 				domainEvent(implementationJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 102, implementationJob.Title, domain.TargetIssue), base.Add(10*time.Minute)),
-				domainEvent(implementationJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), artifactPayload(artifactsDir, workspaceDir, repository, implementationJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(11*time.Minute)),
-				domainEvent(implementationJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), artifactPayload(artifactsDir, workspaceDir, repository, implementationJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(12*time.Minute)),
+				domainEvent(implementationJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), `{"artifactDir":"artifacts/workers/coco-papiyon_korobokcle/work/.workspace/issue_102/design","skill":"design"}`, base.Add(11*time.Minute)),
+				domainEvent(implementationJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), `{"artifactDir":"artifacts/workers/coco-papiyon_korobokcle/work/.workspace/issue_102/design","skill":"design"}`, base.Add(12*time.Minute)),
 				domainEvent(implementationJob.ID, "design_approved", string(domain.StateWaitingDesignApproval), string(domain.StateImplementationRunning), `{"comment":"looks good"}`, base.Add(13*time.Minute)),
-				domainEvent(implementationJob.ID, "implementation_ready", string(domain.StateImplementationRunning), string(domain.StateImplementationReady), artifactPayload(artifactsDir, workspaceDir, repository, implementationJob.GitHubNumber, artifacts.WorkerImplementation, ""), base.Add(17*time.Minute)),
-				domainEvent(implementationJob.ID, "waiting_final_approval", string(domain.StateImplementationReady), string(domain.StateWaitingFinalApproval), artifactPayload(artifactsDir, workspaceDir, repository, implementationJob.GitHubNumber, artifacts.WorkerImplementation, ""), base.Add(18*time.Minute)),
+				domainEvent(implementationJob.ID, "implementation_ready", string(domain.StateImplementationRunning), string(domain.StateImplementationReady), `{"artifactDir":"artifacts/workers/coco-papiyon_korobokcle/work/.workspace/issue_102/implementation"}`, base.Add(17*time.Minute)),
+				domainEvent(implementationJob.ID, "waiting_final_approval", string(domain.StateImplementationReady), string(domain.StateWaitingFinalApproval), `{"artifactDir":"artifacts/workers/coco-papiyon_korobokcle/work/.workspace/issue_102/implementation"}`, base.Add(18*time.Minute)),
 			},
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerDesign, name: "result.md", content: "# Design\n\nImplementation can proceed.\n"},
@@ -256,7 +256,7 @@ func buildFixtures(artifactsDir string, workspaceDir string) []jobFixture {
 			events: []domain.Event{
 				domainEvent(reviewedJob.ID, "pull_request_matched", "", string(domain.StateCollectingContext), pullRequestPayload(repository, 104, reviewedJob.Title), base.Add(30*time.Minute)),
 				domainEvent(reviewedJob.ID, "review_started", string(domain.StateCollectingContext), string(domain.StateReviewRunning), `{"provider":"mock","model":""}`, base.Add(31*time.Minute)),
-				domainEvent(reviewedJob.ID, "review_ready", string(domain.StateReviewRunning), string(domain.StateReviewReady), artifactPayload(artifactsDir, workspaceDir, repository, reviewedJob.GitHubNumber, artifacts.WorkerReview, "review"), base.Add(35*time.Minute)),
+				domainEvent(reviewedJob.ID, "review_ready", string(domain.StateReviewRunning), string(domain.StateReviewReady), `{"artifactDir":"artifacts/workers/coco-papiyon_korobokcle/work/.workspace/issue_104/review","skill":"review"}`, base.Add(35*time.Minute)),
 			},
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerReview, name: "result.md", content: "# Review Summary\n\n- API response shape is consistent.\n- No blocking issues found.\n"},
@@ -269,8 +269,8 @@ func buildFixtures(artifactsDir string, workspaceDir string) []jobFixture {
 			events: []domain.Event{
 				domainEvent(deletedJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 105, deletedJob.Title, domain.TargetIssue), base.Add(40*time.Minute)),
 				domainEvent(deletedJob.ID, "design_started", string(domain.StateDetected), string(domain.StateDesignRunning), `{"provider":"mock","model":""}`, base.Add(41*time.Minute)),
-				domainEvent(deletedJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), artifactPayload(artifactsDir, workspaceDir, repository, deletedJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(42*time.Minute)),
-				domainEvent(deletedJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), artifactPayload(artifactsDir, workspaceDir, repository, deletedJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(43*time.Minute)),
+				domainEvent(deletedJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), `{"artifactDir":"artifacts/workers/coco-papiyon_korobokcle/work/.workspace/issue_105/design","skill":"design"}`, base.Add(42*time.Minute)),
+				domainEvent(deletedJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), `{"artifactDir":"artifacts/workers/coco-papiyon_korobokcle/work/.workspace/issue_105/design","skill":"design"}`, base.Add(43*time.Minute)),
 			},
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerDesign, name: "result.md", content: "# Design\n\n- Demonstrate deleted job filtering.\n- Keep deleted jobs visible in the fixture dataset.\n"},
@@ -308,10 +308,10 @@ func writeConfigFiles(root string, files config.Files) error {
 	return nil
 }
 
-func writeArtifacts(root string, artifactsDir string, workspaceDir string, repository string, issueNumber int, files []artifactFile) error {
-	workerDir := artifacts.RepositoryWorkerSourceDir(root, artifactsDir, repository, 0)
+func writeRepositoryArtifacts(root string, artifactsDir string, workspaceDir string, workDirSetting string, repository string, issueNumber int, files []artifactFile) error {
+	workDir := artifacts.RepositoryWorkerWorkDir(root, artifactsDir, repository, workDirSetting)
 	for _, file := range files {
-		path := filepath.Join(artifacts.RepositoryWorkerArtifactDir(workerDir, workspaceDir, issueNumber, file.worker), file.name)
+		path := filepath.Join(artifacts.RepositoryWorkerArtifactDir(workDir, workspaceDir, issueNumber, file.worker), file.name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
@@ -339,6 +339,7 @@ func writeReadme(root string) error {
 
 動作確認用の fixture です。` + "`KOROBOKCLE_TOOL_ROOT=test/data`" + ` を指定して起動すると、
 この配下の ` + "`config/`" + `、` + "`data/`" + `、` + "`artifacts/`" + ` を使って UI を確認できます。
+repository worker の作業ディレクトリは ` + "`artifacts/workers/coco-papiyon_korobokcle/work`" + `、成果物はその ` + "`.workspace/issue_<issue番号>/`" + ` 配下に出力されます。
 
 含まれるジョブ:
 

@@ -70,7 +70,7 @@ func newToolRuntimeManager() *toolRuntimeManager {
 }
 
 func (m *toolRuntimeManager) start(ctx context.Context, cfg *config.Service, job domain.Job, events []domain.Event, tool config.ToolCommand) error {
-	artifactDir := resolveTestReportArtifactDir(cfg, job.ID, events)
+	artifactDir := resolveTestReportArtifactDir(cfg, job, events)
 	workDir, err := resolveJobToolWorkDir(cfg, job)
 	if err != nil {
 		return err
@@ -180,7 +180,7 @@ func (m *toolRuntimeManager) stop(jobID string) error {
 }
 
 func (m *toolRuntimeManager) snapshot(cfg *config.Service, job domain.Job, events []domain.Event) (*toolExecutionResponse, error) {
-	artifactDir := resolveTestReportArtifactDir(cfg, job.ID, events)
+	artifactDir := resolveTestReportArtifactDir(cfg, job, events)
 	metaPath := filepath.Join(artifactDir, toolMetaFileName)
 	stdoutPath := filepath.Join(artifactDir, toolStdoutFileName)
 	stderrPath := filepath.Join(artifactDir, toolStderrFileName)
