@@ -178,6 +178,12 @@ const canReviewImplementation = computed(() => {
 })
 const flowRerunAction = computed<RerunAction | null>(() => rerunActionFromEvent(flowRerunEvent.value))
 const flowRerunActionInFlow = computed<RerunAction | null>(() => {
+  if (!flowRerunAction.value) {
+    return null
+  }
+  if (data.value?.job.state === 'interrupted') {
+    return flowRerunAction.value
+  }
   return flowRerunAction.value === 'retry_pr' ? flowRerunAction.value : null
 })
 const finalApprovalWarning = computed(() => {
@@ -774,20 +780,18 @@ function openPRCreateModal() {
           </PanelCard>
           <PanelCard title="Flow">
             <div class="stack-sm">
-              <StateBadge :state="data.job.state" />
-              <template v-if="!isDeletedJob && flowRerunActionInFlow">
-                <div class="button-row">
-                  <button
-                    v-if="flowRerunActionInFlow"
-                    class="button button-secondary"
-                    type="button"
-                    :disabled="rerunState(flowRerunActionInFlow) === 'saving'"
-                    @click="submitRerun(flowRerunActionInFlow, flowRerunEvent?.id)"
-                  >
-                    {{ rerunButtonLabel(flowRerunActionInFlow, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
-                  </button>
-                </div>
-              </template>
+              <div v-if="!isDeletedJob && flowRerunActionInFlow" class="status-inline">
+                <StateBadge :state="data.job.state" />
+                <button
+                  class="button button-secondary"
+                  type="button"
+                  :disabled="rerunState(flowRerunActionInFlow) === 'saving'"
+                  @click="submitRerun(flowRerunActionInFlow, flowRerunEvent?.id)"
+                >
+                  {{ rerunButtonLabel(flowRerunActionInFlow, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
+                </button>
+              </div>
+              <StateBadge v-else :state="data.job.state" />
               <template v-if="!isDeletedJob">
                 <div class="stack-sm">
                   <p class="text-muted">
