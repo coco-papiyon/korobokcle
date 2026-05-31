@@ -117,6 +117,19 @@ func buildFixtures() []jobFixture {
 	repository := "coco-papiyon/korobokcle"
 	base := time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC)
 
+	registeredJob := domain.Job{
+		ID:           "fixture-issue-registered",
+		Type:         domain.JobTypeIssue,
+		Repository:   repository,
+		GitHubNumber: 100,
+		State:        domain.StateDetected,
+		Title:        "Registered issue fixture",
+		BranchName:   "issue_100",
+		WatchRuleID:  "rule-1",
+		CreatedAt:    base.Add(-5 * time.Minute),
+		UpdatedAt:    base.Add(-5 * time.Minute),
+	}
+
 	designJob := domain.Job{
 		ID:           "fixture-design-ready",
 		Type:         domain.JobTypeIssue,
@@ -185,6 +198,12 @@ func buildFixtures() []jobFixture {
 	}
 
 	return []jobFixture{
+		{
+			job: registeredJob,
+			events: []domain.Event{
+				domainEvent(registeredJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 100, registeredJob.Title, domain.TargetIssue), base.Add(-5*time.Minute)),
+			},
+		},
 		{
 			job: designJob,
 			events: []domain.Event{
@@ -309,6 +328,7 @@ func writeReadme(root string) error {
 
 含まれるジョブ:
 
+- ` + "`fixture-issue-registered`" + `: issue 登録直後。状態は ` + "`detected`" + `
 - ` + "`fixture-design-ready`" + `: 設計済み。状態は ` + "`waiting_design_approval`" + `
 - ` + "`fixture-implementation-ready`" + `: 実装済み。状態は ` + "`waiting_final_approval`" + `
 - ` + "`fixture-failed`" + `: エラー状態。状態は ` + "`failed`" + `
