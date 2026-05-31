@@ -137,6 +137,55 @@ func TestClientListIssuesUsesSearchQueryFilters(t *testing.T) {
 	}
 }
 
+func TestClientFetchIssueBody(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/repos/owner/repo/issues/42" {
+			t.Fatalf("unexpected path: %s", got)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer token" {
+			t.Fatalf("unexpected authorization header: %s", got)
+		}
+		if got := r.Header.Get("Accept"); got != "application/vnd.github+json" {
+			t.Fatalf("unexpected accept header: %s", got)
+		}
+		if got := r.Header.Get("X-GitHub-Api-Version"); got != "2022-11-28" {
+			t.Fatalf("unexpected api version header: %s", got)
+		}
+		_, _ = w.Write([]byte(`{"body":"latest issue body"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(stubTokenProvider{}, nil)
+	client.baseURL = server.URL
+
+	body, err := client.FetchIssueBody(context.Background(), "owner/repo", 42)
+	if err != nil {
+		t.Fatalf("FetchIssueBody() error = %v", err)
+	}
+	if body != "latest issue body" {
+		t.Fatalf("expected latest issue body, got %q", body)
+	}
+}
+
+func TestClientFetchIssueBodyReturnsErrorForNonSuccessStatus(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewClient(stubTokenProvider{}, nil)
+	client.baseURL = server.URL
+
+	if _, err := client.FetchIssueBody(context.Background(), "owner/repo", 42); err == nil {
+		t.Fatalf("expected FetchIssueBody() to fail")
+	}
+}
+
 func TestNormalizeRepositoryFromGitHubURL(t *testing.T) {
 	t.Parallel()
 

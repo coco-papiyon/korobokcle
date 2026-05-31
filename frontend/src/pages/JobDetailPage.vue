@@ -13,6 +13,7 @@ import {
   fetchWatchRules,
   purgeJob,
   restoreJob,
+  refreshIssueBody,
   startToolCommand,
   submitDesignApproval,
   submitDesignRerun,
@@ -116,6 +117,8 @@ const reviewApproveError = ref<string | null>(null)
 const toolCommandState = ref<'idle' | 'saving' | 'error'>('idle')
 const toolCommandAction = ref<'start' | 'stop' | null>(null)
 const toolCommandError = ref<string | null>(null)
+const issueBodyRefreshState = ref<'idle' | 'loading' | 'error'>('idle')
+const issueBodyRefreshError = ref<string | null>(null)
 const selectedToolCommandName = ref('')
 const popupLoadingState = ref<'idle' | 'loading' | 'error'>('idle')
 const popupLoadingError = ref<string | null>(null)
@@ -687,9 +690,31 @@ async function openPopup(setOpen: (value: boolean) => void) {
 }
 
 function openIssueBodyModal() {
+  issueBodyRefreshState.value = 'idle'
+  issueBodyRefreshError.value = null
   void openPopup((value) => {
     issueBodyModalOpen.value = value
   })
+}
+
+async function refreshIssueBodyContent() {
+  const current = data.value
+  if (!current) {
+    return
+  }
+  issueBodyRefreshState.value = 'loading'
+  issueBodyRefreshError.value = null
+  try {
+    const response = await refreshIssueBody(jobID.value)
+    data.value = {
+      ...(data.value ?? current),
+      issueBody: response.issueBody,
+    }
+    issueBodyRefreshState.value = 'idle'
+  } catch (err) {
+    issueBodyRefreshState.value = 'error'
+    issueBodyRefreshError.value = err instanceof Error ? err.message : 'Unknown error'
+  }
 }
 
 function openDesignArtifactModal() {
@@ -1056,7 +1081,21 @@ function openPRCreateModal() {
               </div>
               <button class="button button-secondary" type="button" @click="issueBodyModalOpen = false">閉じる</button>
             </div>
-            <pre class="artifact-view">{{ formatIssueBody(data.issueBody) }}</pre>
+            <div class="stack-sm">
+              <pre class="artifact-view">{{ formatIssueBody(data.issueBody) }}</pre>
+              <div class="button-row">
+                <button
+                  class="button button-primary"
+                  type="button"
+                  :disabled="issueBodyRefreshState === 'loading'"
+                  @click="refreshIssueBodyContent"
+                >
+                  {{ issueBodyRefreshState === 'loading' ? '取得中...' : '最新を取得' }}
+                </button>
+              </div>
+              <p v-if="issueBodyRefreshState === 'loading'" class="text-muted">GitHub から最新の issue body を取得しています...</p>
+              <p v-if="issueBodyRefreshState === 'error'" class="notice notice-danger">{{ issueBodyRefreshError }}</p>
+            </div>
           </div>
         </div>
 
