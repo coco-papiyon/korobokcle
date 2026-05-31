@@ -38,6 +38,13 @@ Watch Rule: {{ .WatchRuleID }}
 {{ .DesignArtifact }}
 ```
 
+{{- if .ImplementationArtifact }}
+## Existing Implementation
+```
+{{ .ImplementationArtifact }}
+```
+{{- end }}
+
 {{- if .RerunComment }}
 ## Rerun Comment
 ```

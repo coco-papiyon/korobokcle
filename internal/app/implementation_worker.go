@@ -162,6 +162,14 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 		ArtifactDir:       runSpec.ArtifactDir,
 	}
 
+	implementationArtifact, err := readFirstArtifactFile(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "result.md", "implement.md", "summary.md", "stdout.log")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return skill.ImplementationContext{}, err
+	}
+	if err == nil {
+		ctxData.ImplementationArtifact = string(implementationArtifact)
+	}
+
 	rerunComment, previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)
 	if err != nil {
 		return skill.ImplementationContext{}, err
@@ -269,6 +277,14 @@ func buildPRFeedbackImplementationContext(cfg *config.Service, job domain.Job, e
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
 		ArtifactDir: runSpec.ArtifactDir,
+	}
+
+	implementationArtifact, err := readFirstArtifactFile(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return skill.ImplementationContext{}, err
+	}
+	if err == nil {
+		ctxData.ImplementationArtifact = string(implementationArtifact)
 	}
 
 	rerunComment, previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)

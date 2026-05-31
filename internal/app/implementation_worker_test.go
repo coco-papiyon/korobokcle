@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
 
 func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testing.T) {
@@ -37,10 +39,12 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	if err := os.WriteFile(filepath.Join(designDir, "result.md"), []byte("design content"), 0o644); err != nil {
 		t.Fatalf("WriteFile(result.md) error = %v", err)
 	}
-
-	changesDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerImplementation)
-	if err := os.MkdirAll(changesDir, 0o755); err != nil {
-		t.Fatalf("MkdirAll(changesDir) error = %v", err)
+	implementationDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(implementationDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(implementationDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(implementationDir, "result.md"), []byte("implementation content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(implementation result.md) error = %v", err)
 	}
 
 	reportRaw, err := json.Marshal(map[string]any{
@@ -60,11 +64,11 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	if err != nil {
 		t.Fatalf("marshal test report error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(changesDir, "test-report.json"), reportRaw, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(implementationDir, "test-report.json"), reportRaw, 0o644); err != nil {
 		t.Fatalf("WriteFile(test-report.json) error = %v", err)
 	}
 
-	testReportPath := filepath.Join(changesDir, "test-report.json")
+	testReportPath := filepath.Join(implementationDir, "test-report.json")
 	testFailedPayload, err := json.Marshal(map[string]any{
 		"error":      "tests failed",
 		"reportPath": testReportPath,
@@ -115,8 +119,76 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	if got.PreviousTestReport == "" {
 		t.Fatalf("expected previous test report to be captured")
 	}
+	if got.ImplementationArtifact != "implementation content" {
+		t.Fatalf("expected implementation artifact to be captured, got %q", got.ImplementationArtifact)
+	}
 	if got.ArtifactDir != artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerImplementation) {
 		t.Fatalf("expected changes artifact dir, got %q", got.ArtifactDir)
+	}
+}
+
+func TestImplementationPromptIncludesExistingImplementationAndPreviousTestReport(t *testing.T) {
+	t.Parallel()
+
+	ctx := skill.ImplementationContext{
+		Repository:             "coco-papiyon/korobokcle",
+		IssueNumber:            42,
+		Title:                  "Issue",
+		Body:                   "issue body",
+		Author:                 "alice",
+		Labels:                 []string{"bug"},
+		Assignees:              []string{"bob"},
+		DesignArtifact:         "design content",
+		ImplementationArtifact: "implementation content",
+		RerunComment:           "please keep the API stable",
+		PreviousFailure:        "tests failed",
+		PreviousTestReport:     "{\"success\":false}",
+		WatchRuleID:            "rule-1",
+		BranchName:             "issue-42",
+		ArtifactDir:            t.TempDir(),
+	}
+
+	promptPath := filepath.Join("..", "..", "skills", "default", "implement", "prompt.md.tmpl")
+	prompt, err := skill.RenderPrompt(promptPath, ctx)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	for _, expected := range []string{"## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected prompt to contain %q, got %q", expected, prompt)
+		}
+	}
+}
+
+func TestFixPromptIncludesExistingImplementation(t *testing.T) {
+	t.Parallel()
+
+	ctx := skill.ImplementationContext{
+		Repository:             "coco-papiyon/korobokcle",
+		IssueNumber:            42,
+		Title:                  "Issue",
+		Body:                   "issue body",
+		Author:                 "alice",
+		Labels:                 []string{"bug"},
+		Assignees:              []string{"bob"},
+		DesignArtifact:         "design content",
+		ImplementationArtifact: "implementation content",
+		PreviousFailure:        "tests failed",
+		PreviousTestReport:     "{\"success\":false}",
+		WatchRuleID:            "rule-1",
+		BranchName:             "issue-42",
+		ArtifactDir:            t.TempDir(),
+	}
+
+	promptPath := filepath.Join("..", "..", "skills", "default", "fix", "prompt.md.tmpl")
+	prompt, err := skill.RenderPrompt(promptPath, ctx)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	for _, expected := range []string{"## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
+		if !strings.Contains(prompt, expected) {
+			t.Fatalf("expected prompt to contain %q, got %q", expected, prompt)
+		}
 	}
 }
 

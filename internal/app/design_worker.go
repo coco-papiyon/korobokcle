@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -152,6 +153,12 @@ func buildDesignContext(cfg *config.Service, job domain.Job, events []domain.Eve
 			}
 			ctxData.RerunComment = strings.TrimSpace(payload.Comment)
 		}
+	}
+
+	if existingDesign, err := readFirstArtifactFile(ctxData.ArtifactDir, "result.md", "design.md"); err == nil {
+		ctxData.ExistingDesign = string(existingDesign)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return skill.DesignContext{}, err
 	}
 
 	return ctxData, nil
