@@ -4,6 +4,7 @@ import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchToolCommands, saveToolCommands } from '@/lib/api'
+import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { ToolCommand } from '@/types'
 
 type ToolCommandForm = ToolCommand & {
@@ -70,14 +71,14 @@ function validateCommands(value: ToolCommandForm[]): string | null {
   for (const [index, command] of value.entries()) {
     const name = command.name.trim()
     if (!name) {
-      return `toolCommand[${index}].name is required.`
+      return `toolCommand[${index}].name は必須です。`
     }
     if (seen.has(name)) {
-      return `toolCommand[${index}].name must be unique: ${name}`
+      return `toolCommand[${index}].name は重複できません: ${name}`
     }
     seen.add(name)
     if (!command.command.trim()) {
-      return `toolCommand[${index}].command is required.`
+      return `toolCommand[${index}].command は必須です。`
     }
   }
   return null
@@ -106,14 +107,14 @@ async function persistCommands() {
     await reload()
   } catch (err) {
     saveState.value = 'error'
-    saveError.value = err instanceof Error ? err.message : 'Unknown error'
+    saveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 </script>
 
 <template>
   <AppShell
-    title="Tool Commands"
+    title="ツールコマンド"
     description="動作確認用のコマンドと、常駐/非常駐の種別を設定します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
@@ -121,10 +122,10 @@ async function persistCommands() {
         <aside class="panel rule-list">
           <div class="rule-list__header">
             <div>
-              <h2>Command List</h2>
+              <h2>コマンド一覧</h2>
               <p class="text-muted">watch rule から選択する動作確認コマンドです。</p>
             </div>
-            <button class="button button-primary" type="button" @click="addCommand">Add Command</button>
+            <button class="button button-primary" type="button" @click="addCommand">コマンドを追加</button>
           </div>
 
           <div class="stack-sm">
@@ -138,7 +139,7 @@ async function persistCommands() {
             >
               <div class="rule-item__head">
                 <strong>{{ command.name }}</strong>
-                <span class="text-muted">{{ command.resident ? 'resident' : 'one-shot' }}</span>
+                <span class="text-muted">{{ command.resident ? '常駐' : '単発' }}</span>
               </div>
               <p class="text-muted">{{ command.command }}</p>
             </button>
@@ -148,15 +149,15 @@ async function persistCommands() {
         <section class="panel rule-editor">
           <div class="rule-editor__header">
             <div>
-              <h2>Command Editor</h2>
+              <h2>コマンド編集</h2>
               <p class="text-muted">`config/tool-commands.yaml` に保存します。</p>
             </div>
             <div class="button-row">
               <button class="button button-secondary" type="button" :disabled="!selectedCommand" @click="removeSelectedCommand">
-                Delete
+                削除
               </button>
               <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistCommands">
-                {{ saveState === 'saving' ? 'Saving...' : 'Save Commands' }}
+                {{ saveState === 'saving' ? '保存中...' : 'コマンドを保存' }}
               </button>
             </div>
           </div>
@@ -164,12 +165,12 @@ async function persistCommands() {
           <template v-if="selectedCommand">
             <div class="form-grid">
               <label class="field field-full">
-                <span class="field__label">Command Name</span>
+                <span class="field__label">コマンド名</span>
                 <input v-model="selectedCommand.name" class="field__control" type="text" />
               </label>
 
               <label class="field field-full">
-                <span class="field__label">Command</span>
+                <span class="field__label">コマンド</span>
                 <textarea
                   v-model="selectedCommand.command"
                   class="field__control field__control--textarea"
@@ -181,7 +182,7 @@ async function persistCommands() {
 
               <label class="field field-checkbox field-full">
                 <input v-model="selectedCommand.resident" type="checkbox" />
-                <span>Resident command</span>
+                <span>常駐コマンド</span>
               </label>
             </div>
 
@@ -189,7 +190,7 @@ async function persistCommands() {
             <div v-if="saveState === 'error'" class="notice notice-danger">{{ saveError }}</div>
           </template>
 
-          <div v-else class="notice">Add Command を押すか、左側の一覧から command を選択してください。</div>
+          <div v-else class="notice">コマンドを追加するか、左側の一覧から command を選択してください。</div>
         </section>
       </section>
     </AsyncState>

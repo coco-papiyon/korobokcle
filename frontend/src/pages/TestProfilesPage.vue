@@ -4,6 +4,7 @@ import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchTestProfiles, saveTestProfiles } from '@/lib/api'
+import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { TestProfile } from '@/types'
 
 type TestProfileForm = TestProfile & {
@@ -91,14 +92,14 @@ function validateProfiles(value: TestProfileForm[]): string | null {
   for (const [index, profile] of value.entries()) {
     const name = profile.name.trim()
     if (!name) {
-      return `profile[${index}].name is required.`
+      return `profile[${index}].name は必須です。`
     }
     if (seen.has(name)) {
-      return `profile[${index}].name must be unique: ${name}`
+      return `profile[${index}].name は重複できません: ${name}`
     }
     seen.add(name)
     if (splitCommands(profile.commandsText).length === 0) {
-      return `profile[${index}].commands must include at least one command.`
+      return `profile[${index}].commands には 1 つ以上のコマンドが必要です。`
     }
   }
   return null
@@ -126,14 +127,14 @@ async function persistProfiles() {
     await reload()
   } catch (err) {
     saveState.value = 'error'
-    saveError.value = err instanceof Error ? err.message : 'Unknown error'
+    saveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 </script>
 
 <template>
   <AppShell
-    title="Test Profiles"
+    title="テストプロファイル"
     description="test-profile のコマンド群を複数行テキストで編集します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
@@ -141,10 +142,10 @@ async function persistProfiles() {
         <aside class="panel rule-list">
           <div class="rule-list__header">
             <div>
-              <h2>Profile List</h2>
+              <h2>プロファイル一覧</h2>
               <p class="text-muted">1 profile につき 1 つのコマンド群を管理します。</p>
             </div>
-            <button class="button button-primary" type="button" @click="addProfile">Add Profile</button>
+            <button class="button button-primary" type="button" @click="addProfile">プロファイルを追加</button>
           </div>
 
           <div class="stack-sm">
@@ -158,9 +159,9 @@ async function persistProfiles() {
             >
               <div class="rule-item__head">
                 <strong>{{ profile.name }}</strong>
-                <span class="text-muted">{{ splitCommands(profile.commandsText).length }} commands</span>
+                <span class="text-muted">{{ splitCommands(profile.commandsText).length }} コマンド</span>
               </div>
-              <p class="text-muted">{{ previewCommands(profile.commandsText) || 'no commands' }}</p>
+              <p class="text-muted">{{ previewCommands(profile.commandsText) || 'コマンドなし' }}</p>
             </button>
           </div>
         </aside>
@@ -168,15 +169,15 @@ async function persistProfiles() {
         <section class="panel rule-editor">
           <div class="rule-editor__header">
             <div>
-              <h2>Profile Editor</h2>
+              <h2>プロファイル編集</h2>
               <p class="text-muted">profile 名と commands を編集して `config/test-profiles.yaml` に保存します。</p>
             </div>
             <div class="button-row">
               <button class="button button-secondary" type="button" :disabled="!selectedProfile" @click="removeSelectedProfile">
-                Delete
+                削除
               </button>
               <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistProfiles">
-                {{ saveState === 'saving' ? 'Saving...' : 'Save Profiles' }}
+                {{ saveState === 'saving' ? '保存中...' : 'プロファイルを保存' }}
               </button>
             </div>
           </div>
@@ -184,12 +185,12 @@ async function persistProfiles() {
           <template v-if="selectedProfile">
             <div class="form-grid">
               <label class="field field-full">
-                <span class="field__label">Profile Name</span>
+                <span class="field__label">プロファイル名</span>
                 <input v-model="selectedProfile.name" class="field__control" type="text" />
               </label>
 
               <label class="field field-full">
-                <span class="field__label">Commands</span>
+                <span class="field__label">コマンド</span>
                 <textarea
                   v-model="selectedProfile.commandsText"
                   class="field__control field__control--textarea"
@@ -205,7 +206,7 @@ async function persistProfiles() {
             <div v-if="saveState === 'error'" class="notice notice-danger">{{ saveError }}</div>
           </template>
 
-          <div v-else class="notice">Add Profile を押すか、左側の一覧から profile を選択してください。</div>
+          <div v-else class="notice">プロファイルを追加するか、左側の一覧から profile を選択してください。</div>
         </section>
       </section>
     </AsyncState>

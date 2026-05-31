@@ -4,6 +4,7 @@ import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { createSkillSet, deleteSkillSet, fetchSkillSet, fetchSkillSets, saveSkillSet } from '@/lib/api'
+import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { SkillFile, SkillSet, SkillSetSummary } from '@/types'
 
 const skillOrder = ['design', 'implement', 'implement_fix', 'review', 'review_fix'] as const
@@ -45,7 +46,7 @@ async function loadSkillSet(name: string) {
   try {
     selectedSet.value = cloneSkillSet(await fetchSkillSet(name))
   } catch (err) {
-    detailError.value = err instanceof Error ? err.message : 'Unknown error'
+    detailError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
     selectedSet.value = null
   } finally {
     detailLoading.value = false
@@ -91,7 +92,7 @@ async function persistSkillSet() {
     await reload()
   } catch (err) {
     saveState.value = 'error'
-    saveError.value = err instanceof Error ? err.message : 'Unknown error'
+    saveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -107,7 +108,7 @@ async function createNewSkillSet() {
     saveState.value = 'idle'
   } catch (err) {
     createState.value = 'error'
-    createError.value = err instanceof Error ? err.message : 'Unknown error'
+    createError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
     return
   }
   createState.value = 'idle'
@@ -124,15 +125,15 @@ async function removeSelectedSkillSet() {
 function skillLabel(name: string) {
   switch (name) {
     case 'design':
-      return 'Design'
+      return '設計'
     case 'implement':
-      return 'Implement'
+      return '実装'
     case 'implement_fix':
-      return 'Implement Fix'
+      return '実装修正'
     case 'review':
-      return 'Review'
+      return 'レビュー'
     case 'review_fix':
-      return 'Review Fix'
+      return 'レビュー修正'
     default:
       return name
   }
@@ -141,7 +142,7 @@ function skillLabel(name: string) {
 
 <template>
   <AppShell
-    title="Skill Sets"
+    title="スキルセット"
     description="自動処理を実行するスキルを設定します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
@@ -149,7 +150,7 @@ function skillLabel(name: string) {
         <aside class="panel rule-list">
           <div class="rule-list__header">
             <div>
-              <h2>Skill Sets</h2>
+              <h2>スキルセット</h2>
               <p class="text-muted">default を基点に複製し、用途ごとに編集します。</p>
             </div>
           </div>
@@ -165,25 +166,25 @@ function skillLabel(name: string) {
             >
               <div class="rule-item__head">
                 <strong>{{ set.name }}</strong>
-                <span class="text-muted">{{ set.mutable ? 'custom' : 'read-only' }}</span>
+                <span class="text-muted">{{ set.mutable ? '編集可' : '読み取り専用' }}</span>
               </div>
             </button>
           </div>
 
           <div class="stack-sm skillset-create">
-            <h3>Create / Copy</h3>
+            <h3>作成 / 複製</h3>
             <label class="field">
-              <span class="field__label">Name</span>
+              <span class="field__label">名前</span>
               <input v-model="createName" class="field__control" type="text" placeholder="team-a" />
             </label>
             <label class="field">
-              <span class="field__label">Source</span>
+              <span class="field__label">元のスキルセット</span>
               <select v-model="createSource" class="field__control">
                 <option v-for="set in skillSetOptions" :key="`source-${set.name}`" :value="set.name">{{ set.name }}</option>
               </select>
             </label>
             <button class="button button-primary" type="button" :disabled="createState === 'creating'" @click="createNewSkillSet">
-              {{ createState === 'creating' ? 'Creating...' : 'Create Skill Set' }}
+              {{ createState === 'creating' ? '作成中...' : 'スキルセットを作成' }}
             </button>
             <div v-if="createState === 'error'" class="notice notice-danger">{{ createError }}</div>
           </div>
@@ -192,7 +193,7 @@ function skillLabel(name: string) {
         <section class="panel rule-editor">
           <div class="rule-editor__header">
             <div>
-              <h2>Skill Set Editor</h2>
+              <h2>スキルセット編集</h2>
               <p class="text-muted">
                 {{ selectedSet?.mutable ? 'title, role, prompt を編集して保存できます。' : 'default は編集不可です。複製して変更してください。' }}
               </p>
@@ -204,15 +205,15 @@ function skillLabel(name: string) {
                 :disabled="!selectedSet?.mutable"
                 @click="removeSelectedSkillSet"
               >
-                Delete
+                削除
               </button>
               <button class="button button-primary" type="button" :disabled="saveState === 'saving' || !selectedSet?.mutable" @click="persistSkillSet">
-                {{ saveState === 'saving' ? 'Saving...' : 'Save Skill Set' }}
+                {{ saveState === 'saving' ? '保存中...' : 'スキルセットを保存' }}
               </button>
             </div>
           </div>
 
-          <div v-if="detailLoading" class="notice">Loading skill set...</div>
+          <div v-if="detailLoading" class="notice">スキルセットを読み込んでいます...</div>
           <div v-else-if="detailError" class="notice notice-danger">{{ detailError }}</div>
           <template v-else-if="selectedSet">
             <section v-for="skillName in skillOrder" :key="skillName" class="panel stack-md skill-panel">
@@ -222,12 +223,12 @@ function skillLabel(name: string) {
 
               <div class="form-grid">
                 <label class="field field-full">
-                  <span class="field__label">Title</span>
+                  <span class="field__label">タイトル</span>
                   <input v-model="selectedSet.skills[skillName].definition.title" class="field__control" type="text" :disabled="!selectedSet.mutable" />
                 </label>
 
                 <label class="field field-full">
-                  <span class="field__label">Role</span>
+                  <span class="field__label">役割</span>
                   <textarea
                     v-model="selectedSet.skills[skillName].definition.role"
                     class="field__control field__control--textarea"
@@ -237,7 +238,7 @@ function skillLabel(name: string) {
                 </label>
 
                 <label class="field field-full">
-                  <span class="field__label">Prompt Template</span>
+                  <span class="field__label">プロンプトテンプレート</span>
                   <textarea
                     v-model="selectedSet.skills[skillName].promptTemplate"
                     class="field__control field__control--textarea"
@@ -248,7 +249,7 @@ function skillLabel(name: string) {
               </div>
             </section>
 
-            <div v-if="saveState === 'saved'" class="notice notice-success">skill set を保存しました。</div>
+            <div v-if="saveState === 'saved'" class="notice notice-success">スキルセットを保存しました。</div>
             <div v-if="saveState === 'error'" class="notice notice-danger">{{ saveError }}</div>
           </template>
         </section>

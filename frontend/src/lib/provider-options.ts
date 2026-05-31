@@ -1,4 +1,5 @@
 import type { ProviderSpec } from '@/types'
+import { DEFAULT_MODEL_LABEL, PROVIDER_USE_SETTING_LABEL } from '@/lib/ui-text'
 
 export type SelectOption = {
   value: string
@@ -14,7 +15,7 @@ export function providerOptions(providers: ProviderSpec[]): SelectOption[] {
 
 export function watchRuleProviderOptions(providers: ProviderSpec[]): SelectOption[] {
   return [
-    { value: '', label: 'Use setting' },
+    { value: '', label: PROVIDER_USE_SETTING_LABEL },
     ...providerOptions(providers),
   ]
 }
@@ -23,7 +24,7 @@ export function modelOptionsForProvider(
   providers: ProviderSpec[],
   providerName: string,
   currentModel = '',
-  defaultLabel = 'Default',
+  defaultLabel = DEFAULT_MODEL_LABEL,
 ): SelectOption[] {
   const provider = providers.find((item) => item.name === providerName)
   const options: SelectOption[] = [{ value: '', label: defaultLabel }]

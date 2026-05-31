@@ -13,7 +13,7 @@ const toneClass = computed(() => {
   if (props.state.includes('waiting')) {
     return 'state-badge--warning'
   }
-  if (props.state.includes('completed') || props.state.includes('ready')) {
+  if (props.state.includes('completed') || props.state.includes('ready') || props.state === 'enabled') {
     return 'state-badge--success'
   }
   return 'state-badge--neutral'

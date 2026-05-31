@@ -6,7 +6,8 @@ import DataTable from '@/components/DataTable.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { deleteJob, fetchAppConfig, fetchJobs, restoreJob } from '@/lib/api'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, formatJobTypeLabel } from '@/lib/format'
+import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { Job } from '@/types'
 
 function mergeJobs(current: Job[] | null, incoming: Job[]) {
@@ -138,7 +139,7 @@ function clearBulkSelection() {
 function formatBulkError(actionLabel: string, failures: Array<{ jobId: string; reason: unknown }>) {
   const [firstFailure] = failures
   const reason = firstFailure?.reason
-  const message = reason instanceof Error ? reason.message : 'Unknown error'
+  const message = reason instanceof Error ? reason.message : UNKNOWN_ERROR_MESSAGE
   const failedJobIds = failures.slice(0, 3).map((failure) => failure.jobId)
   const failedJobIdLabel = failedJobIds.length > 0 ? ` (対象: ${failedJobIds.join(', ')})` : ''
   return `${actionLabel}に失敗しました: ${message}${failedJobIdLabel}`
@@ -186,7 +187,7 @@ async function submitBulkDelete() {
     bulkActionState.value = 'idle'
   } catch (err) {
     bulkActionState.value = 'error'
-    bulkActionError.value = err instanceof Error ? err.message : 'Unknown error'
+    bulkActionError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -217,7 +218,7 @@ async function submitBulkRestore() {
     bulkActionState.value = 'idle'
   } catch (err) {
     bulkActionState.value = 'error'
-    bulkActionError.value = err instanceof Error ? err.message : 'Unknown error'
+    bulkActionError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 </script>
@@ -225,10 +226,10 @@ async function submitBulkRestore() {
 <template>
   <AppShell
     title="korobokcle"
-    description="Watch Ruleに一致するGitHub Issue/PRの一覧と自動処理の状況を確認できます。"
+    description="Watch Rule に一致する GitHub Issue / PR の一覧と自動処理の状況を確認できます。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
-      <p v-if="isRefreshing" class="text-muted">Syncing jobs...</p>
+      <p v-if="isRefreshing" class="text-muted">ジョブ一覧を同期しています...</p>
       <div class="dashboard-toolbar">
         <div class="button-row">
           <button
@@ -237,7 +238,7 @@ async function submitBulkRestore() {
             :disabled="isBulkActionRunning"
             @click="showCompleted = !showCompleted"
           >
-            {{ showCompleted ? '完了ジョブを隠す' : '完了ジョブも表示' }}
+            {{ showCompleted ? '完了ジョブを非表示' : '完了ジョブも表示' }}
           </button>
           <button
             class="button button-secondary"
@@ -256,7 +257,7 @@ async function submitBulkRestore() {
               type="checkbox"
               @change="toggleAllVisibleJobs"
             >
-            <span>表示中を全選択</span>
+            <span>表示中のジョブをすべて選択</span>
           </label>
           <p class="text-muted dashboard-toolbar__selection">選択中: {{ selectedJobCountLabel }}</p>
           <div class="button-row">
@@ -282,7 +283,7 @@ async function submitBulkRestore() {
         </div>
       </div>
       <p v-if="bulkActionState === 'error' && bulkActionError" class="notice notice-danger">{{ bulkActionError }}</p>
-      <DataTable :columns="['選択', 'Title', 'Type', 'Repository', 'State', 'Updated']">
+      <DataTable :columns="['選択', 'タイトル', '種別', 'リポジトリ', '状態', '更新日時']">
         <tr v-for="job in visibleJobs" :key="job.id">
           <td class="dashboard-select-cell">
             <input
@@ -299,7 +300,7 @@ async function submitBulkRestore() {
             </RouterLink>
             <span class="dashboard-job-id text-muted">{{ job.id }}</span>
           </td>
-          <td>{{ job.type }}</td>
+          <td>{{ formatJobTypeLabel(job.type) }}</td>
           <td>{{ job.repository }} #{{ job.githubNumber }}</td>
           <td><StateBadge :state="job.state" /></td>
           <td>{{ formatDateTime(job.updatedAt) }}</td>

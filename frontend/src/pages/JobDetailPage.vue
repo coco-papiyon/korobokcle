@@ -25,8 +25,18 @@ import {
   submitReviewRerun,
   stopToolCommand,
 } from '@/lib/api'
-import { formatDateTime, formatPayloadDisplay } from '@/lib/format'
+import {
+  formatDateTime,
+  formatEventTypeLabel,
+  formatIssueBody,
+  formatJobTypeLabel,
+  formatLogName,
+  formatPayloadDisplay,
+  formatStateLabel,
+  formatToolExecutionStatusLabel,
+} from '@/lib/format'
 import { rerunActionFromEvent, rerunButtonLabel, type RerunAction } from '@/lib/rerun-actions'
+import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { JobEvent, JobLog } from '@/types'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -204,7 +214,7 @@ const flowRerunActionInFlow = computed<RerunAction | null>(() => {
 })
 const finalApprovalWarning = computed(() => {
   if (data.value?.job.state === 'failed' && latestEvent.value?.eventType === 'test_failed') {
-    return 'Tests failed, but you can still approve and continue to PR creation.'
+    return 'テストに失敗していますが、承認して PR 作成へ進むことはできます。'
   }
   return ''
 })
@@ -228,27 +238,27 @@ const groupedLogs = computed(() => {
   return [
     {
       phase: 'design',
-      title: 'Design Logs',
+      title: '設計ログ',
       items: logs.filter((log) => log.phase === 'design'),
     },
     {
       phase: 'implementation',
-      title: 'Implementation Logs',
+      title: '実装ログ',
       items: logs.filter((log) => log.phase === 'implementation'),
     },
     {
       phase: 'implement_fix',
-      title: 'Implement Fix Logs',
+      title: '実装修正ログ',
       items: logs.filter((log) => log.phase === 'implement_fix'),
     },
     {
       phase: 'review',
-      title: 'Review Logs',
+      title: 'レビューログ',
       items: logs.filter((log) => log.phase === 'review'),
     },
     {
       phase: 'pr',
-      title: 'PR Logs',
+      title: 'PR ログ',
       items: logs.filter((log) => log.phase === 'pr'),
     },
   ].filter((group) => group.items.length > 0)
@@ -351,37 +361,37 @@ function formatTestReportMarkdown(raw?: string) {
     }
 
     const lines: string[] = []
-    lines.push('# Test Report')
+    lines.push('# テスト結果')
     lines.push('')
-    lines.push(`- Profile: ${report.profile ?? '-'}`)
-    lines.push(`- Success: ${report.success ? 'true' : 'false'}`)
-    lines.push(`- Started At: ${report.startedAt ?? '-'}`)
-    lines.push(`- Finished At: ${report.finishedAt ?? '-'}`)
+    lines.push(`- プロファイル: ${report.profile ?? '-'}`)
+    lines.push(`- 成功: ${report.success ? 'はい' : 'いいえ'}`)
+    lines.push(`- 開始時刻: ${report.startedAt ?? '-'}`)
+    lines.push(`- 終了時刻: ${report.finishedAt ?? '-'}`)
     lines.push('')
-    lines.push('## Results')
+    lines.push('## 実行結果')
     lines.push('')
 
     const results = report.results ?? []
     if (results.length === 0) {
-      lines.push('- No commands were executed.')
+      lines.push('- 実行されたコマンドはありません。')
       return lines.join('\n')
     }
 
     results.forEach((result, index) => {
-      lines.push(`### Command ${index + 1}`)
+      lines.push(`### コマンド ${index + 1}`)
       lines.push('')
-      lines.push(`- Command: ${result.command ?? '-'}`)
-      lines.push(`- Exit Code: ${result.exitCode ?? '-'}`)
-      lines.push(`- Duration: ${result.durationMs ?? '-'} ms`)
-      lines.push(`- Success: ${result.success ? 'true' : 'false'}`)
+      lines.push(`- コマンド: ${result.command ?? '-'}`)
+      lines.push(`- 終了コード: ${result.exitCode ?? '-'}`)
+      lines.push(`- 所要時間: ${result.durationMs ?? '-'} ms`)
+      lines.push(`- 成功: ${result.success ? 'はい' : 'いいえ'}`)
       lines.push('')
-      lines.push('#### Stdout')
+      lines.push('#### 標準出力')
       lines.push('')
       lines.push('```text')
       lines.push(result.stdout?.trimEnd() || '')
       lines.push('```')
       lines.push('')
-      lines.push('#### Stderr')
+      lines.push('#### 標準エラー')
       lines.push('')
       lines.push('```text')
       lines.push(result.stderr?.trimEnd() || '')
@@ -393,26 +403,6 @@ function formatTestReportMarkdown(raw?: string) {
   } catch {
     return raw
   }
-}
-
-function formatLogName(name: string) {
-  if (name === 'stdout.log') {
-    return 'AI stdout'
-  }
-  if (name === 'stderr.log') {
-    return 'AI stderr'
-  }
-  if (name === 'git-push.log') {
-    return 'git push'
-  }
-  if (name === 'gh-pr-create.log') {
-    return 'gh pr create'
-  }
-  return name
-}
-
-function formatIssueBody(body?: string) {
-  return body && body.trim().length > 0 ? body : 'Issue body is empty.'
 }
 
 function formatToolButtonLabel(action: 'start' | 'stop') {
@@ -429,12 +419,12 @@ function formatToolExecutionSummary() {
     return ''
   }
   if (!execution) {
-    return `${tool.resident ? 'resident' : 'one-shot'} command`
+    return `${formatToolExecutionStatusLabel(tool.resident ? 'resident' : 'one-shot')} コマンド`
   }
 
   const parts: string[] = []
-  parts.push(tool.resident ? 'resident' : 'one-shot')
-  parts.push(execution.running ? 'running' : 'stopped')
+  parts.push(formatToolExecutionStatusLabel(tool.resident ? 'resident' : 'one-shot'))
+  parts.push(formatToolExecutionStatusLabel(execution.running ? 'running' : 'stopped'))
   if (typeof execution.exitCode === 'number') {
     parts.push(`exit=${execution.exitCode}`)
   }
@@ -483,7 +473,7 @@ async function submitRerun(action: RerunAction, eventId?: number) {
     await reload()
   } catch (err) {
     rerunState(action).value = 'error'
-    rerunError(action).value = err instanceof Error ? err.message : 'Unknown error'
+    rerunError(action).value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -498,7 +488,7 @@ async function submitDesignArtifactRerun() {
     await reload()
   } catch (err) {
     designRerunState.value = 'error'
-    designRerunError.value = err instanceof Error ? err.message : 'Unknown error'
+    designRerunError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -516,7 +506,7 @@ async function submitImplementationArtifactRerun() {
     await reload()
   } catch (err) {
     implementationRerunState.value = 'error'
-    implementationRerunError.value = err instanceof Error ? err.message : 'Unknown error'
+    implementationRerunError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -534,7 +524,7 @@ async function submitTestReportRerun() {
     await reload()
   } catch (err) {
     implementationRerunState.value = 'error'
-    implementationRerunError.value = err instanceof Error ? err.message : 'Unknown error'
+    implementationRerunError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -548,7 +538,7 @@ async function submitReviewArtifactRerun() {
     await reload()
   } catch (err) {
     reviewRerunState.value = 'error'
-    reviewRerunError.value = err instanceof Error ? err.message : 'Unknown error'
+    reviewRerunError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -563,7 +553,7 @@ async function sendApproval(status: 'approved' | 'rejected', comment = '') {
     await reload()
   } catch (err) {
     approvalState.value = 'error'
-    approvalError.value = err instanceof Error ? err.message : 'Unknown error'
+    approvalError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -584,7 +574,7 @@ async function sendFinalApproval(status: 'approved' | 'rejected', comment = '', 
     await reload()
   } catch (err) {
     finalApprovalState.value = 'error'
-    finalApprovalError.value = err instanceof Error ? err.message : 'Unknown error'
+    finalApprovalError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -597,7 +587,7 @@ async function sendReviewComment() {
     await reload()
   } catch (err) {
     reviewSubmitState.value = 'error'
-    reviewSubmitError.value = err instanceof Error ? err.message : 'Unknown error'
+    reviewSubmitError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -611,7 +601,7 @@ async function sendReviewApproval() {
     await reload()
   } catch (err) {
     reviewApproveState.value = 'error'
-    reviewApproveError.value = err instanceof Error ? err.message : 'Unknown error'
+    reviewApproveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -627,7 +617,7 @@ async function archiveJob() {
     await reload()
   } catch (err) {
     jobArchiveState.value = 'error'
-    jobArchiveError.value = err instanceof Error ? err.message : 'Unknown error'
+    jobArchiveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -640,7 +630,7 @@ async function unarchiveJob() {
     await reload()
   } catch (err) {
     jobArchiveState.value = 'error'
-    jobArchiveError.value = err instanceof Error ? err.message : 'Unknown error'
+    jobArchiveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -656,7 +646,7 @@ async function purgeArchivedJob() {
     await router.push('/')
   } catch (err) {
     jobPurgeState.value = 'error'
-    jobPurgeError.value = err instanceof Error ? err.message : 'Unknown error'
+    jobPurgeError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -675,7 +665,7 @@ async function startSelectedToolCommand() {
   } catch (err) {
     toolCommandState.value = 'error'
     toolCommandAction.value = null
-    toolCommandError.value = err instanceof Error ? err.message : 'Unknown error'
+    toolCommandError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -694,7 +684,7 @@ async function stopRunningToolCommand() {
   } catch (err) {
     toolCommandState.value = 'error'
     toolCommandAction.value = null
-    toolCommandError.value = err instanceof Error ? err.message : 'Unknown error'
+    toolCommandError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -707,7 +697,7 @@ async function openPopup(setOpen: (value: boolean) => void) {
     popupLoadingState.value = 'idle'
   } catch (err) {
     popupLoadingState.value = 'error'
-    popupLoadingError.value = err instanceof Error ? err.message : 'Unknown error'
+    popupLoadingError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -735,7 +725,7 @@ async function refreshIssueBodyContent() {
     issueBodyRefreshState.value = 'idle'
   } catch (err) {
     issueBodyRefreshState.value = 'error'
-    issueBodyRefreshError.value = err instanceof Error ? err.message : 'Unknown error'
+    issueBodyRefreshError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -778,23 +768,24 @@ function openPRCreateModal() {
 
 <template>
   <AppShell
-    title="Job Detail"
-    description="自動処理の詳細情報(設計結果、実装結果、レビュー結果等)やイベント履歴を確認できます。"
+    title="ジョブ詳細"
+    description="自動処理の詳細情報（設計結果、実装結果、レビュー結果など）やイベント履歴を確認できます。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
-      <p v-if="isRefreshing" class="text-muted">Syncing job detail...</p>
+      <p v-if="isRefreshing" class="text-muted">ジョブ詳細を同期しています...</p>
       <template v-if="data">
         <section class="hero-grid">
-          <PanelCard title="Job summary">
+          <PanelCard title="ジョブ概要">
             <div class="stack-sm job-summary">
               <h3 class="job-summary__title">{{ data.job.title || '-' }}</h3>
               <p class="job-summary__id text-muted">ID: <code>{{ data.job.id || '-' }}</code></p>
+              <p class="text-muted">種別: {{ formatJobTypeLabel(data.job.type) }}</p>
               <p class="text-muted">{{ data.job.repository }} #{{ data.job.githubNumber }}</p>
-              <p v-if="isIssueJob" class="text-muted">Branch: <code>{{ data.job.branchName || '-' }}</code></p>
-              <p class="text-muted">Watch Rule: <code>{{ watchRuleDisplayName }}</code></p>
+              <p v-if="isIssueJob" class="text-muted">ブランチ: <code>{{ data.job.branchName || '-' }}</code></p>
+              <p class="text-muted">監視ルール: <code>{{ watchRuleDisplayName }}</code></p>
             </div>
           </PanelCard>
-          <PanelCard title="Flow">
+          <PanelCard title="フロー">
             <div class="stack-sm">
               <div v-if="!isDeletedJob && flowRerunActionInFlow" class="status-inline">
                 <StateBadge :state="data.job.state" />
@@ -812,18 +803,18 @@ function openPRCreateModal() {
                 <div class="stack-sm">
                   <p class="text-muted">
                     <span v-if="toolExecution">
-                      Running: <code>{{ toolExecution.name }}</code> / 
+                      実行中: <code>{{ toolExecution.name }}</code> / 
                     </span>
                     {{ formatToolExecutionSummary() }}
                   </p>
                   <label class="field field-full">
-                    <span class="field__label">Tool Commands</span>
+                    <span class="field__label">ツールコマンド</span>
                     <select
                       v-model="selectedToolCommandName"
                       class="field__control"
                       :disabled="toolExecution?.running || toolCommandState === 'saving' || availableToolCommands.length === 0"
                     >
-                      <option value="" disabled>Tool Commands を選択</option>
+                      <option value="" disabled>ツールコマンドを選択</option>
                       <option v-for="command in availableToolCommands" :key="command.name" :value="command.name">
                         {{ command.name }}
                       </option>
@@ -899,15 +890,15 @@ function openPRCreateModal() {
           title="Issue"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="openIssueBodyModal">Issue body を開く</button>
+            <button class="log-entry-button" type="button" @click="openIssueBodyModal">Issue 本文を開く</button>
             <p class="text-muted">元の issue 内容です。</p>
           </div>
         </PanelCard>
 
         <PanelCard
           v-if="isPRFeedbackJob && hasReviewComments"
-          title="PR Review Comments"
-          description="修正対象の PR review コメントです。"
+          title="PR レビューコメント"
+          description="修正対象の PR レビューコメントです。"
         >
           <div class="stack-sm">
             <details v-for="(comment, index) in data.reviewComments" :key="`${comment.url ?? index}`" class="stack-sm">
@@ -916,7 +907,7 @@ function openPRCreateModal() {
               </summary>
               <pre class="artifact-view">{{ comment.body }}</pre>
               <p v-if="comment.url">
-                <a class="table-link" :href="comment.url" target="_blank" rel="noreferrer">Open on GitHub</a>
+                <a class="table-link" :href="comment.url" target="_blank" rel="noreferrer">GitHub で開く</a>
               </p>
             </details>
           </div>
@@ -929,7 +920,7 @@ function openPRCreateModal() {
 
         <PanelCard
           v-if="data.designArtifact"
-          title="Design Artifact"
+          title="設計成果物"
         >
           <div class="artifact-headline">
             <button class="log-entry-button" type="button" @click="openDesignArtifactModal">設計結果を開く</button>
@@ -939,17 +930,17 @@ function openPRCreateModal() {
 
         <PanelCard
           v-if="data.implementationArtifact"
-          :title="isPRFeedbackJob ? '修正結果' : 'Implementation Artifact'"
+          :title="isPRFeedbackJob ? '修正結果' : '実装成果物'"
         >
           <div class="artifact-headline">
             <button class="log-entry-button" type="button" @click="openImplementationArtifactModal">{{ isPRFeedbackJob ? '修正結果を開く' : '実装結果を開く' }}</button>
-            <p class="text-muted">{{ isPRFeedbackJob ? 'PR review コメントに対する修正結果です。' : '実装フェーズの成果物サマリです。最終承認前に確認します。' }}</p>
+            <p class="text-muted">{{ isPRFeedbackJob ? 'PR レビューコメントに対する修正結果です。' : '実装フェーズの成果物サマリです。最終承認前に確認します。' }}</p>
           </div>
         </PanelCard>
 
         <PanelCard
           v-if="data.fixArtifact"
-          :title="isPRFeedbackJob ? '追加修正結果' : 'Fix Artifact'"
+          :title="isPRFeedbackJob ? '追加修正結果' : '修正成果物'"
           :description="isPRFeedbackJob ? '再実行やテスト失敗後の追加修正結果です。' : 'test_failed 後の修正フェーズで生成された成果物です。'"
         >
           <details class="stack-sm">
@@ -960,11 +951,11 @@ function openPRCreateModal() {
 
         <PanelCard
           v-if="data.reviewArtifact"
-          title="Review Artifact"
+          title="レビュー成果物"
         >
           <div class="artifact-headline">
             <button class="log-entry-button" type="button" @click="openReviewArtifactModal">レビュー結果を開く</button>
-            <p class="text-muted">PR review フェーズの成果物です。総評コメントとして GitHub へ返せます。</p>
+            <p class="text-muted">PR レビューフェーズの成果物です。総評コメントとして GitHub へ返せます。</p>
           </div>
           <div class="stack-sm">
             <p v-if="reviewSubmitState === 'saved'" class="notice notice-success">レビューコメントを GitHub に送信しました。</p>
@@ -976,7 +967,7 @@ function openPRCreateModal() {
 
         <PanelCard
           v-if="data.testReport"
-          title="Test Report"
+          title="テスト結果"
         >
           <div class="artifact-headline">
             <button class="log-entry-button" type="button" @click="openTestReportModal">テスト結果を開く</button>
@@ -986,10 +977,10 @@ function openPRCreateModal() {
 
         <PanelCard
           v-if="toolExecution || toolStdout || toolStderr"
-          title="Tool Log"
+          title="ツールログ"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="openToolLogModal">Tool log を開く</button>
+            <button class="log-entry-button" type="button" @click="openToolLogModal">ツールログを開く</button>
             <p class="text-muted">
               <code>{{ toolExecution?.name ?? selectedToolCommand?.name ?? configuredToolCommand?.name ?? '-' }}</code>
               / {{ formatToolExecutionSummary() }}
@@ -999,17 +990,17 @@ function openPRCreateModal() {
 
         <PanelCard
           v-if="data.prCreateArtifact"
-          title="Pull Request"
+          title="PR 作成"
         >
           <div class="artifact-headline">
-            <button class="log-entry-button" type="button" @click="openPRCreateModal">PR作成結果を開く</button>
-            <p class="text-muted">作成された Pull Request の情報を確認できます。</p>
+            <button class="log-entry-button" type="button" @click="openPRCreateModal">PR 作成結果を開く</button>
+            <p class="text-muted">作成された PR の情報を確認できます。</p>
           </div>
         </PanelCard>
 
         <PanelCard
           v-if="groupedLogs.length > 0"
-          title="Logs"
+          title="ログ"
           description="各フェーズの実行ログです。"
         >
           <div class="stack-md">
@@ -1030,11 +1021,11 @@ function openPRCreateModal() {
           </div>
         </PanelCard>
 
-        <DataTable :columns="['When', 'Event', 'State', 'Payload']">
+        <DataTable :columns="['日時', 'イベント', '状態', 'ペイロード']">
           <tr v-for="event in eventRows" :key="event.id">
             <td>{{ formatDateTime(event.createdAt) }}</td>
-            <td>{{ event.eventType }}</td>
-            <td>{{ event.stateTo || '-' }}</td>
+            <td>{{ formatEventTypeLabel(event.eventType) }}</td>
+            <td>{{ formatStateLabel(event.stateTo || '-') }}</td>
             <td class="payload-cell">
               <details class="payload-details">
                 <summary class="payload-summary">
@@ -1054,7 +1045,7 @@ function openPRCreateModal() {
           <div class="modal-panel">
             <div class="modal-panel__header">
               <div>
-                <h3 class="modal-panel__title">Design Artifact</h3>
+                <h3 class="modal-panel__title">設計成果物</h3>
                 <p class="text-muted"><code>{{ data.designArtifact.path }}</code></p>
               </div>
               <button class="button button-secondary" type="button" @click="designArtifactModalOpen = false">閉じる</button>
@@ -1062,7 +1053,7 @@ function openPRCreateModal() {
             <div class="stack-sm">
               <pre class="artifact-view">{{ data.designArtifact.content }}</pre>
               <label class="field field-full">
-                <span class="field__label">Comment</span>
+                <span class="field__label">コメント</span>
                 <textarea
                   v-model="designArtifactComment"
                   class="field__control field__control--textarea"
@@ -1112,7 +1103,7 @@ function openPRCreateModal() {
                   {{ issueBodyRefreshState === 'loading' ? '取得中...' : '最新を取得' }}
                 </button>
               </div>
-              <p v-if="issueBodyRefreshState === 'loading'" class="text-muted">GitHub から最新の issue body を取得しています...</p>
+              <p v-if="issueBodyRefreshState === 'loading'" class="text-muted">GitHub から最新の Issue 本文を取得しています...</p>
               <p v-if="issueBodyRefreshState === 'error'" class="notice notice-danger">{{ issueBodyRefreshError }}</p>
             </div>
           </div>
@@ -1122,7 +1113,7 @@ function openPRCreateModal() {
           <div class="modal-panel">
             <div class="modal-panel__header">
               <div>
-                <h3 class="modal-panel__title">{{ isPRFeedbackJob ? '修正結果' : 'Implementation Artifact' }}</h3>
+                <h3 class="modal-panel__title">{{ isPRFeedbackJob ? '修正結果' : '実装成果物' }}</h3>
                 <p class="text-muted"><code>{{ data.implementationArtifact.path }}</code></p>
               </div>
               <button class="button button-secondary" type="button" @click="implementationArtifactModalOpen = false">閉じる</button>
@@ -1130,7 +1121,7 @@ function openPRCreateModal() {
             <div class="stack-sm">
               <pre class="artifact-view">{{ data.implementationArtifact.content }}</pre>
               <label class="field field-full">
-                <span class="field__label">Comment</span>
+                <span class="field__label">コメント</span>
                 <textarea
                   v-model="implementationArtifactComment"
                   class="field__control field__control--textarea"
@@ -1178,28 +1169,28 @@ function openPRCreateModal() {
           <div class="modal-panel">
             <div class="modal-panel__header">
               <div>
-                <h3 class="modal-panel__title">Tool Log</h3>
+                <h3 class="modal-panel__title">ツールログ</h3>
                 <p class="text-muted">
                   <code>{{ toolExecution?.name ?? selectedToolCommand?.name ?? configuredToolCommand?.name ?? '-' }}</code>
                   / {{ formatToolExecutionSummary() }}
                 </p>
                 <p v-if="toolExecution?.startedAt" class="text-muted">
-                  Started: {{ formatDateTime(toolExecution.startedAt) }}
-                  <span v-if="toolExecution.finishedAt"> / Finished: {{ formatDateTime(toolExecution.finishedAt) }}</span>
+                  開始: {{ formatDateTime(toolExecution.startedAt) }}
+                  <span v-if="toolExecution.finishedAt"> / 終了: {{ formatDateTime(toolExecution.finishedAt) }}</span>
                 </p>
               </div>
               <button class="button button-secondary" type="button" @click="toolLogModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
               <section class="stack-sm">
-                <h4>Stdout</h4>
+                <h4>標準出力</h4>
                 <p v-if="toolExecution?.stdout?.path" class="text-muted"><code>{{ toolExecution.stdout.path }}</code></p>
-                <pre class="artifact-view">{{ toolStdoutContent || 'No stdout log yet.' }}</pre>
+                <pre class="artifact-view">{{ toolStdoutContent || 'まだ標準出力ログはありません。' }}</pre>
               </section>
               <section class="stack-sm">
-                <h4>Stderr</h4>
+                <h4>標準エラー</h4>
                 <p v-if="toolExecution?.stderr?.path" class="text-muted"><code>{{ toolExecution.stderr.path }}</code></p>
-                <pre class="artifact-view">{{ toolStderrContent || 'No stderr log yet.' }}</pre>
+                <pre class="artifact-view">{{ toolStderrContent || 'まだ標準エラーログはありません。' }}</pre>
               </section>
             </div>
           </div>
@@ -1212,7 +1203,7 @@ function openPRCreateModal() {
           <div class="modal-panel">
             <div class="modal-panel__header">
               <div>
-                <h3 class="modal-panel__title">Test Report</h3>
+                <h3 class="modal-panel__title">テスト結果</h3>
                 <p class="text-muted"><code>{{ data.testReport.path }}</code></p>
               </div>
               <button class="button button-secondary" type="button" @click="testReportModalOpen = false">閉じる</button>
@@ -1220,7 +1211,7 @@ function openPRCreateModal() {
             <div class="stack-sm">
               <pre class="artifact-view">{{ testReportMarkdown }}</pre>
               <label class="field field-full">
-                <span class="field__label">Comment</span>
+                <span class="field__label">コメント</span>
                 <textarea
                   v-model="testReportComment"
                   class="field__control field__control--textarea"
@@ -1255,7 +1246,7 @@ function openPRCreateModal() {
           <div class="modal-panel">
             <div class="modal-panel__header">
               <div>
-                <h3 class="modal-panel__title">Pull Request</h3>
+                <h3 class="modal-panel__title">PR 作成</h3>
                 <p class="text-muted"><code>{{ data.prCreateArtifact.path }}</code></p>
               </div>
               <button class="button button-secondary" type="button" @click="prCreateModalOpen = false">閉じる</button>
@@ -1263,10 +1254,10 @@ function openPRCreateModal() {
             <div class="stack-sm">
               <template v-if="prCreateInfo">
                 <p v-if="prCreateInfo.title"><strong>{{ prCreateInfo.title }}</strong></p>
-                <p v-if="prCreateInfo.repository" class="text-muted">Repository: <code>{{ prCreateInfo.repository }}</code></p>
-                <p v-if="prCreateInfo.branchName" class="text-muted">Branch: <code>{{ prCreateInfo.branchName }}</code></p>
+                <p v-if="prCreateInfo.repository" class="text-muted">リポジトリ: <code>{{ prCreateInfo.repository }}</code></p>
+                <p v-if="prCreateInfo.branchName" class="text-muted">ブランチ: <code>{{ prCreateInfo.branchName }}</code></p>
                 <p v-if="prCreateInfo.url">
-                  <a class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">Open Pull Request</a>
+                  <a class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">PR を開く</a>
                 </p>
               </template>
               <p v-else class="text-muted">PR 作成結果を構造化表示できなかったため、生データを表示しています。</p>
@@ -1279,7 +1270,7 @@ function openPRCreateModal() {
           <div class="modal-panel">
             <div class="modal-panel__header">
               <div>
-                <h3 class="modal-panel__title">Review Artifact</h3>
+                <h3 class="modal-panel__title">レビュー成果物</h3>
                 <p class="text-muted"><code>{{ data.reviewArtifact.path }}</code></p>
               </div>
               <button class="button button-secondary" type="button" @click="reviewArtifactModalOpen = false">閉じる</button>
@@ -1287,7 +1278,7 @@ function openPRCreateModal() {
             <div class="stack-sm">
               <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>
               <label class="field field-full">
-                <span class="field__label">Comment</span>
+                <span class="field__label">コメント</span>
                 <textarea
                   v-model="reviewArtifactComment"
                   class="field__control field__control--textarea"

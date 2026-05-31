@@ -1,4 +1,5 @@
 import { onMounted, onUnmounted, ref, unref, watch } from 'vue'
+import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 
 type UseAsyncDataOptions<T> = {
   pollIntervalMs?: number | { value: number | null | undefined } | (() => number | null | undefined)
@@ -38,7 +39,7 @@ export function useAsyncData<T>(loader: () => Promise<T>, options: UseAsyncDataO
         error.value = null
       }
     } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Unknown error'
+      error.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
     } finally {
       if (silent) {
         isRefreshing.value = false
