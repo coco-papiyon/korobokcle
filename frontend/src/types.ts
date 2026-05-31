@@ -139,6 +139,7 @@ export type AppConfig = {
 export type MonitoredRepository = {
   repository: string
   branch: string
+  workDir: string
   workers: number
   workerDir?: string
   workerDirs: string[]

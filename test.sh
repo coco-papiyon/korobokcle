@@ -12,8 +12,8 @@ cd ..
 
 go run ./scripts/create-testdata
 
-mkdir -p ${KOROBOKCLE_TOOL_ROOT}/skills
-cp -rf skills/default ${KOROBOKCLE_TOOL_ROOT}/skills/default
+mkdir -p ${KOROBOKCLE_TOOL_ROOT}/skills/default
+cp -rf skills/default/* ${KOROBOKCLE_TOOL_ROOT}/skills/default/.
 
 go build ./cmd/korobokcle
 ./korobokcle --port "${KOROBOKCLE_PORT}"

@@ -150,9 +150,8 @@ func cloneMonitoredRepositories(values []MonitoredRepository) []MonitoredReposit
 		cloned = append(cloned, MonitoredRepository{
 			Repository: repository.Repository,
 			Branch:     repository.Branch,
+			WorkDir:    repository.WorkDir,
 			Workers:    repository.Workers,
-			WorkerDir:  repository.WorkerDir,
-			WorkerDirs: append([]string(nil), repository.WorkerDirs...),
 		})
 	}
 	return cloned

@@ -62,6 +62,9 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 		infoLogger.Printf("recovered interrupted jobs: %d", recovered)
 	}
 	startWatcher(ctx, configService, orch, infoLogger, debugLogger)
+	if err := prepareRepositoryWorkspaces(ctx, configService); err != nil {
+		return fmt.Errorf("prepare repository workspaces: %w", err)
+	}
 	if err := startRepositoryWorkers(ctx, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start repository workers: %w", err)
 	}
@@ -71,6 +74,13 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 	if err != nil {
 		return fmt.Errorf("build web server: %w", err)
 	}
+	server.SetRepositoryWorkspacePreparer(func(ctx context.Context, appConfig config.App) error {
+		snapshot := configService.App()
+		snapshot.MonitoredRepositories = append([]config.MonitoredRepository(nil), appConfig.MonitoredRepositories...)
+		snapshot.ArtifactsDir = appConfig.ArtifactsDir
+		snapshot.WorkspaceDir = appConfig.WorkspaceDir
+		return prepareRepositoryWorkspaces(ctx, config.NewService(configService.Root(), config.Files{App: snapshot}))
+	})
 
 	errCh := make(chan error, 1)
 	go func() {

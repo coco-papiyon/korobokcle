@@ -20,11 +20,10 @@ type App struct {
 }
 
 type MonitoredRepository struct {
-	Repository string   `yaml:"repository"`
-	Branch     string   `yaml:"branch"`
-	Workers    int      `yaml:"workers"`
-	WorkerDir  string   `yaml:"workerDir,omitempty"`
-	WorkerDirs []string `yaml:"workerDirs,omitempty"`
+	Repository string `yaml:"repository"`
+	Branch     string `yaml:"branch"`
+	WorkDir    string `yaml:"workDir"`
+	Workers    int    `yaml:"workers"`
 }
 
 type ProviderSpec struct {

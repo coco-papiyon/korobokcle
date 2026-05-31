@@ -50,8 +50,15 @@ func TestCloneRepositoryWorkspaceClonesLocalRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
 	}
+	baseDir := artifacts.RepositoryWorkerBaseDir(root, cfg.App().ArtifactsDir, source, 0)
+	if _, err := os.Stat(filepath.Join(baseDir, ".git")); err != nil {
+		t.Fatalf("expected base git repository: %v", err)
+	}
 	if _, err := os.Stat(filepath.Join(workerDir, ".git")); err != nil {
 		t.Fatalf("expected cloned git repository: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "README.md")); err != nil {
+		t.Fatalf("expected cloned base file: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(workerDir, "README.md")); err != nil {
 		t.Fatalf("expected cloned file: %v", err)
@@ -68,6 +75,113 @@ func TestCloneRepositoryWorkspaceClonesLocalRepository(t *testing.T) {
 	}
 	if workerDir != artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, source, 0) {
 		t.Fatalf("unexpected worker dir: %s", workerDir)
+	}
+	excludeRaw, err = os.ReadFile(filepath.Join(baseDir, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatalf("ReadFile(exclude) error = %v", err)
+	}
+	if !strings.Contains(string(excludeRaw), ".workspace/") {
+		t.Fatalf("expected git exclude to ignore .workspace, got %q", string(excludeRaw))
+	}
+}
+
+func TestCloneRepositoryWorkspacePreservesWorkspaceFiles(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("preserve test"), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "init"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	baseDir := artifacts.RepositoryWorkerBaseDir(root, cfg.App().ArtifactsDir, source, 0)
+	workspaceDir := filepath.Join(baseDir, ".workspace", "issue_42", "design")
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(workspaceDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspaceDir, "result.md"), []byte("keep me"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	workerDir, err := cloneRepositoryWorkspace(context.Background(), cfg, source, 0)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
+	}
+	if workerDir != artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, source, 0) {
+		t.Fatalf("unexpected worker dir: %s", workerDir)
+	}
+	raw, err := os.ReadFile(filepath.Join(baseDir, ".workspace", "issue_42", "design", "result.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(result.md) error = %v", err)
+	}
+	if string(raw) != "keep me" {
+		t.Fatalf("expected preserved workspace content, got %q", string(raw))
+	}
+}
+
+func TestCopyDirectoryTreeCopiesNestedFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	target := filepath.Join(root, "target")
+
+	if err := os.MkdirAll(filepath.Join(source, "nested"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(source nested) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "nested", "file.txt"), []byte("hello"), 0o640); err != nil {
+		t.Fatalf("WriteFile(file.txt) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "root.txt"), []byte("root"), 0o600); err != nil {
+		t.Fatalf("WriteFile(root.txt) error = %v", err)
+	}
+	if err := os.Symlink("nested/file.txt", filepath.Join(source, "link.txt")); err != nil {
+		t.Skipf("symlinks are not supported in this environment: %v", err)
+	}
+
+	if err := copyDirectoryTree(source, target); err != nil {
+		t.Fatalf("copyDirectoryTree() error = %v", err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(target, "nested", "file.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(nested/file.txt) error = %v", err)
+	}
+	if string(got) != "hello" {
+		t.Fatalf("expected copied nested file, got %q", string(got))
+	}
+
+	got, err = os.ReadFile(filepath.Join(target, "root.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(root.txt) error = %v", err)
+	}
+	if string(got) != "root" {
+		t.Fatalf("expected copied root file, got %q", string(got))
+	}
+
+	linkTarget, err := os.Readlink(filepath.Join(target, "link.txt"))
+	if err != nil {
+		t.Fatalf("Readlink(link.txt) error = %v", err)
+	}
+	if linkTarget != "nested/file.txt" {
+		t.Fatalf("expected copied symlink target, got %q", linkTarget)
 	}
 }
 
@@ -475,7 +589,7 @@ func TestRepositoryWorkerDirUsesOwnerRepoName(t *testing.T) {
 	t.Parallel()
 
 	got := artifacts.RepositoryWorkerDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	want := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2")
+	want := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2")
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
@@ -486,25 +600,13 @@ func TestRepositoryWorkerSourceAndLogPaths(t *testing.T) {
 
 	startedAt := time.Date(2026, 5, 19, 14, 52, 0, 0, time.Local)
 	sourceDir := artifacts.RepositoryWorkerSourceDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2")
+	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "source")
 	if sourceDir != wantSourceDir {
 		t.Fatalf("expected source dir %q, got %q", wantSourceDir, sourceDir)
 	}
 
-	workspaceDir := artifacts.RepositoryWorkerWorkspaceDir(sourceDir, ".workspace")
-	wantWorkspaceDir := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2", ".workspace")
-	if workspaceDir != wantWorkspaceDir {
-		t.Fatalf("expected workspace dir %q, got %q", wantWorkspaceDir, workspaceDir)
-	}
-
-	artifactDir := artifacts.RepositoryWorkerArtifactDir(sourceDir, ".workspace", 42, artifacts.WorkerDesign)
-	wantArtifactDir := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2", ".workspace", "issue_42", "design")
-	if artifactDir != wantArtifactDir {
-		t.Fatalf("expected artifact dir %q, got %q", wantArtifactDir, artifactDir)
-	}
-
-	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", ".workspace", "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
-	wantLogPath := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2", ".workspace", "logs", "2026-05-19", "2026-05-19_14-52-00.log")
+	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
+	wantLogPath := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "logs", "2026-05-19", "2026-05-19_14-52-00.log")
 	if logPath != wantLogPath {
 		t.Fatalf("expected log path %q, got %q", wantLogPath, logPath)
 	}
@@ -552,17 +654,17 @@ func TestRepositoryWorkerSourceDirUsesConfiguredWorkerDir(t *testing.T) {
 	root := t.TempDir()
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "owner/repository", Branch: "main", Workers: 2, WorkerDirs: []string{"custom/workers-0", "custom/workers-1"}},
+		{Repository: "owner/repository", Branch: "main", WorkDir: "custom/workers", Workers: 2},
 	}
 	cfg := config.NewService(root, files)
 
 	got0 := repositoryWorkerSourceDir(cfg, "owner/repository", 0)
-	want0 := filepath.Join(root, "custom", "workers-0", "worker-0")
+	want0 := filepath.Join(root, "artifacts", "workers", "owner-repository", "worker-0", "source")
 	if got0 != want0 {
 		t.Fatalf("expected worker dir %q, got %q", want0, got0)
 	}
 	got1 := repositoryWorkerSourceDir(cfg, "owner/repository", 1)
-	want1 := filepath.Join(root, "custom", "workers-1", "worker-1")
+	want1 := filepath.Join(root, "artifacts", "workers", "owner-repository", "worker-1", "source")
 	if got1 != want1 {
 		t.Fatalf("expected worker dir %q, got %q", want1, got1)
 	}
@@ -714,7 +816,8 @@ func TestProcessPRJobForPRFeedbackPushesAndCommentsWithoutCreatingPR(t *testing.
 	}
 
 	workerDir := artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, job.Repository, 0)
-	artifactDir := artifacts.RepositoryWorkerArtifactDir(workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
+	baseDir := artifacts.RepositoryWorkerBaseDir(root, cfg.App().ArtifactsDir, job.Repository, 0)
+	artifactDir := artifacts.RepositoryWorkerArtifactDir(baseDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -727,7 +830,8 @@ func TestProcessPRJobForPRFeedbackPushesAndCommentsWithoutCreatingPR(t *testing.
 	creator := &recordingPRCreator{}
 	commenter := &recordingPRCommentSubmitter{}
 
-	if err := processPRJob(ctx, cfg, orch, pusher, creator, commenter, job, workerDir, log.New(io.Discard, "", 0)); err != nil {
+	workDir := artifacts.RepositoryWorkerWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "")
+	if err := processPRJob(ctx, cfg, orch, pusher, creator, commenter, job, workDir, workerDir, log.New(io.Discard, "", 0)); err != nil {
 		t.Fatalf("processPRJob() error = %v", err)
 	}
 

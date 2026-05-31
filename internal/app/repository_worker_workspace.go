@@ -14,23 +14,24 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
 
-func repositoryWorkerArtifactDir(workerDir string, workspaceDir string, issueNumber int, phase string) string {
-	return artifacts.RepositoryWorkerArtifactDir(workerDir, workspaceDir, issueNumber, phase)
+func unmarshalEventPayload(payload string, out any) error {
+	return json.Unmarshal([]byte(payload), out)
 }
 
-func readRepositoryWorkerArtifactFile(cfg *config.Service, workerDir string, workspaceDir string, issueNumber int, jobID string, phase string, names ...string) ([]byte, error) {
-	newDir := repositoryWorkerArtifactDir(workerDir, workspaceDir, issueNumber, phase)
-	if raw, err := readFirstArtifactFile(newDir, names...); err == nil {
-		return raw, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-
-	return nil, os.ErrNotExist
+func repositoryWorkerBaseDirFromWorkDir(workDir string) string {
+	return workDir
 }
 
-func buildRepositoryDesignContext(cfg *config.Service, workerDir string, job domain.Job, events []domain.Event) (skill.DesignContext, error) {
-	artifactDir := repositoryWorkerArtifactDir(workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerDesign)
+func repositoryWorkerArtifactDir(workDir string, workspaceDir string, issueNumber int, phase string) string {
+	return artifacts.RepositoryWorkerArtifactDir(repositoryWorkerBaseDirFromWorkDir(workDir), workspaceDir, issueNumber, phase)
+}
+
+func readRepositoryWorkerArtifactFile(_ *config.Service, workDir string, workspaceDir string, issueNumber int, _ string, phase string, names ...string) ([]byte, error) {
+	dir := repositoryWorkerArtifactDir(workDir, workspaceDir, issueNumber, phase)
+	return readFirstArtifactFile(dir, names...)
+}
+
+func buildRepositoryDesignContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event) (skill.DesignContext, error) {
 	ctxData := skill.DesignContext{
 		JobID:       job.ID,
 		Repository:  job.Repository,
@@ -38,7 +39,7 @@ func buildRepositoryDesignContext(cfg *config.Service, workerDir string, job dom
 		Title:       job.Title,
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
-		ArtifactDir: artifactDir,
+		ArtifactDir: repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerDesign),
 	}
 
 	for _, event := range events {
@@ -68,7 +69,7 @@ func buildRepositoryDesignContext(cfg *config.Service, workerDir string, job dom
 		}
 	}
 
-	if existingDesign, err := readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerDesign, "result.md", "design.md"); err == nil {
+	if existingDesign, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerDesign, "result.md", "design.md"); err == nil {
 		ctxData.ExistingDesign = string(existingDesign)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return skill.DesignContext{}, err
@@ -77,7 +78,7 @@ func buildRepositoryDesignContext(cfg *config.Service, workerDir string, job dom
 	return ctxData, nil
 }
 
-func resolveRepositoryImplementationRunSpec(cfg *config.Service, workerDir string, job domain.Job, events []domain.Event) (implementationRunSpec, error) {
+func resolveRepositoryImplementationRunSpec(cfg *config.Service, workDir string, job domain.Job, events []domain.Event) (implementationRunSpec, error) {
 	isFix := false
 	artifactPhase := artifacts.WorkerImplementation
 
@@ -97,17 +98,17 @@ func resolveRepositoryImplementationRunSpec(cfg *config.Service, workerDir strin
 
 	return implementationRunSpec{
 		SkillName:   skillName,
-		ArtifactDir: repositoryWorkerArtifactDir(workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifactPhase),
+		ArtifactDir: repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifactPhase),
 	}, nil
 }
 
-func buildRepositoryImplementationContext(cfg *config.Service, workerDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
+func buildRepositoryImplementationContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
 	if job.Type == domain.JobTypePRFeedback {
-		return buildRepositoryPRFeedbackImplementationContext(cfg, workerDir, job, events, runSpec)
+		return buildRepositoryPRFeedbackImplementationContext(cfg, workDir, job, events, runSpec)
 	}
 
-	designArtifactDir := repositoryWorkerArtifactDir(workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerDesign)
-	designArtifactRaw, err := readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerDesign, "result.md", "design.md")
+	designArtifactDir := repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerDesign)
+	designArtifactRaw, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerDesign, "result.md", "design.md")
 	if err != nil {
 		return skill.ImplementationContext{}, err
 	}
@@ -124,7 +125,7 @@ func buildRepositoryImplementationContext(cfg *config.Service, workerDir string,
 		ArtifactDir:       runSpec.ArtifactDir,
 	}
 
-	implementationArtifact, err := readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerImplementation, "result.md", "implement.md", "summary.md", "stdout.log")
+	implementationArtifact, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerImplementation, "result.md", "implement.md", "summary.md", "stdout.log")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return skill.ImplementationContext{}, err
 	}
@@ -137,7 +138,7 @@ func buildRepositoryImplementationContext(cfg *config.Service, workerDir string,
 		return skill.ImplementationContext{}, err
 	}
 
-	rerunComment, previousFailure, previousTestReport, err := loadRepositoryImplementationRetryContext(cfg, workerDir, job, events)
+	rerunComment, previousFailure, previousTestReport, err := loadRepositoryImplementationRetryContext(cfg, workDir, job, events)
 	if err != nil {
 		return skill.ImplementationContext{}, err
 	}
@@ -169,7 +170,7 @@ func buildRepositoryImplementationContext(cfg *config.Service, workerDir string,
 	return ctxData, nil
 }
 
-func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workerDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
+func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
 	ctxData := skill.ImplementationContext{
 		JobID:       job.ID,
 		Repository:  job.Repository,
@@ -180,7 +181,7 @@ func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workerD
 		ArtifactDir: runSpec.ArtifactDir,
 	}
 
-	implementationArtifact, err := readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerImplementation, "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
+	implementationArtifact, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerImplementation, "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return skill.ImplementationContext{}, err
 	}
@@ -188,7 +189,7 @@ func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workerD
 		ctxData.ImplementationArtifact = string(implementationArtifact)
 	}
 
-	rerunComment, previousFailure, previousTestReport, err := loadRepositoryImplementationRetryContext(cfg, workerDir, job, events)
+	rerunComment, previousFailure, previousTestReport, err := loadRepositoryImplementationRetryContext(cfg, workDir, job, events)
 	if err != nil {
 		return skill.ImplementationContext{}, err
 	}
@@ -233,7 +234,45 @@ func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workerD
 	return ctxData, nil
 }
 
-func loadRepositoryImplementationRetryContext(cfg *config.Service, workerDir string, job domain.Job, events []domain.Event) (string, string, string, error) {
+func buildRepositoryReviewContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event) (skill.ReviewContext, error) {
+	ctxData := skill.ReviewContext{
+		JobID:       job.ID,
+		Repository:  job.Repository,
+		PullNumber:  job.GitHubNumber,
+		Title:       job.Title,
+		WatchRuleID: job.WatchRuleID,
+		BranchName:  job.BranchName,
+		ArtifactDir: repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerReview),
+	}
+
+	for _, event := range events {
+		if event.EventType != string(domain.DomainEventPRMatched) {
+			continue
+		}
+
+		var payload struct {
+			Body      string   `json:"body"`
+			Author    string   `json:"author"`
+			Labels    []string `json:"labels"`
+			Assignees []string `json:"assignees"`
+			URL       string   `json:"url"`
+		}
+		if err := unmarshalEventPayload(event.Payload, &payload); err != nil {
+			return skill.ReviewContext{}, err
+		}
+		ctxData.Body = payload.Body
+		ctxData.Author = payload.Author
+		ctxData.Labels = payload.Labels
+		ctxData.Assignees = payload.Assignees
+		ctxData.SourceURL = payload.URL
+		ctxData.RepositoryHint = job.Repository
+		break
+	}
+
+	return ctxData, nil
+}
+
+func loadRepositoryImplementationRetryContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event) (string, string, string, error) {
 	var rerunComment string
 	var previousFailure string
 	var previousTestReport string
@@ -274,9 +313,8 @@ func loadRepositoryImplementationRetryContext(cfg *config.Service, workerDir str
 	}
 
 	if previousTestReport == "" {
-		reportPath := repositoryWorkerArtifactDir(workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
-		raw, err := os.ReadFile(filepath.Join(reportPath, "test-report.json"))
-		if err == nil {
+		reportDir := repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
+		if raw, err := os.ReadFile(filepath.Join(reportDir, "test-report.json")); err == nil {
 			previousTestReport = string(raw)
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return "", "", "", fmt.Errorf("read previous test report: %w", err)
@@ -284,46 +322,4 @@ func loadRepositoryImplementationRetryContext(cfg *config.Service, workerDir str
 	}
 
 	return rerunComment, previousFailure, previousTestReport, nil
-}
-
-func buildRepositoryReviewContext(cfg *config.Service, workerDir string, job domain.Job, events []domain.Event) (skill.ReviewContext, error) {
-	ctxData := skill.ReviewContext{
-		JobID:       job.ID,
-		Repository:  job.Repository,
-		PullNumber:  job.GitHubNumber,
-		Title:       job.Title,
-		WatchRuleID: job.WatchRuleID,
-		BranchName:  job.BranchName,
-		ArtifactDir: repositoryWorkerArtifactDir(workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerReview),
-	}
-
-	for _, event := range events {
-		if event.EventType != string(domain.DomainEventPRMatched) {
-			continue
-		}
-
-		var payload struct {
-			Body      string   `json:"body"`
-			Author    string   `json:"author"`
-			Labels    []string `json:"labels"`
-			Assignees []string `json:"assignees"`
-			URL       string   `json:"url"`
-		}
-		if err := unmarshalEventPayload(event.Payload, &payload); err != nil {
-			return skill.ReviewContext{}, err
-		}
-		ctxData.Body = payload.Body
-		ctxData.Author = payload.Author
-		ctxData.Labels = payload.Labels
-		ctxData.Assignees = payload.Assignees
-		ctxData.SourceURL = payload.URL
-		ctxData.RepositoryHint = job.Repository
-		break
-	}
-
-	return ctxData, nil
-}
-
-func unmarshalEventPayload(raw string, out any) error {
-	return json.Unmarshal([]byte(raw), out)
 }
