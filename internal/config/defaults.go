@@ -66,7 +66,7 @@ func DefaultFiles() Files {
 		Notifications: Notifications{
 			Channels: []NotificationChannel{
 				{
-					Name:    "windows-toast",
+					Name:    "Windowsデスクトップ通知",
 					Type:    "windows_toast",
 					Events:  []string{"waiting_design_approval", "waiting_final_approval", "review_completed", "pr_created", "failed"},
 					Enabled: true,
