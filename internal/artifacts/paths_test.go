@@ -26,3 +26,32 @@ func TestJobDirPreservesAbsoluteArtifactsDir(t *testing.T) {
 		t.Fatalf("JobDir() = %q, want %q", got, want)
 	}
 }
+
+func TestRepositoryWorkerPathsUseWorkerRootAndWorkspace(t *testing.T) {
+	t.Parallel()
+
+	root := filepath.Join("workspace", "tool")
+	workerDir := RepositoryWorkerDir(root, "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
+	wantWorkerDir := filepath.Join(root, "artifacts", "coco-papiyon-korobokcle", "worker-2")
+	if workerDir != wantWorkerDir {
+		t.Fatalf("RepositoryWorkerDir() = %q, want %q", workerDir, wantWorkerDir)
+	}
+
+	workspaceDir := RepositoryWorkerWorkspaceDir(workerDir, ".workspace")
+	wantWorkspaceDir := filepath.Join(wantWorkerDir, ".workspace")
+	if workspaceDir != wantWorkspaceDir {
+		t.Fatalf("RepositoryWorkerWorkspaceDir() = %q, want %q", workspaceDir, wantWorkspaceDir)
+	}
+
+	issueDir := RepositoryWorkerIssueDir(workerDir, ".workspace", 42)
+	wantIssueDir := filepath.Join(wantWorkspaceDir, "issue_42")
+	if issueDir != wantIssueDir {
+		t.Fatalf("RepositoryWorkerIssueDir() = %q, want %q", issueDir, wantIssueDir)
+	}
+
+	artifactDir := RepositoryWorkerArtifactDir(workerDir, ".workspace", 42, "design")
+	wantArtifactDir := filepath.Join(wantIssueDir, "design")
+	if artifactDir != wantArtifactDir {
+		t.Fatalf("RepositoryWorkerArtifactDir() = %q, want %q", artifactDir, wantArtifactDir)
+	}
+}

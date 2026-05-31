@@ -56,8 +56,107 @@ func TestCloneRepositoryWorkspaceClonesLocalRepository(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(workerDir, "README.md")); err != nil {
 		t.Fatalf("expected cloned file: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(workerDir, ".workspace", "logs")); err != nil {
+		t.Fatalf("expected logs workspace to exist: %v", err)
+	}
+	excludeRaw, err := os.ReadFile(filepath.Join(workerDir, ".git", "info", "exclude"))
+	if err != nil {
+		t.Fatalf("ReadFile(exclude) error = %v", err)
+	}
+	if !strings.Contains(string(excludeRaw), ".workspace/") {
+		t.Fatalf("expected git exclude to ignore .workspace, got %q", string(excludeRaw))
+	}
 	if workerDir != artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, source, 0) {
 		t.Fatalf("unexpected worker dir: %s", workerDir)
+	}
+}
+
+func TestCloneRepositoryWorkspacePreservesExistingWorkspace(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("preserve test"), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "init"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	workerDir := artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, source, 0)
+	legacyWorkspaceDir := filepath.Join(workerDir, ".workspace", "issue_42", "design")
+	if err := os.MkdirAll(legacyWorkspaceDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(workspace) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyWorkspaceDir, "result.md"), []byte("keep me"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	clonedDir, err := cloneRepositoryWorkspace(context.Background(), cfg, source, 0)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
+	}
+	if clonedDir != workerDir {
+		t.Fatalf("unexpected worker dir: %s", clonedDir)
+	}
+
+	if _, err := os.Stat(filepath.Join(workerDir, ".git")); err != nil {
+		t.Fatalf("expected cloned git repository: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(workerDir, ".workspace", "issue_42", "design", "result.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(result.md) error = %v", err)
+	}
+	if string(raw) != "keep me" {
+		t.Fatalf("expected preserved workspace content, got %q", string(raw))
+	}
+}
+
+func TestBuildRepositoryDesignContextIgnoresLegacyArtifactDirectory(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+
+	workerDir := artifacts.RepositoryWorkerSourceDir(root, svc.App().ArtifactsDir, "owner/repository", 0)
+	legacyDesignDir := filepath.Join(workerDir, ".workspace", "design", "job-42")
+	if err := os.MkdirAll(legacyDesignDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(legacyDesignDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacyDesignDir, "result.md"), []byte("legacy design"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	job := domain.Job{
+		ID:           "job-42",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		Title:        "Issue",
+		WatchRuleID:  "rule-1",
+	}
+
+	ctx, err := buildRepositoryDesignContext(svc, workerDir, job, nil)
+	if err != nil {
+		t.Fatalf("buildRepositoryDesignContext() error = %v", err)
+	}
+	if ctx.ExistingDesign != "" {
+		t.Fatalf("expected legacy artifact directory to be ignored, got %q", ctx.ExistingDesign)
 	}
 }
 
@@ -376,7 +475,7 @@ func TestRepositoryWorkerDirUsesOwnerRepoName(t *testing.T) {
 	t.Parallel()
 
 	got := artifacts.RepositoryWorkerDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	want := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2")
+	want := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2")
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
@@ -387,13 +486,25 @@ func TestRepositoryWorkerSourceAndLogPaths(t *testing.T) {
 
 	startedAt := time.Date(2026, 5, 19, 14, 52, 0, 0, time.Local)
 	sourceDir := artifacts.RepositoryWorkerSourceDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "source")
+	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2")
 	if sourceDir != wantSourceDir {
 		t.Fatalf("expected source dir %q, got %q", wantSourceDir, sourceDir)
 	}
 
-	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
-	wantLogPath := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "logs", "2026-05-19", "2026-05-19_14-52-00.log")
+	workspaceDir := artifacts.RepositoryWorkerWorkspaceDir(sourceDir, ".workspace")
+	wantWorkspaceDir := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2", ".workspace")
+	if workspaceDir != wantWorkspaceDir {
+		t.Fatalf("expected workspace dir %q, got %q", wantWorkspaceDir, workspaceDir)
+	}
+
+	artifactDir := artifacts.RepositoryWorkerArtifactDir(sourceDir, ".workspace", 42, artifacts.WorkerDesign)
+	wantArtifactDir := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2", ".workspace", "issue_42", "design")
+	if artifactDir != wantArtifactDir {
+		t.Fatalf("expected artifact dir %q, got %q", wantArtifactDir, artifactDir)
+	}
+
+	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", ".workspace", "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
+	wantLogPath := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "worker-2", ".workspace", "logs", "2026-05-19", "2026-05-19_14-52-00.log")
 	if logPath != wantLogPath {
 		t.Fatalf("expected log path %q, got %q", wantLogPath, logPath)
 	}
@@ -408,7 +519,8 @@ func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
 	fallbackLogger := log.New(&fallback, "", 0)
 	startedAt := time.Date(2026, 5, 19, 14, 52, 0, 0, time.Local)
 
-	logger, cleanup, err := newRepositoryWorkerLogger(cfg, fallbackLogger, "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
+	workerDir := artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, "https://github.com/coco-papiyon/korobokcle.git", 2)
+	logger, cleanup, err := newRepositoryWorkerLogger(cfg, fallbackLogger, workerDir, startedAt)
 	if err != nil {
 		t.Fatalf("newRepositoryWorkerLogger() error = %v", err)
 	}
@@ -420,7 +532,7 @@ func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
 		t.Fatalf("expected no fallback log output, got %q", fallback.String())
 	}
 
-	logPath := artifacts.RepositoryWorkerLogPath(root, cfg.App().ArtifactsDir, "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
+	logPath := artifacts.RepositoryWorkerLogPathFromWorkerDir(workerDir, cfg.App().WorkspaceDir, startedAt)
 	if _, err := os.Stat(filepath.Dir(logPath)); err != nil {
 		t.Fatalf("expected log directory to exist: %v", err)
 	}
@@ -431,6 +543,28 @@ func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte("worker only log")) {
 		t.Fatalf("expected worker log file to contain message, got %q", string(data))
+	}
+}
+
+func TestRepositoryWorkerSourceDirUsesConfiguredWorkerDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.MonitoredRepositories = []config.MonitoredRepository{
+		{Repository: "owner/repository", Branch: "main", Workers: 2, WorkerDirs: []string{"custom/workers-0", "custom/workers-1"}},
+	}
+	cfg := config.NewService(root, files)
+
+	got0 := repositoryWorkerSourceDir(cfg, "owner/repository", 0)
+	want0 := filepath.Join(root, "custom", "workers-0", "worker-0")
+	if got0 != want0 {
+		t.Fatalf("expected worker dir %q, got %q", want0, got0)
+	}
+	got1 := repositoryWorkerSourceDir(cfg, "owner/repository", 1)
+	want1 := filepath.Join(root, "custom", "workers-1", "worker-1")
+	if got1 != want1 {
+		t.Fatalf("expected worker dir %q, got %q", want1, got1)
 	}
 }
 
@@ -579,7 +713,8 @@ func TestProcessPRJobForPRFeedbackPushesAndCommentsWithoutCreatingPR(t *testing.
 		t.Fatalf("UpsertJob() error = %v", err)
 	}
 
-	artifactDir := artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
+	workerDir := artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, job.Repository, 0)
+	artifactDir := artifacts.RepositoryWorkerArtifactDir(workerDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -592,7 +727,7 @@ func TestProcessPRJobForPRFeedbackPushesAndCommentsWithoutCreatingPR(t *testing.
 	creator := &recordingPRCreator{}
 	commenter := &recordingPRCommentSubmitter{}
 
-	if err := processPRJob(ctx, cfg, orch, pusher, creator, commenter, job, root, log.New(io.Discard, "", 0)); err != nil {
+	if err := processPRJob(ctx, cfg, orch, pusher, creator, commenter, job, workerDir, log.New(io.Discard, "", 0)); err != nil {
 		t.Fatalf("processPRJob() error = %v", err)
 	}
 

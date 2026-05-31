@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -86,7 +87,7 @@ func main() {
 	}()
 
 	ctx := context.Background()
-	for _, fixture := range buildFixtures() {
+	for _, fixture := range buildFixtures(files.App.ArtifactsDir, files.App.WorkspaceDir) {
 		if err := store.UpsertJob(ctx, fixture.job); err != nil {
 			fail(err)
 		}
@@ -95,7 +96,7 @@ func main() {
 				fail(err)
 			}
 		}
-		if err := writeArtifacts(fixtureRoot, files.App.ArtifactsDir, fixture.job.ID, fixture.artifacts); err != nil {
+		if err := writeArtifacts(fixtureRoot, files.App.ArtifactsDir, files.App.WorkspaceDir, fixture.job.Repository, fixture.job.GitHubNumber, fixture.artifacts); err != nil {
 			fail(err)
 		}
 	}
@@ -113,7 +114,7 @@ type artifactFile struct {
 	content string
 }
 
-func buildFixtures() []jobFixture {
+func buildFixtures(artifactsDir string, workspaceDir string) []jobFixture {
 	repository := "coco-papiyon/korobokcle"
 	base := time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC)
 
@@ -209,8 +210,8 @@ func buildFixtures() []jobFixture {
 			events: []domain.Event{
 				domainEvent(designJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 101, designJob.Title, domain.TargetIssue), base),
 				domainEvent(designJob.ID, "design_started", string(domain.StateDetected), string(domain.StateDesignRunning), `{"provider":"mock","model":""}`, base.Add(1*time.Minute)),
-				domainEvent(designJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), `{"artifactDir":"artifacts/jobs/fixture-design-ready/design","skill":"design"}`, base.Add(2*time.Minute)),
-				domainEvent(designJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), `{"artifactDir":"artifacts/jobs/fixture-design-ready/design","skill":"design"}`, base.Add(3*time.Minute)),
+				domainEvent(designJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), artifactPayload(artifactsDir, workspaceDir, repository, designJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(2*time.Minute)),
+				domainEvent(designJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), artifactPayload(artifactsDir, workspaceDir, repository, designJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(3*time.Minute)),
 			},
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerDesign, name: "result.md", content: "# Design\n\n- Add a dedicated fixture dataset.\n- Keep states visible on the dashboard.\n"},
@@ -222,11 +223,11 @@ func buildFixtures() []jobFixture {
 			job: implementationJob,
 			events: []domain.Event{
 				domainEvent(implementationJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 102, implementationJob.Title, domain.TargetIssue), base.Add(10*time.Minute)),
-				domainEvent(implementationJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), `{"artifactDir":"artifacts/jobs/fixture-implementation-ready/design","skill":"design"}`, base.Add(11*time.Minute)),
-				domainEvent(implementationJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), `{"artifactDir":"artifacts/jobs/fixture-implementation-ready/design","skill":"design"}`, base.Add(12*time.Minute)),
+				domainEvent(implementationJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), artifactPayload(artifactsDir, workspaceDir, repository, implementationJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(11*time.Minute)),
+				domainEvent(implementationJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), artifactPayload(artifactsDir, workspaceDir, repository, implementationJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(12*time.Minute)),
 				domainEvent(implementationJob.ID, "design_approved", string(domain.StateWaitingDesignApproval), string(domain.StateImplementationRunning), `{"comment":"looks good"}`, base.Add(13*time.Minute)),
-				domainEvent(implementationJob.ID, "implementation_ready", string(domain.StateImplementationRunning), string(domain.StateImplementationReady), `{"artifactDir":"artifacts/jobs/fixture-implementation-ready/implementation"}`, base.Add(17*time.Minute)),
-				domainEvent(implementationJob.ID, "waiting_final_approval", string(domain.StateImplementationReady), string(domain.StateWaitingFinalApproval), `{"artifactDir":"artifacts/jobs/fixture-implementation-ready/implementation"}`, base.Add(18*time.Minute)),
+				domainEvent(implementationJob.ID, "implementation_ready", string(domain.StateImplementationRunning), string(domain.StateImplementationReady), artifactPayload(artifactsDir, workspaceDir, repository, implementationJob.GitHubNumber, artifacts.WorkerImplementation, ""), base.Add(17*time.Minute)),
+				domainEvent(implementationJob.ID, "waiting_final_approval", string(domain.StateImplementationReady), string(domain.StateWaitingFinalApproval), artifactPayload(artifactsDir, workspaceDir, repository, implementationJob.GitHubNumber, artifacts.WorkerImplementation, ""), base.Add(18*time.Minute)),
 			},
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerDesign, name: "result.md", content: "# Design\n\nImplementation can proceed.\n"},
@@ -255,7 +256,7 @@ func buildFixtures() []jobFixture {
 			events: []domain.Event{
 				domainEvent(reviewedJob.ID, "pull_request_matched", "", string(domain.StateCollectingContext), pullRequestPayload(repository, 104, reviewedJob.Title), base.Add(30*time.Minute)),
 				domainEvent(reviewedJob.ID, "review_started", string(domain.StateCollectingContext), string(domain.StateReviewRunning), `{"provider":"mock","model":""}`, base.Add(31*time.Minute)),
-				domainEvent(reviewedJob.ID, "review_ready", string(domain.StateReviewRunning), string(domain.StateReviewReady), `{"artifactDir":"artifacts/jobs/fixture-review-completed/review","skill":"review"}`, base.Add(35*time.Minute)),
+				domainEvent(reviewedJob.ID, "review_ready", string(domain.StateReviewRunning), string(domain.StateReviewReady), artifactPayload(artifactsDir, workspaceDir, repository, reviewedJob.GitHubNumber, artifacts.WorkerReview, "review"), base.Add(35*time.Minute)),
 			},
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerReview, name: "result.md", content: "# Review Summary\n\n- API response shape is consistent.\n- No blocking issues found.\n"},
@@ -268,8 +269,8 @@ func buildFixtures() []jobFixture {
 			events: []domain.Event{
 				domainEvent(deletedJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 105, deletedJob.Title, domain.TargetIssue), base.Add(40*time.Minute)),
 				domainEvent(deletedJob.ID, "design_started", string(domain.StateDetected), string(domain.StateDesignRunning), `{"provider":"mock","model":""}`, base.Add(41*time.Minute)),
-				domainEvent(deletedJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), `{"artifactDir":"artifacts/jobs/fixture-deleted/design","skill":"design"}`, base.Add(42*time.Minute)),
-				domainEvent(deletedJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), `{"artifactDir":"artifacts/jobs/fixture-deleted/design","skill":"design"}`, base.Add(43*time.Minute)),
+				domainEvent(deletedJob.ID, "design_ready", string(domain.StateDesignRunning), string(domain.StateDesignReady), artifactPayload(artifactsDir, workspaceDir, repository, deletedJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(42*time.Minute)),
+				domainEvent(deletedJob.ID, "waiting_design_approval", string(domain.StateDesignReady), string(domain.StateWaitingDesignApproval), artifactPayload(artifactsDir, workspaceDir, repository, deletedJob.GitHubNumber, artifacts.WorkerDesign, "design"), base.Add(43*time.Minute)),
 			},
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerDesign, name: "result.md", content: "# Design\n\n- Demonstrate deleted job filtering.\n- Keep deleted jobs visible in the fixture dataset.\n"},
@@ -307,9 +308,10 @@ func writeConfigFiles(root string, files config.Files) error {
 	return nil
 }
 
-func writeArtifacts(root string, artifactsDir string, jobID string, files []artifactFile) error {
+func writeArtifacts(root string, artifactsDir string, workspaceDir string, repository string, issueNumber int, files []artifactFile) error {
+	workerDir := artifacts.RepositoryWorkerSourceDir(root, artifactsDir, repository, 0)
 	for _, file := range files {
-		path := filepath.Join(artifacts.WorkerDir(root, artifactsDir, jobID, file.worker), file.name)
+		path := filepath.Join(artifacts.RepositoryWorkerArtifactDir(workerDir, workspaceDir, issueNumber, file.worker), file.name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
@@ -318,6 +320,18 @@ func writeArtifacts(root string, artifactsDir string, jobID string, files []arti
 		}
 	}
 	return nil
+}
+
+func artifactPayload(artifactsDir string, workspaceDir string, repository string, issueNumber int, worker string, phase string) string {
+	workerDir := artifacts.RepositoryWorkerSourceDir("", artifactsDir, repository, 0)
+	artifactDir := artifacts.RepositoryWorkerArtifactDir(workerDir, workspaceDir, issueNumber, worker)
+	payload := map[string]any{
+		"artifactDir": artifactDir,
+	}
+	if strings.TrimSpace(phase) != "" {
+		payload["skill"] = phase
+	}
+	return marshalJSON(payload)
 }
 
 func writeReadme(root string) error {

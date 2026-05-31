@@ -37,7 +37,15 @@ func startRepositoryWorkers(ctx context.Context, cfg *config.Service, orch *orch
 }
 
 func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger, repository config.MonitoredRepository, workerIndex int) {
-	workerLogger, cleanup, err := newRepositoryWorkerLogger(cfg, logger, repository.Repository, workerIndex, time.Now())
+	repoDir, err := cloneRepositoryWorkspace(ctx, cfg, repository.Repository, workerIndex)
+	if err != nil {
+		if logger != nil {
+			logger.Printf("repository clone failed repository=%s worker=%d error=%v", repository.Repository, workerIndex, err)
+		}
+		return
+	}
+
+	workerLogger, cleanup, err := newRepositoryWorkerLogger(cfg, logger, repoDir, time.Now())
 	if err != nil {
 		if logger != nil {
 			logger.Printf("repository worker logger init failed repository=%s worker=%d error=%v", repository.Repository, workerIndex, err)
@@ -47,13 +55,7 @@ func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchest
 	defer cleanup()
 
 	workerLogger.Printf("worker started repository=%s worker=%d", repository.Repository, workerIndex)
-
-	repoDir, err := cloneRepositoryWorkspace(ctx, cfg, repository.Repository, workerIndex)
-	if err != nil {
-		workerLogger.Printf("repository clone failed repository=%s worker=%d error=%v", repository.Repository, workerIndex, err)
-		return
-	}
-	workerLogger.Printf("repository clone completed repository=%s worker=%d source_dir=%s", repository.Repository, workerIndex, repoDir)
+	workerLogger.Printf("repository clone completed repository=%s worker=%d worker_dir=%s", repository.Repository, workerIndex, repoDir)
 
 	runner := skill.NewRunner(repoDir, cfg.Root(), "", cfg.App().CopilotAllowTools).WithLogger(workerLogger)
 	testRunner := executor.NewTestRunner()
@@ -236,7 +238,7 @@ func processDesignJob(ctx context.Context, cfg *config.Service, orch *orchestrat
 		return err
 	}
 
-	contextData, err := buildDesignContext(cfg, jobDetail, events)
+	contextData, err := buildRepositoryDesignContext(cfg, repoDir, jobDetail, events)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
 	}
@@ -277,12 +279,12 @@ func processImplementationJob(ctx context.Context, cfg *config.Service, orch *or
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 	}
 
-	runSpec, err := resolveImplementationRunSpec(cfg, jobDetail, events)
+	runSpec, err := resolveRepositoryImplementationRunSpec(cfg, repoDir, jobDetail, events)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 	}
 
-	contextData, err := buildImplementationContext(cfg, jobDetail, events, runSpec)
+	contextData, err := buildRepositoryImplementationContext(cfg, repoDir, jobDetail, events, runSpec)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 	}
@@ -369,7 +371,7 @@ func processReviewJob(ctx context.Context, cfg *config.Service, orch *orchestrat
 		return err
 	}
 
-	contextData, err := buildReviewContext(cfg, jobDetail, events)
+	contextData, err := buildRepositoryReviewContext(cfg, repoDir, jobDetail, events)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
 	}
@@ -402,9 +404,9 @@ func processPRJob(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 	if logger != nil {
 		logger.Printf("pr job preparing request job_id=%s repo_dir=%s", job.ID, repoDir)
 	}
-	buildReq := buildPRCreateRequest
+	buildReq := buildRepositoryPRCreateRequest
 	if job.Type == domain.JobTypePRFeedback {
-		buildReq = buildPRFeedbackPushRequest
+		buildReq = buildRepositoryPRFeedbackPushRequest
 	}
 	req, err := buildReq(ctx, cfg, job, repoDir)
 	if err != nil {
@@ -474,19 +476,49 @@ func processPRJob(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 }
 
 func cloneRepositoryWorkspace(ctx context.Context, cfg *config.Service, repository string, workerIndex int) (string, error) {
-	workerDir := artifacts.RepositoryWorkerSourceDir(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex)
-	if err := os.RemoveAll(workerDir); err != nil {
+	workerDir := repositoryWorkerSourceDir(cfg, repository, workerIndex)
+	if err := os.MkdirAll(workerDir, 0o755); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(filepath.Dir(workerDir), 0o755); err != nil {
+	source := repositoryCloneSource(repository)
+	if _, err := os.Stat(filepath.Join(workerDir, ".git")); err == nil {
+		if err := ensureRepositoryWorkspaceMetadata(workerDir, cfg.App().WorkspaceDir); err != nil {
+			return "", err
+		}
+		if err := ensureRepositoryWorkerRemote(ctx, workerDir, source); err != nil {
+			return "", err
+		}
+		if err := fetchRepositoryWorkerSource(ctx, workerDir); err != nil {
+			return "", err
+		}
+		if err := setRepositoryWorkerRemoteHead(ctx, workerDir); err != nil {
+			return "", err
+		}
+		if err := checkoutRepositoryWorkerBranch(ctx, workerDir); err != nil {
+			return "", err
+		}
+		return workerDir, nil
+	} else if err != nil && !os.IsNotExist(err) {
 		return "", err
 	}
 
-	source := repositoryCloneSource(repository)
-	cmd := exec.CommandContext(ctx, "git", "clone", "--quiet", source, workerDir)
-	raw, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git clone failed: %w: %s", err, strings.TrimSpace(string(raw)))
+	if err := initializeRepositoryWorkerGitDir(ctx, workerDir); err != nil {
+		return "", err
+	}
+	if err := ensureRepositoryWorkerRemote(ctx, workerDir, source); err != nil {
+		return "", err
+	}
+	if err := fetchRepositoryWorkerSource(ctx, workerDir); err != nil {
+		return "", err
+	}
+	if err := setRepositoryWorkerRemoteHead(ctx, workerDir); err != nil {
+		return "", err
+	}
+	if err := ensureRepositoryWorkspaceMetadata(workerDir, cfg.App().WorkspaceDir); err != nil {
+		return "", err
+	}
+	if err := checkoutRepositoryWorkerBranch(ctx, workerDir); err != nil {
+		return "", err
 	}
 	return workerDir, nil
 }
@@ -502,10 +534,9 @@ func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domai
 		}
 		commands := [][]string{
 			{"git", "fetch", "--prune", "origin"},
-			{"git", "checkout", branchName},
+			{"git", "checkout", "-f", "-B", branchName, "origin/" + branchName},
 			{"git", "reset", "--hard", "origin/" + branchName},
 			{"git", "clean", "-fd"},
-			{"git", "pull", "--ff-only", "origin", branchName},
 		}
 		for _, command := range commands {
 			if _, err := runGitCommand(ctx, repoDir, command...); err != nil {
@@ -527,10 +558,9 @@ func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domai
 
 	commands := [][]string{
 		{"git", "fetch", "--prune", "origin"},
-		{"git", "checkout", baseBranch},
+		{"git", "checkout", "-f", "-B", baseBranch, "origin/" + baseBranch},
 		{"git", "reset", "--hard", "origin/" + baseBranch},
 		{"git", "clean", "-fd"},
-		{"git", "pull", "--ff-only", "origin", baseBranch},
 	}
 	for _, command := range commands {
 		if _, err := runGitCommand(ctx, repoDir, command...); err != nil {
@@ -586,9 +616,9 @@ func runGitCommand(ctx context.Context, repoDir string, args ...string) (string,
 	return output, nil
 }
 
-func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, repository string, workerIndex int, startedAt time.Time) (*log.Logger, func(), error) {
+func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, workerDir string, startedAt time.Time) (*log.Logger, func(), error) {
 	_ = fallback
-	logPath := artifacts.RepositoryWorkerLogPath(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex, startedAt)
+	logPath := artifacts.RepositoryWorkerLogPathFromWorkerDir(workerDir, cfg.App().WorkspaceDir, startedAt)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return nil, func() {}, err
 	}
@@ -598,6 +628,147 @@ func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, reposi
 	}
 	logger := log.New(file, "", log.LstdFlags)
 	return logger, func() { _ = file.Close() }, nil
+}
+
+func repositoryWorkerSourceDir(cfg *config.Service, repository string, workerIndex int) string {
+	for _, monitored := range cfg.App().MonitoredRepositories {
+		if !repositoryMatches(repository, monitored.Repository) {
+			continue
+		}
+		if workerDir := repositoryWorkerDirectoryForIndex(cfg.Root(), monitored, workerIndex); workerDir != "" {
+			return filepath.Join(workerDir, fmt.Sprintf("worker-%d", workerIndex))
+		}
+	}
+	return artifacts.RepositoryWorkerSourceDir(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex)
+}
+
+func repositoryWorkerDirectoryForIndex(root string, monitored config.MonitoredRepository, workerIndex int) string {
+	if workerIndex >= 0 && workerIndex < len(monitored.WorkerDirs) {
+		if trimmed := strings.TrimSpace(monitored.WorkerDirs[workerIndex]); trimmed != "" {
+			if filepath.IsAbs(trimmed) {
+				return filepath.Clean(trimmed)
+			}
+			return filepath.Join(root, trimmed)
+		}
+	}
+	trimmed := strings.TrimSpace(monitored.WorkerDir)
+	if trimmed != "" {
+		if filepath.IsAbs(trimmed) {
+			return filepath.Clean(trimmed)
+		}
+		return filepath.Join(root, trimmed)
+	}
+	return ""
+}
+
+func ensureRepositoryWorkspaceMetadata(workerDir string, workspaceDir string) error {
+	workspacePath := artifacts.RepositoryWorkerWorkspaceDir(workerDir, workspaceDir)
+	if err := os.MkdirAll(workspacePath, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(workspacePath, "logs"), 0o755); err != nil {
+		return err
+	}
+	return ensureGitExcludeEntry(workerDir, workspaceDir)
+}
+
+func initializeRepositoryWorkerGitDir(ctx context.Context, workerDir string) error {
+	if _, err := runGitCommand(ctx, workerDir, "git", "init"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureRepositoryWorkerRemote(ctx context.Context, workerDir string, source string) error {
+	if strings.TrimSpace(source) == "" {
+		return fmt.Errorf("repository source is empty")
+	}
+
+	if _, err := runGitCommand(ctx, workerDir, "git", "remote", "get-url", "origin"); err == nil {
+		if _, err := runGitCommand(ctx, workerDir, "git", "remote", "set-url", "origin", source); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	if _, err := runGitCommand(ctx, workerDir, "git", "remote", "add", "origin", source); err != nil {
+		return err
+	}
+	return nil
+}
+
+func fetchRepositoryWorkerSource(ctx context.Context, workerDir string) error {
+	if _, err := runGitCommand(ctx, workerDir, "git", "fetch", "--prune", "--tags", "origin"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func setRepositoryWorkerRemoteHead(ctx context.Context, workerDir string) error {
+	_, _ = runGitCommand(ctx, workerDir, "git", "remote", "set-head", "origin", "-a")
+	return nil
+}
+
+func checkoutRepositoryWorkerBranch(ctx context.Context, workerDir string) error {
+	branch, err := resolveRepositoryBaseBranch(ctx, workerDir, "")
+	if err != nil {
+		return err
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return nil
+	}
+
+	commands := [][]string{
+		{"git", "checkout", "-f", "-B", branch, "origin/" + branch},
+		{"git", "reset", "--hard", "origin/" + branch},
+		{"git", "clean", "-fd"},
+	}
+	for _, command := range commands {
+		if _, err := runGitCommand(ctx, workerDir, command...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureGitExcludeEntry(workerDir string, workspaceDir string) error {
+	trimmed := strings.TrimSpace(workspaceDir)
+	if trimmed == "" {
+		trimmed = ".workspace"
+	}
+	if filepath.IsAbs(trimmed) {
+		return nil
+	}
+
+	excludePath := filepath.Join(workerDir, ".git", "info", "exclude")
+	if err := os.MkdirAll(filepath.Dir(excludePath), 0o755); err != nil {
+		return err
+	}
+
+	entry := strings.TrimSpace(filepath.ToSlash(trimmed))
+	if !strings.HasSuffix(entry, "/") {
+		entry += "/"
+	}
+
+	raw, err := os.ReadFile(excludePath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if strings.Contains(string(raw), entry) {
+		return nil
+	}
+
+	f, err := os.OpenFile(excludePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(entry + "\n"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func repositoryCloneSource(repository string) string {

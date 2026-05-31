@@ -347,6 +347,74 @@ func buildPRFeedbackPushRequest(_ context.Context, cfg *config.Service, job doma
 	}, nil
 }
 
+func buildRepositoryPRCreateRequest(ctx context.Context, cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
+	artifactDir := repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerPR)
+	summaryRaw, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerImplementation, "result.md", "implement.md", "summary.md")
+	if err != nil {
+		return PRCreateRequest{}, err
+	}
+
+	fixSummaryRaw, err := readRepositoryOptionalFixSummary(cfg, workDir, job.GitHubNumber, job.ID)
+	if err != nil {
+		return PRCreateRequest{}, err
+	}
+
+	title := naming.RenderPRTitle(cfg.App().PRTitleTemplate, job)
+	body := buildPRBody(job, string(summaryRaw), fixSummaryRaw)
+	baseBranch, err := resolveRepositoryBaseBranch(ctx, workDir, resolveMonitoredRepositoryBranch(cfg, job.Repository))
+	if err != nil {
+		return PRCreateRequest{}, err
+	}
+
+	return PRCreateRequest{
+		Repository:  job.Repository,
+		BranchName:  job.BranchName,
+		BaseBranch:  baseBranch,
+		Title:       title,
+		Body:        body,
+		ArtifactDir: artifactDir,
+		WorkDir:     workDir,
+	}, nil
+}
+
+func buildRepositoryPRFeedbackPushRequest(_ context.Context, cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
+	artifactDir := repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerPR)
+	summaryRaw, err := readRepositoryPRFeedbackSummaryArtifact(cfg, workDir, job.GitHubNumber, job.ID)
+	if err != nil {
+		return PRCreateRequest{}, err
+	}
+
+	return PRCreateRequest{
+		Repository:  job.Repository,
+		BranchName:  job.BranchName,
+		BaseBranch:  job.BranchName,
+		Title:       fmt.Sprintf("Address review feedback for PR #%d", job.GitHubNumber),
+		Body:        strings.TrimSpace(string(summaryRaw)),
+		ArtifactDir: artifactDir,
+		WorkDir:     workDir,
+		ReuseBranch: true,
+	}, nil
+}
+
+func readRepositoryOptionalFixSummary(cfg *config.Service, workerDir string, issueNumber int, jobID string) (string, error) {
+	raw, err := readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, issueNumber, jobID, artifacts.WorkerFix, "result.md", "fix-summary.md")
+	if err == nil {
+		return string(raw), nil
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	return "", err
+}
+
+func readRepositoryPRFeedbackSummaryArtifact(cfg *config.Service, workerDir string, issueNumber int, jobID string) ([]byte, error) {
+	summaryRaw, err := readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, issueNumber, jobID, artifacts.WorkerImplementation, "review_fix.md", "result.md", "implement.md", "summary.md")
+	if err == nil {
+		return summaryRaw, nil
+	}
+	return readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, issueNumber, jobID, artifacts.WorkerFix, "review_fix.md", "result.md", "fix-summary.md")
+}
+
 func readOptionalFixSummary(cfg *config.Service, jobID string) (string, error) {
 	dir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, jobID, artifacts.WorkerFix)
 	raw, err := readFirstArtifactFile(dir, "result.md", "fix-summary.md")

@@ -17,7 +17,7 @@ func DefaultFiles() Files {
 			ScreenRefreshInterval: DefaultScreenRefreshInterval,
 			DataDir:               "data",
 			ArtifactsDir:          "artifacts",
-			WorkspaceDir:          ".",
+			WorkspaceDir:          ".workspace",
 			MonitoredRepositories: []MonitoredRepository{{Repository: "owner/repository", Branch: "", Workers: 1}},
 			Provider:              "mock",
 			Model:                 "",

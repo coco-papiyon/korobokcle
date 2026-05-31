@@ -140,6 +140,8 @@ export type MonitoredRepository = {
   repository: string
   branch: string
   workers: number
+  workerDir?: string
+  workerDirs: string[]
 }
 
 export type ProviderSpec = {

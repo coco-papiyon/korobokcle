@@ -14,5 +14,5 @@
 再生成:
 
 ```powershell
-go run ./scripts/create-testdata
+go run ./tests/scripts/create-testdata
 ```

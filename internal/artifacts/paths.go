@@ -33,21 +33,50 @@ func WorkersDir(root string, artifactsDir string) string {
 
 func RepositoryWorkerDir(root string, artifactsDir string, repository string, workerIndex int) string {
 	sanitized := repositoryWorkerComponent(repository)
-	return filepath.Join(WorkersDir(root, artifactsDir), sanitized, workerName(workerIndex))
+	return filepath.Join(resolveAgainstRoot(root, artifactsDir), sanitized, workerName(workerIndex))
 }
 
 func RepositoryWorkerSourceDir(root string, artifactsDir string, repository string, workerIndex int) string {
-	return filepath.Join(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), "source")
+	return RepositoryWorkerDir(root, artifactsDir, repository, workerIndex)
 }
 
-func RepositoryWorkerLogsDir(root string, artifactsDir string, repository string, workerIndex int) string {
-	return filepath.Join(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), "logs")
+func RepositoryWorkerWorkspaceDir(workerDir string, workspaceDir string) string {
+	trimmed := strings.TrimSpace(workspaceDir)
+	if trimmed == "" {
+		trimmed = ".workspace"
+	}
+	if filepath.IsAbs(trimmed) {
+		return filepath.Clean(trimmed)
+	}
+	return filepath.Join(workerDir, trimmed)
 }
 
-func RepositoryWorkerLogPath(root string, artifactsDir string, repository string, workerIndex int, startedAt time.Time) string {
+func RepositoryWorkerIssueDir(workerDir string, workspaceDir string, issueNumber int) string {
+	return filepath.Join(RepositoryWorkerWorkspaceDir(workerDir, workspaceDir), fmt.Sprintf("issue_%d", issueNumber))
+}
+
+func RepositoryWorkerArtifactDir(workerDir string, workspaceDir string, issueNumber int, phase string) string {
+	return filepath.Join(RepositoryWorkerIssueDir(workerDir, workspaceDir, issueNumber), phase)
+}
+
+func RepositoryWorkerLogsDir(root string, artifactsDir string, workspaceDir string, repository string, workerIndex int) string {
+	return filepath.Join(RepositoryWorkerWorkspaceDir(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), workspaceDir), "logs")
+}
+
+func RepositoryWorkerLogPath(root string, artifactsDir string, workspaceDir string, repository string, workerIndex int, startedAt time.Time) string {
 	dateDir := startedAt.Format("2006-01-02")
 	fileName := startedAt.Format("2006-01-02_15-04-05") + ".log"
-	return filepath.Join(RepositoryWorkerLogsDir(root, artifactsDir, repository, workerIndex), dateDir, fileName)
+	return filepath.Join(RepositoryWorkerLogsDir(root, artifactsDir, workspaceDir, repository, workerIndex), dateDir, fileName)
+}
+
+func RepositoryWorkerLogsDirFromWorkerDir(workerDir string, workspaceDir string) string {
+	return filepath.Join(RepositoryWorkerWorkspaceDir(workerDir, workspaceDir), "logs")
+}
+
+func RepositoryWorkerLogPathFromWorkerDir(workerDir string, workspaceDir string, startedAt time.Time) string {
+	dateDir := startedAt.Format("2006-01-02")
+	fileName := startedAt.Format("2006-01-02_15-04-05") + ".log"
+	return filepath.Join(RepositoryWorkerLogsDirFromWorkerDir(workerDir, workspaceDir), dateDir, fileName)
 }
 
 func resolveAgainstRoot(root string, target string) string {

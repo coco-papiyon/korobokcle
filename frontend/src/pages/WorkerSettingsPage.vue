@@ -19,17 +19,34 @@ watch(
       repository: entry.repository ?? '',
       branch: entry.branch ?? '',
       workers: Math.max(1, Number(entry.workers) || 1),
+      workerDirs: normalizeWorkerDirs(entry.workerDirs ?? [], entry.workerDir ?? '', Math.max(1, Number(entry.workers) || 1)),
     }))
   },
   { immediate: true },
 )
 
 function addMonitoredRepository() {
-  monitoredRepositories.value = [...monitoredRepositories.value, { repository: '', branch: '', workers: 1 }]
+  monitoredRepositories.value = [...monitoredRepositories.value, { repository: '', branch: '', workers: 1, workerDirs: [''] }]
 }
 
 function removeMonitoredRepository(index: number) {
   monitoredRepositories.value = monitoredRepositories.value.filter((_, currentIndex) => currentIndex !== index)
+}
+
+function normalizeWorkerDirs(workerDirs: string[], legacyWorkerDir: string, count: number) {
+  const safeCount = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
+  const normalized = Array.from({ length: safeCount }, (_, index) => (workerDirs[index] ?? '').trim())
+  const fallback = legacyWorkerDir.trim()
+  if (!normalized.some((value) => value.length > 0) && fallback.length > 0) {
+    return normalized.map(() => fallback)
+  }
+  return normalized
+}
+
+function resizeWorkerDirs(entry: MonitoredRepository) {
+  const nextCount = Number.isFinite(Number(entry.workers)) && Number(entry.workers) >= 1 ? Math.floor(Number(entry.workers)) : 1
+  entry.workers = nextCount
+  entry.workerDirs = normalizeWorkerDirs(entry.workerDirs ?? [], entry.workerDir ?? '', nextCount)
 }
 
 function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
@@ -38,12 +55,15 @@ function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
       repository: entry.repository.trim(),
       branch: entry.branch.trim(),
       workers: Math.floor(Number(entry.workers)),
+      workerDirs: entry.workerDirs ?? [],
+      workerDir: entry.workerDir ?? '',
     }))
     .filter((entry) => entry.repository.length > 0)
     .map((entry) => ({
       repository: entry.repository,
       branch: entry.branch,
       workers: Number.isInteger(entry.workers) && entry.workers >= 1 ? entry.workers : 1,
+      workerDirs: normalizeWorkerDirs(entry.workerDirs, entry.workerDir, Number.isInteger(entry.workers) && entry.workers >= 1 ? entry.workers : 1),
     }))
     .filter((entry, index, items) => items.findIndex((candidate) => candidate.repository === entry.repository) === index)
 }
@@ -59,6 +79,7 @@ async function persistConfig() {
       repository: entry.repository ?? '',
       branch: entry.branch ?? '',
       workers: Math.max(1, Number(entry.workers) || 1),
+      workerDirs: normalizeWorkerDirs(entry.workerDirs ?? [], entry.workerDir ?? '', Math.max(1, Number(entry.workers) || 1)),
     }))
     saveState.value = 'saved'
     await reload()
@@ -103,12 +124,21 @@ async function persistConfig() {
               </label>
               <label class="field">
                 <span class="field__label">ワーカー数</span>
-                <input v-model.number="entry.workers" class="field__control" type="number" min="1" step="1" />
+                <input v-model.number="entry.workers" class="field__control" type="number" min="1" step="1" @change="resizeWorkerDirs(entry)" />
               </label>
+              <div class="field field-full">
+                <span class="field__label">ワーカー領域</span>
+                <div class="stack-xs">
+                  <label v-for="(workerDir, workerIndex) in entry.workerDirs" :key="`${index}-${workerIndex}`" class="field field-full">
+                    <span class="field__label">worker-{{ workerIndex }}</span>
+                    <input v-model="entry.workerDirs[workerIndex]" class="field__control" type="text" :placeholder="`artifacts/custom/repository-${workerIndex}`" />
+                  </label>
+                </div>
+              </div>
               <button class="button button-secondary" type="button" @click="removeMonitoredRepository(index)">削除</button>
             </div>
           </div>
-          <p class="text-muted">ワーカー数は 1 以上の整数です。ブランチを空にするとリモートの既定ブランチを使います。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
+          <p class="text-muted">ワーカー数は 1 以上の整数です。ワーカー領域はワーカーごとに指定できます。各入力欄で指定したディレクトリの下に <code>worker-&#60;id&#62;</code> を付けて配置します。ブランチを空にするとリモートの既定ブランチを使います。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
         </div>
 
         <div v-if="saveState === 'saved'" class="notice notice-success">ワーカー設定を更新しました。</div>

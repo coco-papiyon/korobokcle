@@ -151,6 +151,8 @@ func cloneMonitoredRepositories(values []MonitoredRepository) []MonitoredReposit
 			Repository: repository.Repository,
 			Branch:     repository.Branch,
 			Workers:    repository.Workers,
+			WorkerDir:  repository.WorkerDir,
+			WorkerDirs: append([]string(nil), repository.WorkerDirs...),
 		})
 	}
 	return cloned
