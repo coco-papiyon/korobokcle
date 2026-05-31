@@ -14,10 +14,11 @@ import (
 
 var skillSetNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
-var managedSkillNames = []string{"design", "implement", "fix", "review", "review_fix"}
+var managedSkillNames = []string{"design", "implement", "implement_fix", "review", "review_fix"}
 
 type SkillFile struct {
 	Definition     Definition `json:"definition"`
+	InputTemplate  string     `json:"inputTemplate"`
 	PromptTemplate string     `json:"promptTemplate"`
 }
 
@@ -165,17 +166,28 @@ func DeleteSkillSet(root string, name string) error {
 
 func loadSkillFile(root string, setName string, skillName string) (SkillFile, error) {
 	definition, skillDir, err := loadDefinitionFromSkillSet(root, setName, skillName)
+	if err != nil && skillName == "implement_fix" {
+		definition, skillDir, err = loadDefinitionFromSkillSet(root, setName, "fix")
+	}
 	if err != nil {
 		return SkillFile{}, err
 	}
 
+	inputTemplatePath := filepath.Join(skillDir, "input.md.tmpl")
+	inputTemplate, err := os.ReadFile(inputTemplatePath)
+	inputTemplateExists := err == nil
+	if err != nil && !os.IsNotExist(err) {
+		return SkillFile{}, err
+	}
 	rawPrompt, err := os.ReadFile(filepath.Join(skillDir, "prompt.md.tmpl"))
 	if err != nil {
 		return SkillFile{}, err
 	}
 	definition.PromptFile = ""
+	definition.PromptTemplates = normalizePromptTemplates(definition.PromptTemplates, inputTemplateExists)
 	return SkillFile{
 		Definition:     definition,
+		InputTemplate:  string(inputTemplate),
 		PromptTemplate: string(rawPrompt),
 	}, nil
 }
@@ -184,6 +196,7 @@ func writeSkillFile(root string, setName string, skillName string, file SkillFil
 	definition := file.Definition
 	definition.Name = skillName
 	definition.PromptFile = ""
+	definition.PromptTemplates = normalizePromptTemplates(definition.PromptTemplates, strings.TrimSpace(file.InputTemplate) != "")
 
 	skillDir := filepath.Join(root, "skills", setName, skillName)
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -197,10 +210,64 @@ func writeSkillFile(root string, setName string, skillName string, file SkillFil
 	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), rawDefinition, 0o644); err != nil {
 		return err
 	}
+	if containsString(definition.PromptTemplates, "input.md.tmpl") {
+		if err := os.WriteFile(filepath.Join(skillDir, "input.md.tmpl"), []byte(file.InputTemplate), 0o644); err != nil {
+			return err
+		}
+	} else if err := os.Remove(filepath.Join(skillDir, "input.md.tmpl")); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte(file.PromptTemplate), 0o644); err != nil {
 		return err
 	}
+	if skillName == "implement_fix" {
+		if err := os.RemoveAll(filepath.Join(root, "skills", setName, "fix")); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func normalizePromptTemplates(values []string, hasInputTemplate bool) []string {
+	if len(values) == 0 {
+		if hasInputTemplate {
+			return []string{"input.md.tmpl", "prompt.md.tmpl"}
+		}
+		return []string{"prompt.md.tmpl"}
+	}
+
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	hasInput := false
+	for _, value := range values {
+		name := strings.TrimSpace(value)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		if name == "input.md.tmpl" {
+			hasInput = true
+			continue
+		}
+		out = append(out, name)
+	}
+	if hasInputTemplate || hasInput {
+		out = append([]string{"input.md.tmpl"}, out...)
+	}
+	out = append(out, "prompt.md.tmpl")
+	return out
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func validateMutableSkillSetName(name string) error {

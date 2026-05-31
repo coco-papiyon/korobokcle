@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
 
 	"gopkg.in/yaml.v3"
@@ -37,23 +38,75 @@ func loadDefinitionFromSkillSet(root string, setName string, skillName string) (
 }
 
 func loadDefinitionFromSkillName(root string, skillName string) (Definition, string, error) {
+	if skillName == "fix" {
+		skillName = "implement_fix"
+	}
 	for _, candidate := range managedSkillNames {
 		if candidate == skillName {
-			return loadDefinitionFromSkillSet(root, "default", skillName)
+			definition, skillDir, err := loadDefinitionFromSkillSet(root, "default", skillName)
+			if err == nil {
+				return definition, skillDir, nil
+			}
+			if skillName == "implement_fix" {
+				return loadDefinitionFromSkillSet(root, "default", "fix")
+			}
+			return Definition{}, "", err
 		}
 	}
 	return loadDefinitionFromSkillSet(root, filepath.Dir(skillName), filepath.Base(skillName))
 }
 
 func RenderPrompt(path string, data any) (string, error) {
-	tmpl, err := template.ParseFiles(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
+	return RenderPromptText(string(raw), data)
+}
 
+func RenderPromptText(raw string, data any) (string, error) {
+	tmpl, err := template.New("prompt").Option("missingkey=zero").Parse(raw)
+	if err != nil {
+		return "", err
+	}
 	var out bytes.Buffer
 	if err := tmpl.Execute(&out, data); err != nil {
 		return "", err
 	}
-	return out.String(), nil
+	return strings.TrimRight(out.String(), "\n"), nil
+}
+
+func RenderSkillPrompt(root string, skillName string, data any) (string, error) {
+	definition, skillDir, err := loadDefinitionFromSkillName(root, skillName)
+	if err != nil {
+		return "", err
+	}
+
+	parts := make([]string, 0, 4)
+	if title := strings.TrimSpace(definition.Title); title != "" {
+		parts = append(parts, "# "+title)
+	}
+	if role := strings.TrimSpace(definition.Role); role != "" {
+		parts = append(parts, role)
+	}
+
+	templateNames := definition.PromptTemplates
+	if len(templateNames) == 0 {
+		templateNames = []string{"prompt.md.tmpl"}
+	}
+	for _, templateName := range templateNames {
+		raw, err := os.ReadFile(filepath.Join(skillDir, templateName))
+		if err != nil {
+			return "", err
+		}
+		rendered, err := RenderPromptText(string(raw), data)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(rendered) != "" {
+			parts = append(parts, rendered)
+		}
+	}
+
+	return strings.Join(parts, "\n\n"), nil
 }

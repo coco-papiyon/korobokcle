@@ -221,9 +221,9 @@ const groupedLogs = computed(() => {
       items: logs.filter((log) => log.phase === 'implementation'),
     },
     {
-      phase: 'fix',
-      title: 'Fix Logs',
-      items: logs.filter((log) => log.phase === 'fix'),
+      phase: 'implement_fix',
+      title: 'Implement Fix Logs',
+      items: logs.filter((log) => log.phase === 'implement_fix'),
     },
     {
       phase: 'review',

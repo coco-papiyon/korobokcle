@@ -148,10 +148,9 @@ func TestImplementationPromptIncludesExistingImplementationAndPreviousTestReport
 		ArtifactDir:            t.TempDir(),
 	}
 
-	promptPath := filepath.Join("..", "..", "skills", "default", "implement", "prompt.md.tmpl")
-	prompt, err := skill.RenderPrompt(promptPath, ctx)
+	prompt, err := skill.RenderSkillPrompt(filepath.Join("..", ".."), "implement", ctx)
 	if err != nil {
-		t.Fatalf("RenderPrompt() error = %v", err)
+		t.Fatalf("RenderSkillPrompt() error = %v", err)
 	}
 	for _, expected := range []string{"## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
 		if !strings.Contains(prompt, expected) {
@@ -160,7 +159,7 @@ func TestImplementationPromptIncludesExistingImplementationAndPreviousTestReport
 	}
 }
 
-func TestFixPromptIncludesExistingImplementation(t *testing.T) {
+func TestImplementFixPromptIncludesExistingImplementation(t *testing.T) {
 	t.Parallel()
 
 	ctx := skill.ImplementationContext{
@@ -180,10 +179,9 @@ func TestFixPromptIncludesExistingImplementation(t *testing.T) {
 		ArtifactDir:            t.TempDir(),
 	}
 
-	promptPath := filepath.Join("..", "..", "skills", "default", "fix", "prompt.md.tmpl")
-	prompt, err := skill.RenderPrompt(promptPath, ctx)
+	prompt, err := skill.RenderSkillPrompt(filepath.Join("..", ".."), "implement_fix", ctx)
 	if err != nil {
-		t.Fatalf("RenderPrompt() error = %v", err)
+		t.Fatalf("RenderSkillPrompt() error = %v", err)
 	}
 	for _, expected := range []string{"## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
 		if !strings.Contains(prompt, expected) {
@@ -219,8 +217,8 @@ func TestResolveImplementationRunSpecUsesFixSkillAfterTestFailureRerun(t *testin
 	if err != nil {
 		t.Fatalf("resolveImplementationRunSpec() error = %v", err)
 	}
-	if got.SkillName != fixSkillName {
-		t.Fatalf("expected skill %q, got %q", fixSkillName, got.SkillName)
+	if got.SkillName != implementFixSkillName {
+		t.Fatalf("expected skill %q, got %q", implementFixSkillName, got.SkillName)
 	}
 	wantDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerFix)
 	if got.ArtifactDir != wantDir {
@@ -355,7 +353,7 @@ func TestResolveImplementationSkillNameFromSkillSet(t *testing.T) {
 	}
 }
 
-func TestResolveImplementationSkillNameFixFromSkillSet(t *testing.T) {
+func TestResolveImplementationSkillNameImplementFixFromSkillSet(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.NewService(t.TempDir(), config.Files{
@@ -370,8 +368,8 @@ func TestResolveImplementationSkillNameFixFromSkillSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveImplementationSkillName() error = %v", err)
 	}
-	if got != "team-a/fix" {
-		t.Fatalf("expected team-a/fix, got %q", got)
+	if got != "team-a/implement_fix" {
+		t.Fatalf("expected team-a/implement_fix, got %q", got)
 	}
 }
 

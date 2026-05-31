@@ -1,0 +1,30 @@
+Repository: {{ .Repository }}
+Pull Request: #{{ .PullNumber }}
+Title: {{ .Title }}
+Author: {{ .Author }}
+Branch: {{ .BranchName }}
+Watch Rule: {{ .WatchRuleID }}
+Source URL: {{ .SourceURL }}
+
+## Labels
+{{- if .Labels }}
+{{- range .Labels }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Assignees
+{{- if .Assignees }}
+{{- range .Assignees }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## PR Body
+```
+{{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
+```

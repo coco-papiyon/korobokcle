@@ -1,2 +1,6 @@
 name: review
-provider: mock
+title: Pull Request Review Request
+role: あなたは熟練のソフトウェアエンジニアです。以下の Pull Request の内容をレビューしてください。
+promptTemplates:
+  - input.md.tmpl
+  - prompt.md.tmpl

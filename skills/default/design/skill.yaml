@@ -1,2 +1,6 @@
 name: design
-provider: mock
+title: Issue Design Request
+role: あなたは熟練のソフトウェアエンジニアです。以下の GitHub Issue の内容を読み取り、実装方針を検討してください。
+promptTemplates:
+  - input.md.tmpl
+  - prompt.md.tmpl

@@ -1,53 +1,3 @@
-# Issue Design Request
-
-あなたは熟練のソフトウェアエンジニアです。
-以下の GitHub Issue の内容を読み取り、実装方針を検討してください。
-
-Repository: {{ .Repository }}
-Issue: #{{ .IssueNumber }}
-Title: {{ .Title }}
-Author: {{ .Author }}
-Branch: {{ .BranchName }}
-Watch Rule: {{ .WatchRuleID }}
-
-## Labels
-{{- if .Labels }}
-{{- range .Labels }}
-- {{ . }}
-{{- end }}
-{{- else }}
-- none
-{{- end }}
-
-## Assignees
-{{- if .Assignees }}
-{{- range .Assignees }}
-- {{ . }}
-{{- end }}
-{{- else }}
-- none
-{{- end }}
-
-## Issue Body
-```
-{{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
-```
-
-{{- if .ExistingDesign }}
-## Existing Design
-```
-{{ .ExistingDesign }}
-```
-この再実行では、Issue Body と Existing Design と Rerun Comment を踏まえて、既存の設計をコメントに合わせて修正してください。
-
-{{- end }}
-{{- if .RerunComment }}
-## Rerun Comment
-```
-{{ .RerunComment }}
-```
-{{- end }}
-
 ## 出力内容  
 
 以下の観点で、実装方針を Markdown で整理してください。
@@ -117,4 +67,4 @@ Watch Rule: {{ .WatchRuleID }}
 例:
 
 feature/issue_123
-fix/issue_456
+implement_fix/issue_456
