@@ -90,6 +90,11 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 			CreatedAt: time.Now(),
 		},
 		{
+			EventType: "design_approved",
+			Payload:   `{"comment":"keep the implementation small and avoid new dependencies"}`,
+			CreatedAt: time.Now(),
+		},
+		{
 			EventType: "test_failed",
 			Payload:   string(testFailedPayload),
 			CreatedAt: time.Now(),
@@ -116,6 +121,9 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	if got.RerunComment != "git apply failed: exit status 128: error: corrupt patch at line 381" {
 		t.Fatalf("expected rerun comment to be captured, got %q", got.RerunComment)
 	}
+	if got.DesignApprovalComment != "keep the implementation small and avoid new dependencies" {
+		t.Fatalf("expected design approval comment to be captured, got %q", got.DesignApprovalComment)
+	}
 	if got.PreviousTestReport == "" {
 		t.Fatalf("expected previous test report to be captured")
 	}
@@ -139,6 +147,7 @@ func TestImplementationPromptIncludesExistingImplementationAndPreviousTestReport
 		Labels:                 []string{"bug"},
 		Assignees:              []string{"bob"},
 		DesignArtifact:         "design content",
+		DesignApprovalComment:  "keep the implementation small and avoid new dependencies",
 		ImplementationArtifact: "implementation content",
 		RerunComment:           "please keep the API stable",
 		PreviousFailure:        "tests failed",
@@ -152,7 +161,7 @@ func TestImplementationPromptIncludesExistingImplementationAndPreviousTestReport
 	if err != nil {
 		t.Fatalf("RenderSkillPrompt() error = %v", err)
 	}
-	for _, expected := range []string{"## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
+	for _, expected := range []string{"## Design Approval Comment", ctx.DesignApprovalComment, "## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected prompt to contain %q, got %q", expected, prompt)
 		}
@@ -171,6 +180,7 @@ func TestImplementFixPromptIncludesExistingImplementation(t *testing.T) {
 		Labels:                 []string{"bug"},
 		Assignees:              []string{"bob"},
 		DesignArtifact:         "design content",
+		DesignApprovalComment:  "keep the implementation small and avoid new dependencies",
 		ImplementationArtifact: "implementation content",
 		PreviousFailure:        "tests failed",
 		PreviousTestReport:     "{\"success\":false}",
@@ -183,7 +193,7 @@ func TestImplementFixPromptIncludesExistingImplementation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RenderSkillPrompt() error = %v", err)
 	}
-	for _, expected := range []string{"## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
+	for _, expected := range []string{"## Design Approval Comment", ctx.DesignApprovalComment, "## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected prompt to contain %q, got %q", expected, prompt)
 		}
