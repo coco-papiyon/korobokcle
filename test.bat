@@ -11,7 +11,7 @@ cd ../
 REM set KOROBOKCLE_RUN_REAL_COPILOT=1
 REM go test ./internal/skill -run TestCopilotCLIProviderRunsGoTestCommandWithRealCopilot -v
 
-go run ./tests/scripts/create-testdata
+go run ./scripts/create-testdata
 xcopy skills\default tests\data\skills\default /E /I /Y
 
 go build ./cmd/korobokcle

@@ -23,6 +23,14 @@ func TestDefaultScreenRefreshInterval(t *testing.T) {
 	}
 }
 
+func TestDefaultWorkspaceDir(t *testing.T) {
+	t.Parallel()
+
+	if got := DefaultFiles().App.WorkspaceDir; got != ".workspace" {
+		t.Fatalf("expected default workspace dir .workspace, got %q", got)
+	}
+}
+
 func TestProviderCatalogMatchesIssue(t *testing.T) {
 	t.Parallel()
 

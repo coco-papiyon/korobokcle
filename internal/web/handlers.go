@@ -147,9 +147,11 @@ type providerSpecResponse struct {
 }
 
 type monitoredRepositoryResponse struct {
-	Repository string `json:"repository"`
-	Branch     string `json:"branch"`
-	Workers    int    `json:"workers"`
+	Repository string   `json:"repository"`
+	Branch     string   `json:"branch"`
+	Workers    int      `json:"workers"`
+	WorkerDir  string   `json:"workerDir"`
+	WorkerDirs []string `json:"workerDirs"`
 }
 
 type appConfigResponse struct {
@@ -1418,6 +1420,8 @@ func toMonitoredRepositoryResponses(values []config.MonitoredRepository) []monit
 			Repository: repository,
 			Branch:     strings.TrimSpace(value.Branch),
 			Workers:    workers,
+			WorkerDir:  firstWorkerDirectory(value.WorkerDirs, value.WorkerDir),
+			WorkerDirs: append([]string(nil), value.WorkerDirs...),
 		})
 	}
 	return out
@@ -1444,9 +1448,37 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 			Repository: repository,
 			Branch:     branch,
 			Workers:    workers,
+			WorkerDir:  firstWorkerDirectory(value.WorkerDirs, value.WorkerDir),
+			WorkerDirs: normalizeWorkerDirectories(value.WorkerDirs, strings.TrimSpace(value.WorkerDir), workers),
 		})
 	}
 	return out, nil
+}
+
+func firstWorkerDirectory(values []string, fallback string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func normalizeWorkerDirectories(values []string, fallback string, count int) []string {
+	normalized := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		if i < len(values) {
+			normalized = append(normalized, strings.TrimSpace(values[i]))
+			continue
+		}
+		normalized = append(normalized, "")
+	}
+	if len(values) == 0 && strings.TrimSpace(fallback) != "" {
+		for i := range normalized {
+			normalized[i] = strings.TrimSpace(fallback)
+		}
+	}
+	return normalized
 }
 
 func toNotificationConfigResponse(notifications config.Notifications) notificationConfigResponse {

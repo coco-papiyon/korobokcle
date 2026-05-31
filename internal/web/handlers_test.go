@@ -862,7 +862,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","branch":"main","workers":1},{"repository":"owner/other","branch":"release/1.x","workers":3}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","branch":"main","workers":1,"workerDirs":["artifacts/custom/repository-0"]},{"repository":"owner/other","branch":"release/1.x","workers":3,"workerDirs":["/tmp/korobokcle-worker-0","/tmp/korobokcle-worker-1","/tmp/korobokcle-worker-2"]}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -871,7 +871,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
-	if got := svc.App().MonitoredRepositories; len(got) != 2 || got[0].Repository != "owner/repository" || got[0].Branch != "main" || got[0].Workers != 1 || got[1].Repository != "owner/other" || got[1].Branch != "release/1.x" || got[1].Workers != 3 {
+	if got := svc.App().MonitoredRepositories; len(got) != 2 || got[0].Repository != "owner/repository" || got[0].Branch != "main" || got[0].Workers != 1 || len(got[0].WorkerDirs) != 1 || got[0].WorkerDirs[0] != "artifacts/custom/repository-0" || got[1].Repository != "owner/other" || got[1].Branch != "release/1.x" || got[1].Workers != 3 || len(got[1].WorkerDirs) != 3 || got[1].WorkerDirs[0] != "/tmp/korobokcle-worker-0" || got[1].WorkerDirs[1] != "/tmp/korobokcle-worker-1" || got[1].WorkerDirs[2] != "/tmp/korobokcle-worker-2" {
 		t.Fatalf("unexpected monitored repositories: %#v", got)
 	}
 
@@ -880,7 +880,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read saved config: %v", err)
 	}
-	if !bytes.Contains(raw, []byte("monitoredRepositories:")) || !bytes.Contains(raw, []byte("repository: owner/other")) || !bytes.Contains(raw, []byte("branch: release/1.x")) || !bytes.Contains(raw, []byte("workers: 3")) {
+	if !bytes.Contains(raw, []byte("monitoredRepositories:")) || !bytes.Contains(raw, []byte("repository: owner/other")) || !bytes.Contains(raw, []byte("branch: release/1.x")) || !bytes.Contains(raw, []byte("workers: 3")) || !bytes.Contains(raw, []byte("workerDirs:")) || !bytes.Contains(raw, []byte("- /tmp/korobokcle-worker-1")) {
 		t.Fatalf("expected saved config to contain monitoredRepositories, got %s", string(raw))
 	}
 }

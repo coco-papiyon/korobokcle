@@ -17,6 +17,8 @@
 | SQLite DB | `data/korobokcle.db` | `tool root` | `config/app.yaml` の `sqlitePath`、または `KOROBOKCLE_TOOL_ROOT` で基準ディレクトリ変更 |
 | データディレクトリ | `data/` | `tool root` | `config/app.yaml` の `dataDir`、または `KOROBOKCLE_TOOL_ROOT` で基準ディレクトリ変更 |
 | 成果物ディレクトリ | `artifacts/` | `tool root` | `config/app.yaml` の `artifactsDir`、または `KOROBOKCLE_TOOL_ROOT` で基準ディレクトリ変更 |
+| worker 領域 | `artifacts/<repo>/worker-<id>/` | `tool root` | ワーカー設定画面の `workerDirs` でワーカーごとに変更可能。未設定時は `config/app.yaml` の `artifactsDir` 基準 |
+| ジョブ 領域 | `.workspace/issue_<issue番号>/` | repository worker の source root | `config/app.yaml` の `workspaceDir` |
 | Web 静的ファイル | `frontend/dist/` | 実行ファイル配置ディレクトリ | 変更不可 |
 | スキル定義 | `skills/<set>/<name>/` | `tool root` | `KOROBOKCLE_TOOL_ROOT` で基準ディレクトリ変更 |
 
@@ -24,5 +26,8 @@
 
 - `dataDir` と `artifactsDir` は、相対パスなら `tool root` 基準、絶対パスならそのまま使います。
 - `sqlitePath` も相対パスなら `tool root` 基準、絶対パスならそのまま使います。
+- `repository worker source root` は `artifactsDir` 配下の `artifacts/<repo>/worker-<id>/` です。
+- worker 設定画面の `workerDirs` を指定すると、各ワーカーごとに指定したディレクトリを基準に `worker-<id>` が自動付与されます。
+- `workspaceDir` は repository worker の source root 基準で解決します。既定値は `.workspace` です。ジョブごとの成果物は `.workspace/issue_<issue番号>/` の下に置きます。
 - `frontend/dist/` は常に実行ファイル配置ディレクトリ直下を参照します。`KOROBOKCLE_TOOL_ROOT` では変わりません。
 - `frontend/dist/index.html` が無い場合、Web UI は SPA を返せず `503` になります。
