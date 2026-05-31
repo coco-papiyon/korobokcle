@@ -13,6 +13,14 @@ export const ERROR_MESSAGE = 'エラー'
 export const PROVIDER_USE_SETTING_LABEL = '設定を使用'
 export const DEFAULT_MODEL_LABEL = '既定'
 
+export const NOTIFICATION_CHANNEL_LABELS: Record<string, string> = {
+  windows_toast: 'Windowsデスクトップ通知',
+}
+
+export function notificationChannelDisplayName(type: string): string {
+  return NOTIFICATION_CHANNEL_LABELS[type] ?? type
+}
+
 export const JOB_TYPE_LABELS: Record<string, string> = {
   issue: 'Issue',
   pr_review: 'PR レビュー',

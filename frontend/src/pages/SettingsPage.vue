@@ -5,7 +5,7 @@ import AsyncState from '@/components/AsyncState.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchAppConfig, fetchNotificationConfig, saveAppConfig, saveNotificationConfig } from '@/lib/api'
 import { modelOptionsForProvider, providerOptions } from '@/lib/provider-options'
-import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
+import { notificationChannelDisplayName, UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { NotificationChannel, ProviderSpec } from '@/types'
 
 const { data, isLoading, error, reload } = useAsyncData(fetchAppConfig)
@@ -59,6 +59,7 @@ watch(
   (config) => {
     notificationChannels.value = (config?.channels ?? []).map((channel) => ({
       ...channel,
+      name: notificationChannelDisplayName(channel.type),
       events: [...channel.events],
     }))
   },
@@ -129,10 +130,15 @@ async function persistNotificationConfig() {
     const saved = await saveNotificationConfig({
       channels: notificationChannels.value.map((channel) => ({
         ...channel,
+        name: notificationChannelDisplayName(channel.type),
         events: [...channel.events],
       })),
     })
-    notificationChannels.value = saved.channels.map((channel) => ({ ...channel, events: [...channel.events] }))
+    notificationChannels.value = saved.channels.map((channel) => ({
+      ...channel,
+      name: notificationChannelDisplayName(channel.type),
+      events: [...channel.events],
+    }))
     notificationSaveState.value = 'saved'
     await reloadNotificationData()
   } catch (err) {
@@ -298,26 +304,32 @@ function parseIntegerField(value: string, label: string) {
           </button>
         </div>
 
-        <div v-for="channel in notificationChannels" :key="`${channel.name}-${channel.type}`" class="stack-sm">
-          <label class="field field--inline">
-            <span class="field__label">{{ channel.name }} ({{ channel.type }})</span>
-            <input v-model="channel.enabled" type="checkbox" />
-          </label>
-
-          <div class="stack-sm">
-            <label
-              v-for="option in notificationEventOptions"
-              :key="`${channel.name}-${option.value}`"
-              class="field field--inline"
-            >
-              <span class="field__label">{{ option.label }}</span>
-              <input
-                :checked="channelHasEvent(channel, option.value)"
-                type="checkbox"
-                :disabled="!channel.enabled"
-                @change="updateChannelEvent(channel, option.value, ($event.target as HTMLInputElement).checked)"
-              />
+        <div v-for="channel in notificationChannels" :key="`${channel.name}-${channel.type}`" class="stack-md">
+          <div class="settings-row">
+            <span class="settings-row__label">通知方法</span>
+            <label class="field field--inline">
+              <span class="field__label">{{ channel.name }} ({{ channel.type }})</span>
+              <input v-model="channel.enabled" type="checkbox" />
             </label>
+          </div>
+
+          <div class="settings-row">
+            <span class="settings-row__label">通知タイミング</span>
+            <div class="stack-sm">
+              <label
+                v-for="option in notificationEventOptions"
+                :key="`${channel.name}-${option.value}`"
+                class="field field--inline"
+              >
+                <span class="field__label">{{ option.label }}</span>
+                <input
+                  :checked="channelHasEvent(channel, option.value)"
+                  type="checkbox"
+                  :disabled="!channel.enabled"
+                  @change="updateChannelEvent(channel, option.value, ($event.target as HTMLInputElement).checked)"
+                />
+              </label>
+            </div>
           </div>
         </div>
 
