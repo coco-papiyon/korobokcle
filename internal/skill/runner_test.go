@@ -184,7 +184,7 @@ func TestRunDesignWritesExecutionLogsToRunnerLogger(t *testing.T) {
 	}
 }
 
-func TestRunDesignDoesNotOverwriteExistingResultFile(t *testing.T) {
+func TestRunDesignOverwritesExistingResultFileWithLatestOutput(t *testing.T) {
 	root := t.TempDir()
 	skillDir := filepath.Join(root, "skills", "default", "design")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
@@ -196,19 +196,25 @@ func TestRunDesignDoesNotOverwriteExistingResultFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
 		t.Fatalf("WriteFile(prompt) error = %v", err)
 	}
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-overwrite", artifacts.WorkerDesign)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(artifactDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "result.md"), []byte("stale result"), 0o644); err != nil {
+		t.Fatalf("WriteFile(existing result.md) error = %v", err)
+	}
 
 	scriptPath := writeProviderScript(
 		t,
 		root,
 		"design-provider",
-		"@echo off\r\necho stdout-content\r\n>\"%1\" echo file-content\r\n",
-		"#!/usr/bin/env sh\nprintf 'stdout-content\\n'\nprintf '%s\\n' 'file-content' > \"$1\"\n",
+		"@echo off\r\necho stdout-content\r\n",
+		"#!/usr/bin/env sh\nprintf 'stdout-content\\n'\n",
 	)
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
-	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["{{output_path}}"]`)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `[]`)
 
 	runner := NewRunner(root, root, "", nil)
-	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-overwrite", artifacts.WorkerDesign)
 	if _, err := runner.RunDesign(context.Background(), "design", DesignContext{
 		Title:       "My Issue",
 		ArtifactDir: artifactDir,
@@ -220,7 +226,7 @@ func TestRunDesignDoesNotOverwriteExistingResultFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(result.md) error = %v", err)
 	}
-	if strings.TrimSpace(string(raw)) != "file-content" {
-		t.Fatalf("expected existing result file to be preserved, got %q", string(raw))
+	if strings.TrimSpace(string(raw)) != "stdout-content" {
+		t.Fatalf("expected latest result file to be written, got %q", string(raw))
 	}
 }

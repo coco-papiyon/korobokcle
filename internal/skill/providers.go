@@ -120,6 +120,15 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Dir = workDir
 
+	outputPathPreexisting := false
+	if req.OutputPath != "" {
+		if _, err := os.Stat(req.OutputPath); err == nil {
+			outputPathPreexisting = true
+		} else if err != nil && !os.IsNotExist(err) {
+			return AIResult{}, err
+		}
+	}
+
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -142,7 +151,7 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		Output: strings.TrimSpace(stdout.String()),
 	}
 
-	if output := readProviderOutputFile(req.OutputPath); output != "" && (p.PreferOutputFile || result.Output == "" || output != result.Output) {
+	if output := readProviderOutputFile(req.OutputPath); output != "" && (p.PreferOutputFile || !outputPathPreexisting || result.Output == "") {
 		result.Output = output
 	}
 

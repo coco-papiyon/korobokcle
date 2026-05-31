@@ -3,7 +3,6 @@ package skill
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -269,12 +268,10 @@ func (r *Runner) executionWorkDir(definition Definition, execution ExecutionConf
 }
 
 func persistSkillOutput(path string, output string) error {
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
+	if err := os.WriteFile(path, []byte(output), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(output), 0o644)
+	return nil
 }
 
 func (r *Runner) logExecutionStart(phase string, skillName string, provider string, model string, workDir string, artifactDir string, outputPath string) {

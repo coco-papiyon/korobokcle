@@ -33,6 +33,15 @@ Watch Rule: {{ .WatchRuleID }}
 {{ .DesignArtifact }}
 ```
 
+{{- if .DesignApprovalComment }}
+## Design Approval Comment
+```
+{{ .DesignApprovalComment }}
+```
+{{- end }}
+
+Follow the approved design and incorporate the design approval comment if it exists.
+
 {{- if .ImplementationArtifact }}
 ## Existing Implementation
 ```

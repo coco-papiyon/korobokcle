@@ -29,6 +29,7 @@ type ImplementationContext struct {
 	BranchName             string          `json:"branchName"`
 	DesignArtifact         string          `json:"designArtifact"`
 	DesignArtifactDir      string          `json:"designArtifactDir"`
+	DesignApprovalComment  string          `json:"designApprovalComment,omitempty"`
 	ImplementationArtifact string          `json:"implementationArtifact,omitempty"`
 	ArtifactDir            string          `json:"artifactDir"`
 	RerunComment           string          `json:"rerunComment,omitempty"`

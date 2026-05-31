@@ -170,6 +170,11 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 		ctxData.ImplementationArtifact = string(implementationArtifact)
 	}
 
+	ctxData.DesignApprovalComment, err = loadDesignApprovalComment(events)
+	if err != nil {
+		return skill.ImplementationContext{}, err
+	}
+
 	rerunComment, previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)
 	if err != nil {
 		return skill.ImplementationContext{}, err
@@ -200,6 +205,25 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 	}
 
 	return ctxData, nil
+}
+
+func loadDesignApprovalComment(events []domain.Event) (string, error) {
+	for i := len(events) - 1; i >= 0; i-- {
+		event := events[i]
+		if event.EventType != "design_approved" {
+			continue
+		}
+
+		var payload struct {
+			Comment string `json:"comment"`
+		}
+		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(payload.Comment), nil
+	}
+
+	return "", nil
 }
 
 func readFirstArtifactFile(dir string, names ...string) ([]byte, error) {
