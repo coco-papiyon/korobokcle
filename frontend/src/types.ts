@@ -40,6 +40,10 @@ export type JobDetail = {
   logs?: JobLog[]
 }
 
+export type IssueBodyResponse = {
+  issueBody: string
+}
+
 export type Artifact = {
   path: string
   content: string

@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
+	gh "github.com/coco-papiyon/korobokcle/internal/github"
 	"github.com/coco-papiyon/korobokcle/internal/notification"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
 	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
@@ -64,7 +66,8 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 		return fmt.Errorf("start repository workers: %w", err)
 	}
 
-	server, err := web.New(configService, orch)
+	issueBodyFetcher := gh.NewClient(gh.NewGHTokenProvider(10*time.Minute), debugLogger).WithInfoLogger(infoLogger)
+	server, err := web.New(configService, orch, issueBodyFetcher)
 	if err != nil {
 		return fmt.Errorf("build web server: %w", err)
 	}
