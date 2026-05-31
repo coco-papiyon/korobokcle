@@ -746,18 +746,17 @@ func (s *Server) handleSaveNotificationConfig(w http.ResponseWriter, r *http.Req
 		Channels: make([]config.NotificationChannel, 0, len(payload.Channels)),
 	}
 	for index, channel := range payload.Channels {
-		name := strings.TrimSpace(channel.Name)
-		if name == "" {
-			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("channel[%d].name is required", index))
-			return
-		}
 		channelType := strings.TrimSpace(channel.Type)
 		if channelType == "" {
 			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("channel[%d].type is required", index))
 			return
 		}
+		if !isSupportedNotificationChannelType(channelType) {
+			writeJSONError(w, http.StatusBadRequest, fmt.Errorf("channel[%d].type %q is not supported", index, channelType))
+			return
+		}
 		file.Channels = append(file.Channels, config.NotificationChannel{
-			Name:    name,
+			Name:    notificationChannelDisplayName(channelType),
 			Type:    channelType,
 			Events:  normalizeNotificationEvents(compactStrings(channel.Events)),
 			Enabled: channel.Enabled,
@@ -1485,13 +1484,26 @@ func toNotificationConfigResponse(notifications config.Notifications) notificati
 	channels := make([]notificationChannelResponse, 0, len(notifications.Channels))
 	for _, channel := range notifications.Channels {
 		channels = append(channels, notificationChannelResponse{
-			Name:    channel.Name,
+			Name:    notificationChannelDisplayName(channel.Type),
 			Type:    channel.Type,
 			Events:  sliceOrEmpty(normalizeNotificationEvents(channel.Events)),
 			Enabled: channel.Enabled,
 		})
 	}
 	return notificationConfigResponse{Channels: channels}
+}
+
+const windowsToastNotificationChannelType = "windows_toast"
+
+func isSupportedNotificationChannelType(value string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), windowsToastNotificationChannelType)
+}
+
+func notificationChannelDisplayName(channelType string) string {
+	if isSupportedNotificationChannelType(channelType) {
+		return "Windowsデスクトップ通知"
+	}
+	return strings.TrimSpace(channelType)
 }
 
 func normalizeNotificationEvents(events []string) []string {

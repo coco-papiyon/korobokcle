@@ -31,6 +31,23 @@ func TestDefaultWorkspaceDir(t *testing.T) {
 	}
 }
 
+func TestDefaultNotificationChannelUsesWindowsDesktopNotification(t *testing.T) {
+	t.Parallel()
+
+	notifications := DefaultFiles().Notifications
+	if len(notifications.Channels) != 1 {
+		t.Fatalf("expected 1 notification channel, got %d", len(notifications.Channels))
+	}
+
+	channel := notifications.Channels[0]
+	if channel.Name != "Windowsデスクトップ通知" {
+		t.Fatalf("expected default channel name Windowsデスクトップ通知, got %q", channel.Name)
+	}
+	if channel.Type != "windows_toast" {
+		t.Fatalf("expected default channel type windows_toast, got %q", channel.Type)
+	}
+}
+
 func TestProviderCatalogMatchesIssue(t *testing.T) {
 	t.Parallel()
 

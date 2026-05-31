@@ -1078,6 +1078,7 @@ func TestHandleNotificationConfigReturnsChannels(t *testing.T) {
 	var got struct {
 		Channels []struct {
 			Name   string   `json:"name"`
+			Type   string   `json:"type"`
 			Events []string `json:"events"`
 		} `json:"channels"`
 	}
@@ -1086,6 +1087,12 @@ func TestHandleNotificationConfigReturnsChannels(t *testing.T) {
 	}
 	if len(got.Channels) == 0 {
 		t.Fatalf("expected notification channels")
+	}
+	if got.Channels[0].Name != "Windowsデスクトップ通知" {
+		t.Fatalf("expected channel name Windowsデスクトップ通知, got %q", got.Channels[0].Name)
+	}
+	if got.Channels[0].Type != "windows_toast" {
+		t.Fatalf("expected channel type windows_toast, got %q", got.Channels[0].Type)
 	}
 }
 
@@ -1111,6 +1118,12 @@ func TestHandleSaveNotificationConfigUpdatesEvents(t *testing.T) {
 	if len(notifications.Channels) != 1 {
 		t.Fatalf("expected 1 channel, got %d", len(notifications.Channels))
 	}
+	if got := notifications.Channels[0].Name; got != "Windowsデスクトップ通知" {
+		t.Fatalf("expected saved channel name Windowsデスクトップ通知, got %q", got)
+	}
+	if got := notifications.Channels[0].Type; got != "windows_toast" {
+		t.Fatalf("expected saved channel type windows_toast, got %q", got)
+	}
 	if got := notifications.Channels[0].Events; len(got) != 2 || got[0] != "waiting_design_approval" || got[1] != "pr_created" {
 		t.Fatalf("unexpected saved events: %v", got)
 	}
@@ -1124,6 +1137,28 @@ func TestHandleSaveNotificationConfigUpdatesEvents(t *testing.T) {
 	}
 	if bytes.Contains(raw, []byte("design_ready")) {
 		t.Fatalf("expected saved config to drop design_ready, got %s", string(raw))
+	}
+	if !bytes.Contains(raw, []byte("Windowsデスクトップ通知")) {
+		t.Fatalf("expected saved config to normalize channel name, got %s", string(raw))
+	}
+}
+
+func TestHandleSaveNotificationConfigRejectsUnsupportedType(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	body := []byte(`{"channels":[{"name":"Custom","type":"mail","enabled":true,"events":["waiting_design_approval"]}]}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/notification-config", bytes.NewReader(body))
+
+	server.handleSaveNotificationConfig(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusBadRequest, recorder.Code, recorder.Body.String())
 	}
 }
 
