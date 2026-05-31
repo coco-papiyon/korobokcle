@@ -6,6 +6,7 @@ import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchAppConfig, fetchSkillSets, fetchTestProfiles, fetchToolCommands, fetchWatchRules, saveWatchRules } from '@/lib/api'
 import { modelOptionsForProvider, watchRuleProviderOptions } from '@/lib/provider-options'
+import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { AppConfig, ProjectFieldFilter, WatchRule, WatchRuleForm } from '@/types'
 
 const { data, isLoading, error, reload } = useAsyncData(fetchWatchRules)
@@ -39,7 +40,7 @@ const availableModelOptions = computed(() => {
   const config = appConfig.value as AppConfig | null | undefined
   const providerCatalog = config?.providers ?? []
   const selectedProvider = selectedRule.value?.provider?.trim() || config?.provider || ''
-  return modelOptionsForProvider(providerCatalog, selectedProvider, selectedRule.value?.model ?? '', 'Use setting')
+  return modelOptionsForProvider(providerCatalog, selectedProvider, selectedRule.value?.model ?? '')
 })
 const selectedRuleInvalidRepositories = computed(() => {
   const rule = selectedRule.value
@@ -188,7 +189,7 @@ function addRule() {
   const rule: WatchRuleForm = {
     localID: `watch-rule-${nextRuleLocalID.value++}`,
     id: `rule-${suffix}`,
-    name: `New Rule ${suffix}`,
+    name: `新規ルール ${suffix}`,
     repositories: [...defaultRepositories],
     selectedRepository: defaultRepositories[0] ?? '',
     repositoriesText: defaultRepositories[0] ?? '',
@@ -249,14 +250,14 @@ async function persistRules() {
     await reload()
   } catch (err) {
     saveState.value = 'error'
-    saveError.value = err instanceof Error ? err.message : 'Unknown error'
+    saveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 </script>
 
 <template>
   <AppShell
-    title="Watch Rules"
+    title="監視ルール"
     description="GitHubの監視対象および検出した際のAI/動作を設定します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
@@ -264,10 +265,10 @@ async function persistRules() {
         <aside class="panel rule-list">
           <div class="rule-list__header">
             <div>
-              <h2>Rule List</h2>
+              <h2>ルール一覧</h2>
               <p class="text-muted">監視対象のセットを選択します。</p>
             </div>
-            <button class="button button-primary" type="button" @click="addRule">Add Rule</button>
+            <button class="button button-primary" type="button" @click="addRule">ルールを追加</button>
           </div>
 
           <div class="stack-sm">
@@ -283,8 +284,8 @@ async function persistRules() {
                 <strong>{{ rule.name }}</strong>
                 <StateBadge :state="rule.enabled ? 'enabled' : 'disabled'" />
               </div>
-              <p class="text-muted">{{ rule.repositoriesText || 'repository not set' }}</p>
-              <p class="text-muted">Provider: {{ rule.provider || 'use setting' }} / Model: {{ rule.model || 'use setting' }}</p>
+              <p class="text-muted">{{ rule.repositoriesText || 'リポジトリ未設定' }}</p>
+              <p class="text-muted">プロバイダー: {{ rule.provider || '設定を使用' }} / モデル: {{ rule.model || '設定を使用' }}</p>
             </button>
           </div>
         </aside>
@@ -292,15 +293,15 @@ async function persistRules() {
         <section class="panel rule-editor">
           <div class="rule-editor__header">
             <div>
-              <h2>Rule Editor</h2>
+              <h2>ルール編集</h2>
               <p class="text-muted">監視条件を編集し、設定ファイルへ保存します。</p>
             </div>
             <div class="button-row">
               <button class="button button-secondary" type="button" :disabled="!selectedRule" @click="removeSelectedRule">
-                Delete
+                削除
               </button>
               <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistRules">
-                {{ saveState === 'saving' ? 'Saving...' : 'Save Rules' }}
+                {{ saveState === 'saving' ? '保存中...' : 'ルールを保存' }}
               </button>
             </div>
           </div>
@@ -308,46 +309,46 @@ async function persistRules() {
           <template v-if="selectedRule">
             <div class="form-grid">
               <label class="field">
-                <span class="field__label">Name</span>
+                <span class="field__label">名前</span>
                 <input v-model="selectedRule.name" class="field__control" type="text" />
               </label>
 
               <label class="field">
-                <span class="field__label">Target</span>
+                <span class="field__label">対象</span>
                 <select v-model="selectedRule.target" class="field__control">
                   <option value="issue">Issue</option>
-                  <option value="issue_project">Issue (Project)</option>
-                  <option value="pull_request">Pull Request</option>
-                  <option value="pull_request_review">PR Review</option>
+                  <option value="issue_project">Issue（Project）</option>
+                  <option value="pull_request">プルリクエスト</option>
+                  <option value="pull_request_review">PR レビュー</option>
                 </select>
               </label>
 
               <label class="field field-checkbox">
                 <input v-model="selectedRule.enabled" type="checkbox" />
-                <span>Enabled</span>
+                <span>有効</span>
               </label>
 
               <label class="field field-full">
-                <span class="field__label">Repository</span>
+                <span class="field__label">リポジトリ</span>
                 <select
                   v-if="availableRepositoryEntries.length"
                   :value="selectedRule.selectedRepository"
                   class="field__control"
                   @change="updateSelectedRepository(($event.target as HTMLSelectElement).value)"
                 >
-                  <option value="">Select repository</option>
+                  <option value="">リポジトリを選択</option>
                   <option v-for="entry in availableRepositoryEntries" :key="entry.repository" :value="entry.repository">
-                    {{ entry.repository }} (workers: {{ entry.workers }})
+                    {{ entry.repository }} (ワーカー数: {{ entry.workers }})
                   </option>
                 </select>
-                <p v-else class="text-muted">Settings で監視対象リポジトリを追加してください。</p>
+                <p v-else class="text-muted">設定画面で監視対象リポジトリを追加してください。</p>
                 <p v-if="selectedRuleInvalidRepositories.length" class="notice notice-danger">
                   未登録のリポジトリが含まれています: {{ selectedRuleInvalidRepositories.join(', ') }}
                 </p>
               </label>
 
               <label v-if="selectedRule.target === 'issue_project'" class="field field-full">
-                <span class="field__label">Project Name</span>
+                <span class="field__label">プロジェクト名</span>
                 <input
                   v-model="selectedRule.projectName"
                   class="field__control"
@@ -357,44 +358,44 @@ async function persistRules() {
               </label>
 
               <label v-if="selectedRule.target === 'issue_project'" class="field field-full">
-                <span class="field__label">Project Field Filters</span>
+                <span class="field__label">プロジェクトフィールドフィルタ</span>
                 <textarea
                   v-model="selectedRule.projectFiltersText"
                   class="field__control field__control--textarea"
                   rows="4"
                   placeholder="Status: Todo, In Progress&#10;Iteration: Sprint 12"
                 />
-                <p class="text-muted">1 行につき `Field: value1, value2`。Project Name が空なら任意の project を対象にします。</p>
+                <p class="text-muted">1 行につき `Field: value1, value2`。プロジェクト名が空なら任意の project を対象にします。</p>
               </label>
 
               <label class="field field-full">
-                <span class="field__label">Labels</span>
+                <span class="field__label">ラベル</span>
                 <input v-model="selectedRule.labelsText" class="field__control" type="text" placeholder="ai:design, backend" />
               </label>
 
               <label class="field field-full">
-                <span class="field__label">Title Pattern</span>
+                <span class="field__label">タイトルパターン</span>
                 <input v-model="selectedRule.titlePattern" class="field__control" type="text" placeholder="^feat:" />
               </label>
 
               <label class="field">
-                <span class="field__label">Authors</span>
+                <span class="field__label">作成者</span>
                 <input v-model="selectedRule.authorsText" class="field__control" type="text" placeholder="alice, bob" />
               </label>
 
               <label class="field">
-                <span class="field__label">Assignees</span>
+                <span class="field__label">担当者</span>
                 <input v-model="selectedRule.assigneesText" class="field__control" type="text" placeholder="carol, dave" />
               </label>
 
               <label class="field">
-                <span class="field__label">Reviewers</span>
+                <span class="field__label">レビュー担当</span>
                 <input v-model="selectedRule.reviewersText" class="field__control" type="text" placeholder="erin, frank" />
               </label>
 
               <div class="field field-full" style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4);">
                 <label class="field">
-                  <span class="field__label">Skill Set</span>
+                  <span class="field__label">スキルセット</span>
                   <select v-model="selectedRule.skillSet" class="field__control">
                     <option v-for="skillSet in skillSets ?? []" :key="skillSet.name" :value="skillSet.name">
                       {{ skillSet.name }}
@@ -403,9 +404,9 @@ async function persistRules() {
                 </label>
 
                 <label class="field">
-                  <span class="field__label">Test Profile</span>
+                  <span class="field__label">テストプロファイル</span>
                   <select v-model="selectedRule.testProfile" class="field__control">
-                    <option value="">None</option>
+                    <option value="">なし</option>
                     <option v-for="profile in testProfiles ?? []" :key="profile.name" :value="profile.name">
                       {{ profile.name }}
                     </option>
@@ -415,7 +416,7 @@ async function persistRules() {
 
               <div class="field field-full" style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4);">
                 <label class="field">
-                  <span class="field__label">Provider</span>
+                  <span class="field__label">プロバイダー</span>
                   <select v-model="selectedRule.provider" class="field__control">
                     <option v-for="option in watchRuleProviderOptions(appConfig?.providers ?? [])" :key="option.value" :value="option.value">
                       {{ option.label }}
@@ -424,7 +425,7 @@ async function persistRules() {
                 </label>
 
                 <label class="field">
-                  <span class="field__label">Model</span>
+                  <span class="field__label">モデル</span>
                   <select v-model="selectedRule.model" class="field__control">
                     <option v-for="option in availableModelOptions" :key="option.value" :value="option.value">
                       {{ option.label }}
@@ -434,18 +435,18 @@ async function persistRules() {
               </div>
 
               <label class="field field-full">
-                <span class="field__label">Tool Command</span>
+                <span class="field__label">ツールコマンド</span>
                 <select v-model="selectedRule.toolCommand" class="field__control">
-                  <option value="">None</option>
+                  <option value="">なし</option>
                   <option v-for="command in toolCommands ?? []" :key="command.name" :value="command.name">
-                    {{ command.name }} ({{ command.resident ? 'resident' : 'one-shot' }})
+                    {{ command.name }} ({{ command.resident ? '常駐' : '単発' }})
                   </option>
                 </select>
               </label>
 
               <label class="field field-checkbox field-full">
                 <input v-model="selectedRule.excludeDraftPR" type="checkbox" />
-                <span>Exclude Draft Pull Requests</span>
+                <span>Draft PR を除外</span>
               </label>
             </div>
 
@@ -453,7 +454,7 @@ async function persistRules() {
             <div v-if="saveState === 'error'" class="notice notice-danger">{{ saveError }}</div>
           </template>
 
-          <div v-else class="notice">Rule を追加するか、左側の一覧から選択してください。</div>
+          <div v-else class="notice">ルールを追加するか、左側の一覧から選択してください。</div>
         </section>
       </section>
     </AsyncState>

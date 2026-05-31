@@ -1,4 +1,5 @@
 import type { AppConfig, IssueBodyResponse, Job, JobDetail, NotificationConfig, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
+import { requestFailedMessage } from '@/lib/ui-text'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -12,7 +13,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null
-    throw new Error(payload?.error ?? `Request failed: ${response.status}`)
+    throw new Error(payload?.error ?? requestFailedMessage(response.status))
   }
 
   return (await response.json()) as T

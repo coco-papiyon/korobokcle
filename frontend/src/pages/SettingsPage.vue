@@ -5,6 +5,7 @@ import AsyncState from '@/components/AsyncState.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchAppConfig, fetchNotificationConfig, saveAppConfig, saveNotificationConfig } from '@/lib/api'
 import { modelOptionsForProvider, providerOptions } from '@/lib/provider-options'
+import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { NotificationChannel, ProviderSpec } from '@/types'
 
 const { data, isLoading, error, reload } = useAsyncData(fetchAppConfig)
@@ -26,15 +27,15 @@ const notificationSaveError = ref<string | null>(null)
 const templateVariables = ['{{issue_number}}', '{{issue_title}}', '{{repository}}'] as const
 
 const notificationEventOptions = [
-  { value: 'waiting_design_approval', label: 'Waiting Design Approval' },
-  { value: 'waiting_final_approval', label: 'Waiting Final Approval' },
-  { value: 'review_completed', label: 'Review Completed' },
-  { value: 'pr_created', label: 'PR Created' },
-  { value: 'failed', label: 'Any Failure' },
+  { value: 'waiting_design_approval', label: '設計承認待ち' },
+  { value: 'waiting_final_approval', label: '最終承認待ち' },
+  { value: 'review_completed', label: 'レビュー完了' },
+  { value: 'pr_created', label: 'PR 作成完了' },
+  { value: 'failed', label: '失敗時' },
 ] as const
 
 const availableModelOptions = computed(() => {
-  return modelOptionsForProvider(providerCatalog.value, provider.value, model.value, 'Default')
+  return modelOptionsForProvider(providerCatalog.value, provider.value, model.value)
 })
 
 watch(
@@ -65,15 +66,15 @@ watch(
 )
 
 async function persistConfig() {
-  const parsedPollInterval = parseIntegerField(pollInterval.value, 'Git polling interval')
+  const parsedPollInterval = parseIntegerField(pollInterval.value, 'Git ポーリング間隔')
   if (parsedPollInterval === null) {
     return
   }
-  const parsedScreenRefreshInterval = parseIntegerField(screenRefreshInterval.value, 'Screen refresh interval')
+  const parsedScreenRefreshInterval = parseIntegerField(screenRefreshInterval.value, '画面自動更新間隔')
   if (parsedScreenRefreshInterval === null) {
     return
   }
-  const parsedShutdownTimeout = parseIntegerField(shutdownTimeout.value, 'Shutdown timeout')
+  const parsedShutdownTimeout = parseIntegerField(shutdownTimeout.value, 'シャットダウン待機時間')
   if (parsedShutdownTimeout === null) {
     return
   }
@@ -103,7 +104,7 @@ async function persistConfig() {
     await reload()
   } catch (err) {
     saveState.value = 'error'
-    saveError.value = err instanceof Error ? err.message : 'Unknown error'
+    saveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -136,7 +137,7 @@ async function persistNotificationConfig() {
     await reloadNotificationData()
   } catch (err) {
     notificationSaveState.value = 'error'
-    notificationSaveError.value = err instanceof Error ? err.message : 'Unknown error'
+    notificationSaveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -150,13 +151,13 @@ function parseCopilotAllowTools(value: string) {
 function parseIntegerField(value: string, label: string) {
   if (value.trim() === '') {
     saveState.value = 'error'
-    saveError.value = `${label} is required.`
+    saveError.value = `${label} は必須です。`
     return null
   }
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 0) {
     saveState.value = 'error'
-    saveError.value = `${label} must be a non-negative whole number.`
+    saveError.value = `${label} は 0 以上の整数で入力してください。`
     return null
   }
   return parsed
@@ -174,7 +175,7 @@ function parseIntegerField(value: string, label: string) {
         <div class="rule-editor__header">
           <div>
             <h2>アプリケーション設定</h2>
-            <p class="text-muted">provider、model、Git ポーリング間隔、画面の自動更新間隔、shutdown timeout をここから変更できます。</p>
+            <p class="text-muted">provider、model、Git ポーリング間隔、画面の自動更新間隔、シャットダウン待機時間をここから変更できます。</p>
           </div>
           <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistConfig">
             {{ saveState === 'saving' ? '保存中...' : '設定を保存' }}
@@ -236,11 +237,11 @@ function parseIntegerField(value: string, label: string) {
               step="1"
               type="number"
             />
-            <p class="settings-row__description text-muted">0 にすると Dashboard と Job Detail の自動更新を止めます。</p>
+            <p class="settings-row__description text-muted">0 にするとダッシュボードとジョブ詳細の自動更新を止めます。</p>
           </label>
 
           <label class="settings-row">
-            <span class="settings-row__label">Shutdown Timeout（秒）</span>
+            <span class="settings-row__label">シャットダウン待機時間（秒）</span>
             <input
               v-model="shutdownTimeout"
               class="field__control settings-row__control"
@@ -253,7 +254,7 @@ function parseIntegerField(value: string, label: string) {
           </label>
 
           <label class="settings-row">
-            <span class="settings-row__label">PR Title Template</span>
+            <span class="settings-row__label">PR タイトルテンプレート</span>
             <input v-model="prTitleTemplate" class="field__control settings-row__control" type="text" />
             <p class="settings-row__description text-muted">
               利用可能な変数:
@@ -265,7 +266,7 @@ function parseIntegerField(value: string, label: string) {
           </label>
 
           <label class="settings-row">
-            <span class="settings-row__label">Branch Template</span>
+            <span class="settings-row__label">ブランチテンプレート</span>
             <input v-model="branchTemplate" class="field__control settings-row__control" type="text" />
             <p class="settings-row__description text-muted">
               利用可能な変数:

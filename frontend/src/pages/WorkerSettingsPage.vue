@@ -4,6 +4,7 @@ import AppShell from '@/components/AppShell.vue'
 import AsyncState from '@/components/AsyncState.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { fetchAppConfig, saveAppConfig } from '@/lib/api'
+import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { MonitoredRepository } from '@/types'
 
 const { data, isLoading, error, reload } = useAsyncData(fetchAppConfig)
@@ -63,54 +64,54 @@ async function persistConfig() {
     await reload()
   } catch (err) {
     saveState.value = 'error'
-    saveError.value = err instanceof Error ? err.message : 'Unknown error'
+    saveError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 </script>
 
 <template>
   <AppShell
-    title="Workers"
+    title="ワーカー設定"
     description="監視対象リポジトリと、各リポジトリに割り当てるワーカー数を設定します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <section class="panel stack-md">
         <div class="rule-editor__header">
           <div>
-            <h2>Worker Settings</h2>
+            <h2>ワーカー設定</h2>
             <p class="text-muted">1 行につき 1 リポジトリを追加し、1 以上のワーカー数を指定します。</p>
           </div>
           <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistConfig">
-            {{ saveState === 'saving' ? 'Saving...' : 'Save Workers' }}
+            {{ saveState === 'saving' ? '保存中...' : 'ワーカー設定を保存' }}
           </button>
         </div>
 
         <div class="field">
           <div class="rule-editor__header">
-            <span class="field__label">Monitored Repositories</span>
-            <button class="button button-secondary" type="button" @click="addMonitoredRepository">Add Repository</button>
+            <span class="field__label">監視対象リポジトリ</span>
+            <button class="button button-secondary" type="button" @click="addMonitoredRepository">リポジトリを追加</button>
           </div>
           <div class="stack-sm">
             <div v-for="(entry, index) in monitoredRepositories" :key="`${index}-${entry.repository}`" class="form-grid">
               <label class="field field-full">
-                <span class="field__label">Repository</span>
+                <span class="field__label">リポジトリ</span>
                 <input v-model="entry.repository" class="field__control" type="text" placeholder="owner/repository" />
               </label>
               <label class="field field-full">
-                <span class="field__label">Branch</span>
+                <span class="field__label">ブランチ</span>
                 <input v-model="entry.branch" class="field__control" type="text" placeholder="main" />
               </label>
               <label class="field">
-                <span class="field__label">Workers</span>
+                <span class="field__label">ワーカー数</span>
                 <input v-model.number="entry.workers" class="field__control" type="number" min="1" step="1" />
               </label>
-              <button class="button button-secondary" type="button" @click="removeMonitoredRepository(index)">Remove</button>
+              <button class="button button-secondary" type="button" @click="removeMonitoredRepository(index)">削除</button>
             </div>
           </div>
-          <p class="text-muted">ワーカー数は 1 以上の整数です。branch を空にするとリモートの既定ブランチを使います。watch rules 側では、ここで登録したリポジトリのみ選択できます。</p>
+          <p class="text-muted">ワーカー数は 1 以上の整数です。ブランチを空にするとリモートの既定ブランチを使います。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
         </div>
 
-        <div v-if="saveState === 'saved'" class="notice notice-success">workers を更新しました。</div>
+        <div v-if="saveState === 'saved'" class="notice notice-success">ワーカー設定を更新しました。</div>
         <div v-if="saveState === 'error'" class="notice notice-danger">{{ saveError }}</div>
       </section>
     </AsyncState>

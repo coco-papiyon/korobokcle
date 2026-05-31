@@ -1,33 +1,33 @@
-# Guide
+# ガイド
 
-## Overview
+## 概要
 
-- Dashboard でジョブ一覧を確認します。
-- Job Detail で設計結果、実装結果、テスト結果、ログを確認します。
-- Settings 配下で worker、watch rule、test profile、tool command を設定します。
+- ダッシュボードでジョブ一覧を確認します。
+- ジョブ詳細で設計結果、実装結果、テスト結果、ログを確認します。
+- 設定画面でワーカー、監視ルール、テストプロファイル、ツールコマンドを設定します。
 
-## Basic Flow
+## 基本フロー
 
-1. `Workers` で監視対象の repository を登録します。
-2. `Watch Rules` で対象イベント、provider、model、skill set、test profile を設定します。
-3. 必要なら `Tool Commands` で動作確認用コマンドを登録します。
-4. Issue や Pull Request が検知されると自動で job が作成されます。
-5. `Job Detail` で成果物を確認し、承認、再実行、PR 作成に進みます。
+1. `ワーカー` で監視対象のリポジトリを登録します。
+2. `監視ルール` で対象イベント、provider、model、skill set、test profile を設定します。
+3. 必要なら `ツールコマンド` で動作確認用コマンドを登録します。
+4. Issue や PR が検知されると自動で job が作成されます。
+5. `ジョブ詳細` で成果物を確認し、承認、再実行、PR 作成に進みます。
 
-## Tool Commands
+## ツールコマンド
 
-- resident なコマンドは Flow から起動後、停止ボタンで止められます。
-- one-shot なコマンドは終了後にログだけが残ります。
-- ログは `Test Report` の下に表示されます。
+- 常駐コマンドは Flow から起動後、停止ボタンで止められます。
+- 単発コマンドは終了後にログだけが残ります。
+- ログは `テスト結果` の下に表示されます。
 
-## Notes
+## 注意事項
 
 - `copilot` を使う場合、成果物は artifact directory 配下に保存されます。
 - `claude` は標準入力で prompt を受け取り、必要に応じて `result.md` を返します。
 - `codex` は最終結果を返し、runner が `result.md` に保存します。
-- 失敗時も `Implementation Artifact` や `stdout.log` から再実行できる場合があります。
+- 失敗時も `実装結果` や `stdout.log` から再実行できる場合があります。
 
-## Installation
+## インストール
 
 ### GitHub CLI (`gh`)
 
@@ -78,12 +78,12 @@ copilot --help
 claude --help
 ```
 
-### Application Setup
+### アプリケーション設定
 
-1. repository を clone します。
+1. リポジトリを clone します。
 2. 必要なら frontend 依存をインストールします。
 3. `exec/base/config/` または `config/` 配下の設定を調整します。
-4. `Workers`、`Watch Rules`、`Test Profiles`、`Tool Commands` を設定します。
+4. `ワーカー`、`監視ルール`、`テストプロファイル`、`ツールコマンド` を設定します。
 
 例:
 
