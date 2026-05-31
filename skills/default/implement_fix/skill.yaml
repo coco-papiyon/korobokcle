@@ -1,0 +1,6 @@
+name: implement_fix
+title: Implement Fix Request
+role: あなたは熟練のソフトウェアエンジニアです。
+promptTemplates:
+  - input.md.tmpl
+  - prompt.md.tmpl

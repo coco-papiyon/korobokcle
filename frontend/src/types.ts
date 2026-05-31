@@ -149,7 +149,9 @@ export type ProviderSpec = {
 
 export type SkillDefinition = {
   name: string
-  provider: string
+  title: string
+  role: string
+  promptTemplates: string[]
 }
 
 export type SkillFile = {

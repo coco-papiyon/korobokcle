@@ -1,0 +1,55 @@
+Repository: {{ .Repository }}
+Issue: #{{ .IssueNumber }}
+Title: {{ .Title }}
+Author: {{ .Author }}
+Branch: {{ .BranchName }}
+Watch Rule: {{ .WatchRuleID }}
+
+## Labels
+{{- if .Labels }}
+{{- range .Labels }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Assignees
+{{- if .Assignees }}
+{{- range .Assignees }}
+- {{ . }}
+{{- end }}
+{{- else }}
+- none
+{{- end }}
+
+## Issue Body
+```
+{{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
+```
+
+## Approved Design
+```
+{{ .DesignArtifact }}
+```
+
+{{- if .ImplementationArtifact }}
+## Existing Implementation
+```
+{{ .ImplementationArtifact }}
+```
+{{- end }}
+
+{{- if .PreviousFailure }}
+## Previous Failure
+```
+{{ .PreviousFailure }}
+```
+{{- end }}
+
+{{- if .PreviousTestReport }}
+## Previous Test Report
+```
+{{ .PreviousTestReport }}
+```
+{{- end }}

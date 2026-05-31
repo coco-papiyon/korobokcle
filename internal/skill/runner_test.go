@@ -55,7 +55,7 @@ func TestRunDesignUsesAppProviderWhenConfigured(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\nprovider: mock\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {

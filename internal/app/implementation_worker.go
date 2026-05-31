@@ -21,7 +21,7 @@ import (
 
 const (
 	implementationSkillName = "implement"
-	fixSkillName            = "fix"
+	implementFixSkillName   = "implement_fix"
 	reviewFixSkillName      = "review_fix"
 )
 
@@ -258,7 +258,7 @@ func resolveImplementationSkillName(cfg *config.Service, job domain.Job, isFix b
 
 	baseName := implementationSkillName
 	if isFix {
-		baseName = fixSkillName
+		baseName = implementFixSkillName
 	}
 
 	skillSet := strings.TrimSpace(rule.SkillSet)

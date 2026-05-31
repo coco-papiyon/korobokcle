@@ -1,2 +1,6 @@
 name: review_fix
-provider: mock
+title: Pull Request Review Fix Request
+role: あなたは熟練のソフトウェアエンジニアです。以下の Pull Request とレビューコメントを読み取り、修正計画を立てたうえでソースコードを修正し、変更内容を要約してください。
+promptTemplates:
+  - input.md.tmpl
+  - prompt.md.tmpl

@@ -195,6 +195,7 @@ type skillSetSummaryResponse struct {
 
 type skillFileResponse struct {
 	Definition     skill.Definition `json:"definition"`
+	InputTemplate  string           `json:"inputTemplate"`
 	PromptTemplate string           `json:"promptTemplate"`
 }
 
@@ -344,7 +345,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Logs = append(out.Logs, s.loadLogResponses("design", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerDesign), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("implementation", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), []string{"stdout.log", "stderr.log"})...)
-	out.Logs = append(out.Logs, s.loadLogResponses("fix", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerFix), []string{"stdout.log", "stderr.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("implement_fix", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerFix), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("pr", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerPR), []string{"git-push.log", "gh-pr-create.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("review", artifacts.WorkerDir(s.config.Root(), s.config.App().ArtifactsDir, job.ID, artifacts.WorkerReview), []string{"stdout.log", "stderr.log", "gh-pr-comment.log"})...)
 	writeJSON(w, http.StatusOK, out)
@@ -833,6 +834,7 @@ func (s *Server) handleSaveSkillSet(w http.ResponseWriter, r *http.Request) {
 	for skillName, file := range payload.Skills {
 		set.Skills[skillName] = skill.SkillFile{
 			Definition:     file.Definition,
+			InputTemplate:  file.InputTemplate,
 			PromptTemplate: file.PromptTemplate,
 		}
 	}
@@ -1481,6 +1483,7 @@ func toSkillSetResponse(set skill.SkillSet) skillSetResponse {
 	for name, file := range set.Skills {
 		files[name] = skillFileResponse{
 			Definition:     file.Definition,
+			InputTemplate:  file.InputTemplate,
 			PromptTemplate: file.PromptTemplate,
 		}
 	}

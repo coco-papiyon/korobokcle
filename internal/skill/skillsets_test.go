@@ -10,7 +10,7 @@ func TestLoadDefinitionFallsBackToDefaultSkillSet(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	writeSkillFixture(t, filepath.Join(root, "skills", "default", "design"), "default design")
+	writeSkillFixture(t, filepath.Join(root, "skills", "default", "design"), "default input", "default design")
 
 	definition, err := LoadDefinition(root, "design")
 	if err != nil {
@@ -29,7 +29,7 @@ func TestCreateAndDeleteSkillSet(t *testing.T) {
 
 	root := t.TempDir()
 	for _, skillName := range managedSkillNames {
-		writeSkillFixture(t, filepath.Join(root, "skills", "default", skillName), skillName+" prompt")
+		writeSkillFixture(t, filepath.Join(root, "skills", "default", skillName), skillName+" input", skillName+" prompt")
 	}
 
 	created, err := CreateSkillSet(root, "team-a", "default")
@@ -39,15 +39,21 @@ func TestCreateAndDeleteSkillSet(t *testing.T) {
 	if !created.Mutable {
 		t.Fatal("expected created skill set to be mutable")
 	}
+	if created.Skills["design"].InputTemplate != "design input" {
+		t.Fatalf("expected copied input template, got %q", created.Skills["design"].InputTemplate)
+	}
 	if created.Skills["design"].PromptTemplate != "design prompt" {
 		t.Fatalf("expected copied prompt, got %q", created.Skills["design"].PromptTemplate)
 	}
 
 	created.Skills["design"] = SkillFile{
 		Definition: Definition{
-			Name:     "design",
-			Provider: "codex",
+			Name:            "design",
+			Title:           "Updated Title",
+			Role:            "Updated Role",
+			PromptTemplates: []string{"input.md.tmpl", "prompt.md.tmpl"},
 		},
+		InputTemplate:  "updated input",
 		PromptTemplate: "updated prompt",
 	}
 	if err := SaveSkillSet(root, created); err != nil {
@@ -58,8 +64,14 @@ func TestCreateAndDeleteSkillSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadSkillSet() error = %v", err)
 	}
-	if loaded.Skills["design"].Definition.Provider != "codex" {
-		t.Fatalf("expected provider codex, got %q", loaded.Skills["design"].Definition.Provider)
+	if loaded.Skills["design"].Definition.Title != "Updated Title" {
+		t.Fatalf("expected updated title, got %q", loaded.Skills["design"].Definition.Title)
+	}
+	if loaded.Skills["design"].Definition.Role != "Updated Role" {
+		t.Fatalf("expected updated role, got %q", loaded.Skills["design"].Definition.Role)
+	}
+	if loaded.Skills["design"].InputTemplate != "updated input" {
+		t.Fatalf("expected updated input template, got %q", loaded.Skills["design"].InputTemplate)
 	}
 	if loaded.Skills["design"].PromptTemplate != "updated prompt" {
 		t.Fatalf("expected updated prompt, got %q", loaded.Skills["design"].PromptTemplate)
@@ -73,14 +85,17 @@ func TestCreateAndDeleteSkillSet(t *testing.T) {
 	}
 }
 
-func writeSkillFixture(t *testing.T, dir string, prompt string) {
+func writeSkillFixture(t *testing.T, dir string, input string, prompt string) {
 	t.Helper()
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "skill.yaml"), []byte("name: "+filepath.Base(dir)+"\nprovider: mock\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "skill.yaml"), []byte("name: "+filepath.Base(dir)+"\ntitle: title\nrole: role\npromptTemplates:\n  - input.md.tmpl\n  - prompt.md.tmpl\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "input.md.tmpl"), []byte(input), 0o644); err != nil {
+		t.Fatalf("WriteFile(input.md.tmpl) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "prompt.md.tmpl"), []byte(prompt), 0o644); err != nil {
 		t.Fatalf("WriteFile(prompt.md.tmpl) error = %v", err)

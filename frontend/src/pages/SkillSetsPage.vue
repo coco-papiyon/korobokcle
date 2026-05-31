@@ -6,7 +6,7 @@ import { useAsyncData } from '@/composables/useAsyncData'
 import { createSkillSet, deleteSkillSet, fetchSkillSet, fetchSkillSets, saveSkillSet } from '@/lib/api'
 import type { SkillFile, SkillSet, SkillSetSummary } from '@/types'
 
-const skillOrder = ['design', 'implement', 'fix', 'review'] as const
+const skillOrder = ['design', 'implement', 'implement_fix', 'review', 'review_fix'] as const
 
 const { data, isLoading, error, reload } = useAsyncData(fetchSkillSets)
 const selectedName = ref('default')
@@ -127,10 +127,12 @@ function skillLabel(name: string) {
       return 'Design'
     case 'implement':
       return 'Implement'
-    case 'fix':
-      return 'Fix'
+    case 'implement_fix':
+      return 'Implement Fix'
     case 'review':
       return 'Review'
+    case 'review_fix':
+      return 'Review Fix'
     default:
       return name
   }
@@ -192,7 +194,7 @@ function skillLabel(name: string) {
             <div>
               <h2>Skill Set Editor</h2>
               <p class="text-muted">
-                {{ selectedSet?.mutable ? 'provider と prompt を編集して保存できます。' : 'default は編集不可です。複製して変更してください。' }}
+                {{ selectedSet?.mutable ? 'title, role, prompt を編集して保存できます。' : 'default は編集不可です。複製して変更してください。' }}
               </p>
             </div>
             <div class="button-row">
@@ -219,9 +221,19 @@ function skillLabel(name: string) {
               </div>
 
               <div class="form-grid">
-                <label class="field">
-                  <span class="field__label">Provider</span>
-                  <input v-model="selectedSet.skills[skillName].definition.provider" class="field__control" type="text" :disabled="!selectedSet.mutable" />
+                <label class="field field-full">
+                  <span class="field__label">Title</span>
+                  <input v-model="selectedSet.skills[skillName].definition.title" class="field__control" type="text" :disabled="!selectedSet.mutable" />
+                </label>
+
+                <label class="field field-full">
+                  <span class="field__label">Role</span>
+                  <textarea
+                    v-model="selectedSet.skills[skillName].definition.role"
+                    class="field__control field__control--textarea"
+                    rows="4"
+                    :disabled="!selectedSet.mutable"
+                  />
                 </label>
 
                 <label class="field field-full">

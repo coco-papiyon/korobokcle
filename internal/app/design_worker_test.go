@@ -119,10 +119,12 @@ func TestDesignPromptIncludesRerunCommentSection(t *testing.T) {
 		ArtifactDir:    t.TempDir(),
 	}
 
-	promptPath := filepath.Join("..", "..", "skills", "default", "design", "prompt.md.tmpl")
-	prompt, err := skill.RenderPrompt(promptPath, ctx)
+	prompt, err := skill.RenderSkillPrompt(filepath.Join("..", ".."), "design", ctx)
 	if err != nil {
-		t.Fatalf("RenderPrompt() error = %v", err)
+		t.Fatalf("RenderSkillPrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt, "# Issue Design Request") {
+		t.Fatalf("expected title in prompt, got %q", prompt)
 	}
 	if !strings.Contains(prompt, "## Rerun Comment") {
 		t.Fatalf("expected rerun comment section in prompt, got %q", prompt)
@@ -154,10 +156,9 @@ func TestDesignPromptOmitsRerunCommentSectionWhenEmpty(t *testing.T) {
 		ArtifactDir: t.TempDir(),
 	}
 
-	promptPath := filepath.Join("..", "..", "skills", "default", "design", "prompt.md.tmpl")
-	prompt, err := skill.RenderPrompt(promptPath, ctx)
+	prompt, err := skill.RenderSkillPrompt(filepath.Join("..", ".."), "design", ctx)
 	if err != nil {
-		t.Fatalf("RenderPrompt() error = %v", err)
+		t.Fatalf("RenderSkillPrompt() error = %v", err)
 	}
 	if strings.Contains(prompt, "## Rerun Comment") {
 		t.Fatalf("expected rerun comment section to be omitted, got %q", prompt)
@@ -180,10 +181,9 @@ func TestDesignPromptOmitsExistingDesignSectionWhenEmpty(t *testing.T) {
 		ArtifactDir: t.TempDir(),
 	}
 
-	promptPath := filepath.Join("..", "..", "skills", "default", "design", "prompt.md.tmpl")
-	prompt, err := skill.RenderPrompt(promptPath, ctx)
+	prompt, err := skill.RenderSkillPrompt(filepath.Join("..", ".."), "design", ctx)
 	if err != nil {
-		t.Fatalf("RenderPrompt() error = %v", err)
+		t.Fatalf("RenderSkillPrompt() error = %v", err)
 	}
 	if strings.Contains(prompt, "## Existing Design") {
 		t.Fatalf("expected existing design section to be omitted, got %q", prompt)

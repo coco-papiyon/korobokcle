@@ -59,7 +59,7 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 		return AIResult{}, err
 	}
 
-	prompt, err := RenderPrompt(definition.PromptFile, contextData)
+	prompt, err := RenderSkillPrompt(r.toolRoot, skillName, contextData)
 	if err != nil {
 		return AIResult{}, err
 	}
@@ -123,7 +123,7 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 		return AIResult{}, err
 	}
 
-	prompt, err := RenderPrompt(definition.PromptFile, contextData)
+	prompt, err := RenderSkillPrompt(r.toolRoot, skillName, contextData)
 	if err != nil {
 		return AIResult{}, err
 	}
@@ -187,7 +187,7 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 		return AIResult{}, err
 	}
 
-	prompt, err := RenderPrompt(definition.PromptFile, contextData)
+	prompt, err := RenderSkillPrompt(r.toolRoot, skillName, contextData)
 	if err != nil {
 		return AIResult{}, err
 	}
@@ -255,7 +255,7 @@ func (r *Runner) providerNameForDefinition(definition Definition, execution Exec
 		providerName = strings.TrimSpace(r.defaultProviderName)
 	}
 	if providerName == "" {
-		providerName = strings.TrimSpace(definition.Provider)
+		return ""
 	}
 	return providerName
 }
