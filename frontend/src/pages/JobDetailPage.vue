@@ -176,6 +176,22 @@ const canReviewImplementation = computed(() => {
   }
   return state === 'failed' && latestEvent.value?.eventType === 'test_failed'
 })
+const canShowToolFlow = computed(() => {
+  if (isDeletedJob.value) {
+    return false
+  }
+  if (toolExecution.value?.running) {
+    return true
+  }
+  const state = data.value?.job.state
+  if (!state) {
+    return false
+  }
+  if (state === 'implementation_ready' || state === 'waiting_final_approval') {
+    return true
+  }
+  return state === 'failed' && ['implementation_failed', 'test_failed'].includes(latestEvent.value?.eventType ?? '')
+})
 const flowRerunAction = computed<RerunAction | null>(() => rerunActionFromEvent(flowRerunEvent.value))
 const flowRerunActionInFlow = computed<RerunAction | null>(() => {
   if (!flowRerunAction.value) {
@@ -792,7 +808,7 @@ function openPRCreateModal() {
                 </button>
               </div>
               <StateBadge v-else :state="data.job.state" />
-              <template v-if="!isDeletedJob">
+              <template v-if="canShowToolFlow">
                 <div class="stack-sm">
                   <p class="text-muted">
                     <span v-if="toolExecution">
