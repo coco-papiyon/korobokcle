@@ -180,6 +180,11 @@ func buildImplementationContext(cfg *config.Service, workDir string, job domain.
 		return skill.ImplementationContext{}, err
 	}
 
+	ctxData.DesignApprovalComment, err = loadDesignApprovalComment(events)
+	if err != nil {
+		return skill.ImplementationContext{}, err
+	}
+
 	rerunComment, previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)
 	if err != nil {
 		return skill.ImplementationContext{}, err
