@@ -3,6 +3,19 @@ import AppShell from '@/components/AppShell.vue'
 import guideMarkdown from '@/content/guide.md?raw'
 import { computed } from 'vue'
 
+type GuideHeading = {
+  title: string
+  slug: string
+}
+
+const guideHeadings: GuideHeading[] = [
+  { title: '概要', slug: 'overview' },
+  { title: '基本フロー', slug: 'basic-flow' },
+  { title: 'ツールコマンド', slug: 'tool-commands' },
+  { title: '注意事項', slug: 'notes' },
+  { title: 'インストール', slug: 'installation' },
+]
+
 function escapeHTML(value: string): string {
   return value
     .replaceAll('&', '&amp;')
@@ -10,11 +23,12 @@ function escapeHTML(value: string): string {
     .replaceAll('>', '&gt;')
 }
 
-function renderMarkdown(value: string): string {
+function renderMarkdown(value: string, headingSlugs: string[] = []): string {
   const lines = value.replace(/\r\n/g, '\n').split('\n')
   const out: string[] = []
   let inList = false
   let inCode = false
+  let headingIndex = 0
   const codeLines: string[] = []
 
   function closeList() {
@@ -63,7 +77,9 @@ function renderMarkdown(value: string): string {
     }
     if (trimmed.startsWith('## ')) {
       closeList()
-      out.push(`<h2>${escapeHTML(trimmed.slice(3))}</h2>`)
+      const title = escapeHTML(trimmed.slice(3))
+      const slug = headingSlugs[headingIndex++] ?? `heading-${headingIndex}`
+      out.push(`<h2 id="${slug}">${title}</h2>`)
       continue
     }
     if (trimmed.startsWith('### ')) {
@@ -94,47 +110,25 @@ function renderMarkdown(value: string): string {
   return out.join('\n')
 }
 
-const headings = computed(() =>
-  guideMarkdown
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith('## '))
-    .map((line) => {
-      const title = line.slice(3).trim()
-      const slug = title
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .trim()
-        .replace(/\s+/g, '-')
-      return { title, slug }
-    }),
-)
+const headings = computed(() => guideHeadings)
 
 function renderMarkdownWithAnchors(value: string): string {
-  return renderMarkdown(value).replaceAll(
-    /<h2>(.*?)<\/h2>/g,
-    (_, title: string) => {
-      const slug = String(title)
-        .toLowerCase()
-        .replace(/[^a-z0-9\s-]/g, '')
-        .trim()
-        .replace(/\s+/g, '-')
-      return `<h2 id="${slug}">${title}</h2>`
-    },
+  return renderMarkdown(
+    value,
+    guideHeadings.map((heading) => heading.slug),
   )
 }
 </script>
 
 <template>
   <AppShell
-    title="Guide"
+    title="ガイド"
     description="基本的な使い方を確認できます。"
   >
     <section class="guide-layout">
       <aside class="panel guide-toc">
-        <h2>Contents</h2>
-        <nav class="stack-sm" aria-label="Guide contents">
+        <h2>目次</h2>
+        <nav class="stack-sm" aria-label="ガイドの目次">
           <a
             v-for="heading in headings"
             :key="heading.slug"

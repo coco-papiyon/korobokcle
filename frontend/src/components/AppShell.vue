@@ -9,14 +9,14 @@ defineProps<{
   <div class="app-shell">
     <header class="hero panel panel-hero">
       <nav class="nav-tabs" aria-label="Main">
-        <RouterLink class="nav-tabs__link" to="/">Dashboard</RouterLink>
-        <RouterLink class="nav-tabs__link" to="/settings">Settings</RouterLink>
-        <RouterLink class="nav-tabs__link" to="/settings/workers">Workers</RouterLink>
-        <RouterLink class="nav-tabs__link" to="/settings/watch-rules">Watch Rules</RouterLink>
-        <RouterLink class="nav-tabs__link" to="/settings/skillsets">Skill Sets</RouterLink>
-        <RouterLink class="nav-tabs__link" to="/settings/test-profiles">Test Profiles</RouterLink>
-        <RouterLink class="nav-tabs__link" to="/settings/tool-commands">Tool Commands</RouterLink>
-        <RouterLink class="nav-tabs__link" to="/guide">Guide</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/">ダッシュボード</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/settings">設定</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/settings/workers">ワーカー</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/settings/watch-rules">監視ルール</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/settings/skillsets">スキルセット</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/settings/test-profiles">テストプロファイル</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/settings/tool-commands">ツールコマンド</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/guide">ガイド</RouterLink>
       </nav>
       <p class="hero__description">{{ description }}</p>
     </header>
