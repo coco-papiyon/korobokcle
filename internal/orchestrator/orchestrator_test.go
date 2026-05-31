@@ -450,6 +450,47 @@ func TestRerunDesignFromEventAllowedFromFailedJob(t *testing.T) {
 	}
 }
 
+func TestRerunDesignUsesLatestEventWhenInterrupted(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-5-interrupted",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 55,
+		State:        domain.StateInterrupted,
+		Title:        "test job",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := orch.store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "design_interrupted",
+		StateFrom: string(domain.StateDesignRunning),
+		StateTo:   string(domain.StateInterrupted),
+		Payload:   `{"reason":"startup_recovery"}`,
+		CreatedAt: nowUTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	if err := orch.RerunDesign(context.Background(), job.ID, "retry"); err != nil {
+		t.Fatalf("RerunDesign() error = %v", err)
+	}
+
+	saved, _, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.State != domain.StateDetected {
+		t.Fatalf("expected detected, got %s", saved.State)
+	}
+}
+
 func TestRerunImplementationUsesLatestEventWhenFailed(t *testing.T) {
 	t.Parallel()
 

@@ -159,6 +159,36 @@ func TestAvailableActionsForEvent(t *testing.T) {
 			expect: []string{actionRetryDesign},
 		},
 		{
+			name: "design interrupted",
+			event: domain.Event{
+				EventType: "design_interrupted",
+				StateFrom: string(domain.StateDesignRunning),
+				StateTo:   string(domain.StateInterrupted),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{actionRetryDesign},
+		},
+		{
+			name: "implementation interrupted",
+			event: domain.Event{
+				EventType: "implementation_interrupted",
+				StateFrom: string(domain.StateImplementationRunning),
+				StateTo:   string(domain.StateInterrupted),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{actionRetryImplementation},
+		},
+		{
+			name: "test interrupted",
+			event: domain.Event{
+				EventType: "test_interrupted",
+				StateFrom: string(domain.StateTestRunning),
+				StateTo:   string(domain.StateInterrupted),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{actionRetryImplementation},
+		},
+		{
 			name: "review ready",
 			event: domain.Event{
 				EventType: "review_ready",
@@ -207,6 +237,26 @@ func TestAvailableActionsForEvent(t *testing.T) {
 				CreatedAt: time.Now(),
 			},
 			expect: []string{actionRetryPR},
+		},
+		{
+			name: "pr interrupted",
+			event: domain.Event{
+				EventType: "pr_interrupted",
+				StateFrom: string(domain.StatePRCreating),
+				StateTo:   string(domain.StateInterrupted),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{actionRetryPR},
+		},
+		{
+			name: "review interrupted",
+			event: domain.Event{
+				EventType: "review_interrupted",
+				StateFrom: string(domain.StateReviewRunning),
+				StateTo:   string(domain.StateInterrupted),
+				CreatedAt: time.Now(),
+			},
+			expect: []string{actionRetryReview},
 		},
 		{
 			name: "design started has no actions",
