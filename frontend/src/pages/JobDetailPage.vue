@@ -791,11 +791,10 @@ function openPRCreateModal() {
               <template v-if="!isDeletedJob">
                 <div class="stack-sm">
                   <p class="text-muted">
-                    Tool Default: <code>{{ configuredToolCommand?.name ?? '-' }}</code>
                     <span v-if="toolExecution">
-                      / Running: <code>{{ toolExecution.name }}</code>
+                      Running: <code>{{ toolExecution.name }}</code> / 
                     </span>
-                    / {{ formatToolExecutionSummary() }}
+                    {{ formatToolExecutionSummary() }}
                   </p>
                   <label class="field field-full">
                     <span class="field__label">Tool Commands</span>

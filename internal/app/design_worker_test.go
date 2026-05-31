@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,6 +60,13 @@ func TestBuildDesignContextIncludesRerunComment(t *testing.T) {
 	files.App.ArtifactsDir = "artifacts"
 	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
 	svc := config.NewService(root, files)
+	designDir := filepath.Join(root, "artifacts", "jobs", "job-1", "design")
+	if err := os.MkdirAll(designDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(designDir, "result.md"), []byte("# existing design\n\n- keep the API stable\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
 
 	job := domain.Job{
 		ID:           "job-1",
@@ -88,23 +96,27 @@ func TestBuildDesignContextIncludesRerunComment(t *testing.T) {
 	if got.RerunComment != "prioritize architecture and keep the API stable" {
 		t.Fatalf("expected rerun comment to be captured, got %q", got.RerunComment)
 	}
+	if got.ExistingDesign != "# existing design\n\n- keep the API stable\n" {
+		t.Fatalf("expected existing design to be loaded, got %q", got.ExistingDesign)
+	}
 }
 
 func TestDesignPromptIncludesRerunCommentSection(t *testing.T) {
 	t.Parallel()
 
 	ctx := skill.DesignContext{
-		Repository:   "coco-papiyon/korobokcle",
-		IssueNumber:  42,
-		Title:        "Issue",
-		Body:         "issue body",
-		Author:       "alice",
-		Labels:       []string{"bug"},
-		Assignees:    []string{"bob"},
-		RerunComment: "prioritize architecture and keep the API stable",
-		WatchRuleID:  "rule-1",
-		BranchName:   "issue-42",
-		ArtifactDir:  t.TempDir(),
+		Repository:     "coco-papiyon/korobokcle",
+		IssueNumber:    42,
+		Title:          "Issue",
+		Body:           "issue body",
+		Author:         "alice",
+		Labels:         []string{"bug"},
+		Assignees:      []string{"bob"},
+		RerunComment:   "prioritize architecture and keep the API stable",
+		ExistingDesign: "# existing design\n\n- keep the API stable\n",
+		WatchRuleID:    "rule-1",
+		BranchName:     "issue-42",
+		ArtifactDir:    t.TempDir(),
 	}
 
 	promptPath := filepath.Join("..", "..", "skills", "default", "design", "prompt.md.tmpl")
@@ -117,6 +129,12 @@ func TestDesignPromptIncludesRerunCommentSection(t *testing.T) {
 	}
 	if !strings.Contains(prompt, ctx.RerunComment) {
 		t.Fatalf("expected rerun comment text in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, "## Existing Design") {
+		t.Fatalf("expected existing design section in prompt, got %q", prompt)
+	}
+	if !strings.Contains(prompt, ctx.ExistingDesign) {
+		t.Fatalf("expected existing design text in prompt, got %q", prompt)
 	}
 }
 
@@ -143,5 +161,31 @@ func TestDesignPromptOmitsRerunCommentSectionWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(prompt, "## Rerun Comment") {
 		t.Fatalf("expected rerun comment section to be omitted, got %q", prompt)
+	}
+}
+
+func TestDesignPromptOmitsExistingDesignSectionWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	ctx := skill.DesignContext{
+		Repository:  "coco-papiyon/korobokcle",
+		IssueNumber: 42,
+		Title:       "Issue",
+		Body:        "issue body",
+		Author:      "alice",
+		Labels:      []string{"bug"},
+		Assignees:   []string{"bob"},
+		WatchRuleID: "rule-1",
+		BranchName:  "issue-42",
+		ArtifactDir: t.TempDir(),
+	}
+
+	promptPath := filepath.Join("..", "..", "skills", "default", "design", "prompt.md.tmpl")
+	prompt, err := skill.RenderPrompt(promptPath, ctx)
+	if err != nil {
+		t.Fatalf("RenderPrompt() error = %v", err)
+	}
+	if strings.Contains(prompt, "## Existing Design") {
+		t.Fatalf("expected existing design section to be omitted, got %q", prompt)
 	}
 }

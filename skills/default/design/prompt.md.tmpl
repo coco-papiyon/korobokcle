@@ -33,6 +33,14 @@ Watch Rule: {{ .WatchRuleID }}
 {{ if .Body }}{{ .Body }}{{ else }}No body provided.{{ end }}
 ```
 
+{{- if .ExistingDesign }}
+## Existing Design
+```
+{{ .ExistingDesign }}
+```
+この再実行では、Issue Body と Existing Design と Rerun Comment を踏まえて、既存の設計をコメントに合わせて修正してください。
+
+{{- end }}
 {{- if .RerunComment }}
 ## Rerun Comment
 ```

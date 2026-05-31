@@ -35,6 +35,13 @@ Watch Rule: {{ .WatchRuleID }}
 {{ .DesignArtifact }}
 ```
 
+{{- if .ImplementationArtifact }}
+## Existing Implementation
+```
+{{ .ImplementationArtifact }}
+```
+{{- end }}
+
 {{- if .PreviousFailure }}
 ## Previous Failure
 ```
