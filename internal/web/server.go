@@ -17,13 +17,18 @@ import (
 )
 
 type Server struct {
-	httpServer   *http.Server
-	orchestrator *orchestrator.Orchestrator
-	config       *config.Service
-	staticDir    string
-	reviewer     ReviewSubmitter
-	commenter    IssueCommentSubmitter
-	tools        *toolRuntimeManager
+	httpServer       *http.Server
+	orchestrator     *orchestrator.Orchestrator
+	config           *config.Service
+	staticDir        string
+	issueBodyFetcher IssueBodyFetcher
+	reviewer         ReviewSubmitter
+	commenter        IssueCommentSubmitter
+	tools            *toolRuntimeManager
+}
+
+type IssueBodyFetcher interface {
+	FetchIssueBody(ctx context.Context, repository string, issueNumber int) (string, error)
 }
 
 type ReviewSubmitter interface {
@@ -51,24 +56,26 @@ type IssueCommentSubmitRequest struct {
 type GHReviewSubmitter struct{}
 type GHIssueCommentSubmitter struct{}
 
-func New(cfg *config.Service, orch *orchestrator.Orchestrator) (*Server, error) {
+func New(cfg *config.Service, orch *orchestrator.Orchestrator, issueBodyFetcher IssueBodyFetcher) (*Server, error) {
 	staticDir, err := resolveStaticDir()
 	if err != nil {
 		return nil, err
 	}
 	s := &Server{
-		orchestrator: orch,
-		config:       cfg,
-		staticDir:    staticDir,
-		reviewer:     GHReviewSubmitter{},
-		commenter:    GHIssueCommentSubmitter{},
-		tools:        newToolRuntimeManager(),
+		orchestrator:     orch,
+		config:           cfg,
+		staticDir:        staticDir,
+		issueBodyFetcher: issueBodyFetcher,
+		reviewer:         GHReviewSubmitter{},
+		commenter:        GHIssueCommentSubmitter{},
+		tools:            newToolRuntimeManager(),
 	}
 
 	router := mux.NewRouter()
 	api := router.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/jobs", s.handleJobs).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}", s.handleJobDetail).Methods(http.MethodGet)
+	api.HandleFunc("/jobs/{id}/issue-body", s.handleJobIssueBody).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}/delete", s.handleDeleteJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/restore", s.handleRestoreJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/purge", s.handlePurgeJob).Methods(http.MethodPost)

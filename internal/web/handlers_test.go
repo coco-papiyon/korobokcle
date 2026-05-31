@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +31,19 @@ type recordingReviewSubmitter struct {
 func (r *recordingReviewSubmitter) Submit(_ context.Context, req ReviewSubmitRequest) error {
 	r.req = req
 	return nil
+}
+
+type recordingIssueBodyFetcher struct {
+	repository  string
+	issueNumber int
+	body        string
+	err         error
+}
+
+func (f *recordingIssueBodyFetcher) FetchIssueBody(_ context.Context, repository string, issueNumber int) (string, error) {
+	f.repository = repository
+	f.issueNumber = issueNumber
+	return f.body, f.err
 }
 
 func toolStartLongRunningCommand() string {
@@ -325,6 +340,108 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].Workers != 1 {
 		t.Fatalf("unexpected monitored repositories: %#v", got.MonitoredRepositories)
+	}
+}
+
+func TestHandleJobIssueBodyRefreshSuccess(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	fetcher := &recordingIssueBodyFetcher{body: "latest issue body"}
+	server := &Server{
+		config:           svc,
+		orchestrator:     orchestrator.New(store, nil),
+		issueBodyFetcher: fetcher,
+	}
+	job := domain.Job{
+		ID:           "job-issue-body-refresh",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		State:        domain.StateDetected,
+		Title:        "issue job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID+"/issue-body", nil)
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	recorder := httptest.NewRecorder()
+
+	server.handleJobIssueBody(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+	if fetcher.repository != job.Repository {
+		t.Fatalf("expected repository %q, got %q", job.Repository, fetcher.repository)
+	}
+	if fetcher.issueNumber != job.GitHubNumber {
+		t.Fatalf("expected issue number %d, got %d", job.GitHubNumber, fetcher.issueNumber)
+	}
+
+	var got issueBodyResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("Decode(response) error = %v", err)
+	}
+	if got.IssueBody != "latest issue body" {
+		t.Fatalf("expected latest issue body, got %q", got.IssueBody)
+	}
+}
+
+func TestHandleJobIssueBodyRefreshFailure(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{
+		config:           svc,
+		orchestrator:     orchestrator.New(store, nil),
+		issueBodyFetcher: &recordingIssueBodyFetcher{err: fmt.Errorf("github unavailable")},
+	}
+	job := domain.Job{
+		ID:           "job-issue-body-refresh-failure",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		State:        domain.StateDetected,
+		Title:        "issue job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID+"/issue-body", nil)
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	recorder := httptest.NewRecorder()
+
+	server.handleJobIssueBody(recorder, req)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusInternalServerError, recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "github unavailable") {
+		t.Fatalf("expected error body to mention upstream failure, got %s", recorder.Body.String())
 	}
 }
 

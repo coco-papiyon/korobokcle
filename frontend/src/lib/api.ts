@@ -1,4 +1,4 @@
-import type { AppConfig, Job, JobDetail, NotificationConfig, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
+import type { AppConfig, IssueBodyResponse, Job, JobDetail, NotificationConfig, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -24,6 +24,10 @@ export function fetchJobs(deleted: 'exclude' | 'only' | 'include' = 'exclude'): 
 
 export function fetchJobDetail(jobId: string): Promise<JobDetail> {
   return request<JobDetail>(`/api/jobs/${jobId}`)
+}
+
+export function refreshIssueBody(jobId: string): Promise<IssueBodyResponse> {
+  return request<IssueBodyResponse>(`/api/jobs/${jobId}/issue-body`)
 }
 
 export function deleteJob(jobId: string): Promise<JobDetail> {

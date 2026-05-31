@@ -65,6 +65,10 @@ type jobDetailResponse struct {
 	Logs                   []logResponse           `json:"logs,omitempty"`
 }
 
+type issueBodyResponse struct {
+	IssueBody string `json:"issueBody"`
+}
+
 type reviewSubmitRequest struct {
 	Comment string `json:"comment"`
 }
@@ -226,6 +230,27 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.handleJobDetail(w, r)
+}
+
+func (s *Server) handleJobIssueBody(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	job, _, err := s.orchestrator.JobDetail(r.Context(), jobID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err)
+		return
+	}
+	if s.issueBodyFetcher == nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("issue body fetcher is not configured"))
+		return
+	}
+
+	body, err := s.issueBodyFetcher.FetchIssueBody(r.Context(), job.Repository, job.GitHubNumber)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, issueBodyResponse{IssueBody: body})
 }
 
 func (s *Server) handleRestoreJob(w http.ResponseWriter, r *http.Request) {

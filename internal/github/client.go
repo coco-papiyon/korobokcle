@@ -74,6 +74,56 @@ func (c *Client) ListPullRequests(ctx context.Context, rule config.WatchRule, re
 	return c.listRepositoryItems(ctx, rule, repository, domain.TargetPullRequest, since)
 }
 
+func (c *Client) FetchIssueBody(ctx context.Context, repository string, issueNumber int) (string, error) {
+	normalizedRepository, err := normalizeRepository(repository)
+	if err != nil {
+		return "", err
+	}
+	if issueNumber < 1 {
+		return "", fmt.Errorf("issue number must be positive")
+	}
+
+	token, err := c.tokenSrc.Token(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	rawURL := fmt.Sprintf("%s/repos/%s/issues/%d", c.baseURL, normalizedRepository, issueNumber)
+	c.infof("github api start name=repos/issues repository=%s issue_number=%d", normalizedRepository, issueNumber)
+	c.debugf("github request method=%s url=%s", http.MethodGet, rawURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	c.debugf("github response url=%s status=%d body=%s", rawURL, resp.StatusCode, string(body))
+
+	if resp.StatusCode >= 300 {
+		c.infof("github api done name=repos/issues repository=%s issue_number=%d status=%d error=http_status", normalizedRepository, issueNumber, resp.StatusCode)
+		return "", fmt.Errorf("github api %s returned status %d", rawURL, resp.StatusCode)
+	}
+
+	var payload apiIssue
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return "", err
+	}
+	c.infof("github api done name=repos/issues repository=%s issue_number=%d status=%d", normalizedRepository, issueNumber, resp.StatusCode)
+	return payload.Body, nil
+}
+
 func (c *Client) ListPullRequestReviews(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error) {
 	normalizedRepository, err := normalizeRepository(repository)
 	if err != nil {
@@ -668,6 +718,10 @@ type apiItem struct {
 
 type apiSearchResponse struct {
 	Items []apiItem `json:"items"`
+}
+
+type apiIssue struct {
+	Body string `json:"body"`
 }
 
 type apiUser struct {
