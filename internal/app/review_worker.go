@@ -86,6 +86,10 @@ func runPendingReviews(ctx context.Context, repoRoot string, cfg *config.Service
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
 			continue
 		}
+		if err := copyAIResultToWorkDir(repoRoot, artifacts.WorkerReview, jobDetail, contextData.ArtifactDir); err != nil {
+			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
+			continue
+		}
 
 		if err := orch.UpdateJobState(ctx, job.ID, domain.StateReviewReady, "review_ready", map[string]any{
 			"artifactDir": contextData.ArtifactDir,
@@ -126,7 +130,7 @@ func buildReviewContext(cfg *config.Service, job domain.Job, events []domain.Eve
 		Title:       job.Title,
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
-		ArtifactDir: artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerReview),
+		ArtifactDir: artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerReview),
 	}
 
 	for _, event := range events {

@@ -54,6 +54,7 @@ type jobDetailResponse struct {
 	Events                 []eventResponse         `json:"events"`
 	IssueBody              string                  `json:"issueBody,omitempty"`
 	ReviewComments         []reviewCommentResponse `json:"reviewComments,omitempty"`
+	PRComments             []reviewCommentResponse `json:"prComments,omitempty"`
 	DesignArtifact         *artifactResponse       `json:"designArtifact,omitempty"`
 	ImplementationArtifact *artifactResponse       `json:"implementationArtifact,omitempty"`
 	FixArtifact            *artifactResponse       `json:"fixArtifact,omitempty"`
@@ -83,11 +84,12 @@ type artifactResponse struct {
 }
 
 type reviewCommentResponse struct {
-	Author string `json:"author"`
-	Body   string `json:"body"`
-	Path   string `json:"path,omitempty"`
-	Line   int    `json:"line,omitempty"`
-	URL    string `json:"url,omitempty"`
+	Author    string `json:"author"`
+	Body      string `json:"body"`
+	Path      string `json:"path,omitempty"`
+	Line      int    `json:"line,omitempty"`
+	URL       string `json:"url,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
 }
 
 type logResponse struct {
@@ -343,6 +345,9 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if artifact, err := s.loadPRCreateArtifact(job, events); err == nil {
 		out.PRCreateArtifact = artifact
+	}
+	if comments, err := s.loadPRComments(job, events); err == nil {
+		out.PRComments = comments
 	}
 	out.Logs = append(out.Logs, s.loadLogResponses("design", resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"design_started", "design_ready", "waiting_design_approval"}, artifacts.WorkerDesign), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("implementation", resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"implementation_started", "implementation_ready", "waiting_final_approval", "test_started", "test_failed"}, artifacts.WorkerImplementation), []string{"stdout.log", "stderr.log"})...)
@@ -727,7 +732,7 @@ func (s *Server) handleSaveAppConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.prepareRepositoryWorkspaces != nil {
 		if err := s.prepareRepositoryWorkspaces(r.Context(), appConfig); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("prepare repository workspaces: %w", err))
+			writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("prepare repository workdirs: %w", err))
 			return
 		}
 	}
@@ -1419,12 +1424,12 @@ func toMonitoredRepositoryResponses(values []config.MonitoredRepository) []monit
 		if workers < 1 {
 			workers = 1
 		}
-			out = append(out, monitoredRepositoryResponse{
-				Repository: repository,
-				Branch:     strings.TrimSpace(value.Branch),
-				WorkDir:    strings.TrimSpace(value.WorkDir),
-				Workers:    workers,
-			})
+		out = append(out, monitoredRepositoryResponse{
+			Repository: repository,
+			Branch:     strings.TrimSpace(value.Branch),
+			WorkDir:    strings.TrimSpace(value.WorkDir),
+			Workers:    workers,
+		})
 	}
 	return out
 }
@@ -1446,14 +1451,14 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 			return nil, fmt.Errorf("item[%d].workers must be at least 1", index)
 		}
 		seen[repository] = struct{}{}
-			out = append(out, config.MonitoredRepository{
-				Repository: repository,
-				Branch:     branch,
-				WorkDir:    strings.TrimSpace(value.WorkDir),
-				Workers:    workers,
-			})
-		}
-		return out, nil
+		out = append(out, config.MonitoredRepository{
+			Repository: repository,
+			Branch:     branch,
+			WorkDir:    strings.TrimSpace(value.WorkDir),
+			Workers:    workers,
+		})
+	}
+	return out, nil
 }
 
 func toNotificationConfigResponse(notifications config.Notifications) notificationConfigResponse {
@@ -1580,18 +1585,15 @@ func containsString(values []string, target string) bool {
 }
 
 func (s *Server) loadDesignArtifact(job domain.Job, events []domain.Event) (*artifactResponse, error) {
-	dir := resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"design_started", "design_ready", "waiting_design_approval"}, artifacts.WorkerDesign)
-	return s.loadFirstArtifact(dir, "result.md", "design.md")
+	return s.loadPreferredAIArtifact(job, artifacts.WorkerDesign, events, []string{"design_started", "design_ready", "waiting_design_approval"}, "result.md", "design.md")
 }
 
 func (s *Server) loadImplementationArtifact(job domain.Job, events []domain.Event) (*artifactResponse, error) {
-	dir := resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"implementation_started", "implementation_ready", "waiting_final_approval", "test_started"}, artifacts.WorkerImplementation)
-	return s.loadFirstArtifact(dir, "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
+	return s.loadPreferredAIArtifact(job, artifacts.WorkerImplementation, events, []string{"implementation_started", "implementation_ready", "waiting_final_approval", "test_started"}, "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
 }
 
 func (s *Server) loadFixArtifact(job domain.Job, events []domain.Event) (*artifactResponse, error) {
-	dir := resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"implementation_started", "implementation_ready", "waiting_final_approval", "test_started", "test_failed"}, artifacts.WorkerFix)
-	return s.loadFirstArtifact(dir, "result.md", "fix-summary.md")
+	return s.loadPreferredAIArtifact(job, artifacts.WorkerFix, events, []string{"implementation_started", "implementation_ready", "waiting_final_approval", "test_started", "test_failed"}, "result.md", "fix-summary.md")
 }
 
 func (s *Server) loadArtifact(path string) (*artifactResponse, error) {
@@ -1610,8 +1612,7 @@ func (s *Server) loadArtifact(path string) (*artifactResponse, error) {
 }
 
 func (s *Server) loadReviewArtifact(job domain.Job, events []domain.Event) (*artifactResponse, error) {
-	dir := resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"review_started", "review_ready", "review_completed"}, artifacts.WorkerReview)
-	return s.loadFirstArtifact(dir, "result.md", "review.md")
+	return s.loadPreferredAIArtifact(job, artifacts.WorkerReview, events, []string{"review_started", "review_ready", "review_completed"}, "result.md", "review.md")
 }
 
 func (s *Server) loadTestReport(job domain.Job, events []domain.Event) (*artifactResponse, error) {
@@ -1661,6 +1662,21 @@ func (s *Server) loadPRCreateArtifact(job domain.Job, events []domain.Event) (*a
 	return s.loadFirstArtifact(dir, "result.json", "pr-create.json")
 }
 
+func (s *Server) loadPRComments(job domain.Job, events []domain.Event) ([]reviewCommentResponse, error) {
+	dir := resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"pr_started", "pr_created", "pr_updated"}, artifacts.WorkerPR)
+	artifact, err := s.loadFirstArtifact(dir, "gh-pr-comments.json")
+	if err != nil {
+		return nil, err
+	}
+	var payload struct {
+		Comments []reviewCommentResponse `json:"comments"`
+	}
+	if err := json.Unmarshal([]byte(artifact.Content), &payload); err != nil {
+		return nil, err
+	}
+	return payload.Comments, nil
+}
+
 func resolveRepositoryWorkerArtifactDir(cfg *config.Service, repository string, issueNumber int, events []domain.Event, eventTypes []string, fallbackPhase string) string {
 	candidates := make(map[string]struct{}, len(eventTypes))
 	for _, eventType := range eventTypes {
@@ -1706,11 +1722,7 @@ func resolveTestReportArtifactDir(cfg *config.Service, job domain.Job, events []
 }
 
 func resolveRepositoryWorkerConfiguredArtifactDir(cfg *config.Service, repository string, issueNumber int, phase string) string {
-	workDir := resolveRepositoryWorkerConfiguredWorkDir(cfg, repository)
-	if workDir == "" {
-		return ""
-	}
-	return artifacts.RepositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, issueNumber, phase)
+	return artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, repository, issueNumber, phase)
 }
 
 func resolveRepositoryWorkerConfiguredWorkDir(cfg *config.Service, repository string) string {
@@ -1852,4 +1864,17 @@ func (s *Server) loadFirstArtifact(dir string, names ...string) (*artifactRespon
 		}
 	}
 	return nil, os.ErrNotExist
+}
+
+func (s *Server) loadPreferredAIArtifact(job domain.Job, phase string, events []domain.Event, eventTypes []string, names ...string) (*artifactResponse, error) {
+	if workDir := resolveRepositoryWorkerConfiguredWorkDir(s.config, job.Repository); workDir != "" {
+		workingPath := artifacts.RepositoryWorkerWorkArtifactPath(workDir, phase, job.GitHubNumber, job.Title)
+		if artifact, err := s.loadArtifact(workingPath); err == nil {
+			return artifact, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	dir := resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, eventTypes, phase)
+	return s.loadFirstArtifact(dir, names...)
 }

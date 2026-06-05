@@ -59,7 +59,7 @@ func TestRunPendingPRCreationsCompletesJob(t *testing.T) {
 	artifactDir := artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerPR)
 
 	recorder := &recordingPublisher{}
-	if err := runPendingPRCreations(context.Background(), cfg, orch, recorder, recorder, root, testLogger(t)); err != nil {
+	if err := runPendingPRCreations(context.Background(), cfg, orch, recorder, recorder, MockPRCommentFetcher{}, root, testLogger(t)); err != nil {
 		t.Fatalf("runPendingPRCreations() error = %v", err)
 	}
 
@@ -79,6 +79,9 @@ func TestRunPendingPRCreationsCompletesJob(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"pushed": true`) {
 		t.Fatalf("expected pushed flag in result.json, got %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"pullNumber": 123`) {
+		t.Fatalf("expected pull number in result.json, got %s", string(raw))
 	}
 }
 
@@ -161,11 +164,11 @@ func TestBuildPRCreateRequestUsesDefaultBranchWhenMonitoringBranchIsEmpty(t *tes
 		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
 	}
 	job := domain.Job{
-		ID:         "job-1",
-		Repository: "owner/repo",
+		ID:           "job-1",
+		Repository:   "owner/repo",
 		GitHubNumber: 12,
-		Title:      "Implement feature",
-		BranchName: "korobokcle/issue-12",
+		Title:        "Implement feature",
+		BranchName:   "korobokcle/issue-12",
 	}
 	if err := writeFile(filepath.Join(artifacts.WorkerDir(root, cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "result.md"), []byte("summary")); err != nil {
 		t.Fatalf("write result.md: %v", err)
@@ -209,7 +212,10 @@ func (r *recordingPublisher) Push(_ context.Context, _ PRCreateRequest) error {
 	return nil
 }
 
-func (r *recordingPublisher) Create(_ context.Context, req PRCreateRequest) (string, error) {
+func (r *recordingPublisher) Create(_ context.Context, req PRCreateRequest) (PRCreateResult, error) {
 	r.calls = append(r.calls, "create")
-	return "https://github.com/" + req.Repository + "/pull/123", nil
+	return PRCreateResult{
+		URL:        "https://github.com/" + req.Repository + "/pull/123",
+		PullNumber: 123,
+	}, nil
 }

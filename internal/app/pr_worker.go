@@ -20,7 +20,7 @@ import (
 )
 
 type PRCreator interface {
-	Create(ctx context.Context, req PRCreateRequest) (string, error)
+	Create(ctx context.Context, req PRCreateRequest) (PRCreateResult, error)
 }
 
 type BranchPusher interface {
@@ -29,6 +29,10 @@ type BranchPusher interface {
 
 type PRCommentSubmitter interface {
 	Submit(ctx context.Context, req PRCommentSubmitRequest) error
+}
+
+type PRCommentFetcher interface {
+	Fetch(ctx context.Context, req PRCommentFetchRequest) (PRCommentsArtifact, error)
 }
 
 type PRCreateRequest struct {
@@ -49,6 +53,29 @@ type PRCommentSubmitRequest struct {
 	ArtifactDir string
 }
 
+type PRCommentFetchRequest struct {
+	Repository  string
+	PullNumber  int
+	ArtifactDir string
+}
+
+type PRCreateResult struct {
+	URL        string
+	PullNumber int
+}
+
+type PRCommentsArtifact struct {
+	PullNumber int         `json:"pullNumber"`
+	Comments   []PRComment `json:"comments"`
+}
+
+type PRComment struct {
+	Author    string `json:"author"`
+	Body      string `json:"body"`
+	URL       string `json:"url,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
+}
+
 type MockBranchPusher struct{}
 
 func (p *MockBranchPusher) Push(_ context.Context, _ PRCreateRequest) error {
@@ -59,16 +86,26 @@ type MockPRCreator struct{}
 
 type MockPRCommentSubmitter struct{}
 
-func (c *MockPRCreator) Create(_ context.Context, req PRCreateRequest) (string, error) {
-	return fmt.Sprintf("https://github.com/%s/pull/%s", req.Repository, strings.ReplaceAll(req.BranchName, "/", "-")), nil
+type MockPRCommentFetcher struct{}
+
+func (c *MockPRCreator) Create(_ context.Context, req PRCreateRequest) (PRCreateResult, error) {
+	return PRCreateResult{
+		URL:        fmt.Sprintf("https://github.com/%s/pull/123", req.Repository),
+		PullNumber: 123,
+	}, nil
 }
 
 func (MockPRCommentSubmitter) Submit(_ context.Context, _ PRCommentSubmitRequest) error {
 	return nil
 }
 
+func (MockPRCommentFetcher) Fetch(_ context.Context, req PRCommentFetchRequest) (PRCommentsArtifact, error) {
+	return PRCommentsArtifact{PullNumber: req.PullNumber, Comments: []PRComment{}}, nil
+}
+
 type GHPRCreator struct{}
 type GHPRCommentSubmitter struct{}
+type GHPRCommentFetcher struct{}
 
 type GitBranchPusher struct {
 	Remote string
@@ -136,18 +173,18 @@ func preparePRBranch(ctx context.Context, req PRCreateRequest) error {
 	return writeCommandLog(req.ArtifactDir, "git-commit.log", commitOutput)
 }
 
-func (c *GHPRCreator) Create(ctx context.Context, req PRCreateRequest) (string, error) {
+func (c *GHPRCreator) Create(ctx context.Context, req PRCreateRequest) (PRCreateResult, error) {
 	if _, err := exec.LookPath("gh"); err != nil {
-		return "", fmt.Errorf("gh command is not available: %w", err)
+		return PRCreateResult{}, fmt.Errorf("gh command is not available: %w", err)
 	}
 
 	if err := os.MkdirAll(req.ArtifactDir, 0o755); err != nil {
-		return "", err
+		return PRCreateResult{}, err
 	}
 
 	bodyPath := filepath.Join(req.ArtifactDir, "body.md")
 	if err := os.WriteFile(bodyPath, []byte(req.Body), 0o644); err != nil {
-		return "", err
+		return PRCreateResult{}, err
 	}
 
 	cmd := exec.CommandContext(ctx, "gh", "pr", "create",
@@ -164,15 +201,19 @@ func (c *GHPRCreator) Create(ctx context.Context, req PRCreateRequest) (string, 
 	raw, err := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(raw))
 	if err != nil {
-		return "", fmt.Errorf("gh pr create failed: %w: %s", err, output)
+		return PRCreateResult{}, fmt.Errorf("gh pr create failed: %w: %s", err, output)
 	}
 	if output == "" {
-		return "", fmt.Errorf("gh pr create returned empty output")
+		return PRCreateResult{}, fmt.Errorf("gh pr create returned empty output")
 	}
 	if err := writeCommandLog(req.ArtifactDir, "gh-pr-create.log", output); err != nil {
-		return "", err
+		return PRCreateResult{}, err
 	}
-	return output, nil
+	pullNumber, err := pullNumberFromPullURL(output)
+	if err != nil {
+		return PRCreateResult{}, err
+	}
+	return PRCreateResult{URL: output, PullNumber: pullNumber}, nil
 }
 
 func (GHPRCommentSubmitter) Submit(ctx context.Context, req PRCommentSubmitRequest) error {
@@ -213,15 +254,90 @@ func (GHPRCommentSubmitter) Submit(ctx context.Context, req PRCommentSubmitReque
 	return nil
 }
 
+func (GHPRCommentFetcher) Fetch(ctx context.Context, req PRCommentFetchRequest) (PRCommentsArtifact, error) {
+	if _, err := exec.LookPath("gh"); err != nil {
+		return PRCommentsArtifact{}, fmt.Errorf("gh command is not available: %w", err)
+	}
+	if strings.TrimSpace(req.Repository) == "" {
+		return PRCommentsArtifact{}, fmt.Errorf("repository is required")
+	}
+	if req.PullNumber < 1 {
+		return PRCommentsArtifact{}, fmt.Errorf("pull number must be positive")
+	}
+	if err := os.MkdirAll(req.ArtifactDir, 0o755); err != nil {
+		return PRCommentsArtifact{}, err
+	}
+
+	cmd := exec.CommandContext(ctx, "gh", "api", fmt.Sprintf("repos/%s/issues/%d/comments", req.Repository, req.PullNumber))
+	raw, err := cmd.CombinedOutput()
+	output := strings.TrimSpace(string(raw))
+	if writeErr := writeCommandLog(req.ArtifactDir, "gh-pr-comments.log", output); writeErr != nil {
+		return PRCommentsArtifact{}, writeErr
+	}
+	if err != nil {
+		return PRCommentsArtifact{}, fmt.Errorf("gh pr comments failed: %w: %s", err, output)
+	}
+
+	var payload []struct {
+		Body      string `json:"body"`
+		HTMLURL   string `json:"html_url"`
+		CreatedAt string `json:"created_at"`
+		User      struct {
+			Login string `json:"login"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return PRCommentsArtifact{}, err
+	}
+
+	comments := make([]PRComment, 0, len(payload))
+	for _, comment := range payload {
+		comments = append(comments, PRComment{
+			Author:    comment.User.Login,
+			Body:      comment.Body,
+			URL:       comment.HTMLURL,
+			CreatedAt: comment.CreatedAt,
+		})
+	}
+	artifact := PRCommentsArtifact{PullNumber: req.PullNumber, Comments: comments}
+	rawArtifact, err := json.MarshalIndent(artifact, "", "  ")
+	if err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	if err := os.WriteFile(filepath.Join(req.ArtifactDir, "gh-pr-comments.json"), rawArtifact, 0o644); err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	return artifact, nil
+}
+
+func pullNumberFromPullURL(value string) (int, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 0, fmt.Errorf("pull request url is empty")
+	}
+	normalized := strings.TrimRight(trimmed, "/")
+	idx := strings.LastIndex(normalized, "/pull/")
+	if idx == -1 {
+		return 0, fmt.Errorf("invalid pull request url: %q", value)
+	}
+	last := strings.TrimPrefix(normalized[idx+len("/pull/"):], "/")
+	var number int
+	if _, err := fmt.Sscanf(last, "%d", &number); err != nil || number < 1 {
+		return 0, fmt.Errorf("invalid pull request number in url: %q", value)
+	}
+	return number, nil
+}
+
 func startPRWorker(ctx context.Context, repoRoot string, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
 	pusher, creator := newPRPublisher(cfg.App().Provider)
+	commentFetcher := newPRCommentFetcher(cfg.App().Provider)
 
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 
 		for {
-			if err := runPendingPRCreations(ctx, cfg, orch, pusher, creator, repoRoot, logger); err != nil && ctx.Err() == nil {
+			if err := runPendingPRCreations(ctx, cfg, orch, pusher, creator, commentFetcher, repoRoot, logger); err != nil && ctx.Err() == nil {
 				logger.Printf("pr worker error: %v", err)
 			}
 
@@ -250,7 +366,14 @@ func newPRCommentSubmitter(provider string) PRCommentSubmitter {
 	return GHPRCommentSubmitter{}
 }
 
-func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, pusher BranchPusher, creator PRCreator, root string, logger *log.Logger) error {
+func newPRCommentFetcher(provider string) PRCommentFetcher {
+	if strings.EqualFold(strings.TrimSpace(provider), "mock") {
+		return MockPRCommentFetcher{}
+	}
+	return GHPRCommentFetcher{}
+}
+
+func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, pusher BranchPusher, creator PRCreator, commentFetcher PRCommentFetcher, root string, logger *log.Logger) error {
 	jobs, err := orch.ListJobs(ctx)
 	if err != nil {
 		return err
@@ -273,21 +396,32 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 			continue
 		}
 
-		url, err := creator.Create(ctx, req)
+		result, err := creator.Create(ctx, req)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 			continue
 		}
 
-		if err := writePRCreateArtifact(req.ArtifactDir, url, req); err != nil {
+		if err := writePRCreateArtifact(req.ArtifactDir, result, req); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 			continue
 		}
 
+		if job.Type == domain.JobTypeIssue && commentFetcher != nil && result.PullNumber > 0 {
+			if _, err := commentFetcher.Fetch(ctx, PRCommentFetchRequest{
+				Repository:  job.Repository,
+				PullNumber:  result.PullNumber,
+				ArtifactDir: req.ArtifactDir,
+			}); err != nil && logger != nil {
+				logger.Printf("pr comment fetch failed job_id=%s pull_number=%d error=%v", job.ID, result.PullNumber, err)
+			}
+		}
+
 		if err := orch.UpdateJobState(ctx, job.ID, domain.StateCompleted, "pr_created", map[string]any{
-			"url":   url,
-			"title": req.Title,
-			"head":  req.BranchName,
+			"url":        result.URL,
+			"pullNumber": result.PullNumber,
+			"title":      req.Title,
+			"head":       req.BranchName,
 		}); err != nil {
 			logger.Printf("pr_created state transition failed for %s: %v", job.ID, err)
 			continue
@@ -348,13 +482,13 @@ func buildPRFeedbackPushRequest(_ context.Context, cfg *config.Service, job doma
 }
 
 func buildRepositoryPRCreateRequest(ctx context.Context, cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
-	artifactDir := repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerPR)
-	summaryRaw, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerImplementation, "result.md", "implement.md", "summary.md")
+	artifactDir := repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerPR)
+	summaryRaw, err := readRepositoryWorkerArtifactFile(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation, "result.md", "implement.md", "summary.md")
 	if err != nil {
 		return PRCreateRequest{}, err
 	}
 
-	fixSummaryRaw, err := readRepositoryOptionalFixSummary(cfg, workDir, job.GitHubNumber, job.ID)
+	fixSummaryRaw, err := readRepositoryOptionalFixSummary(cfg, job.Repository, job.GitHubNumber)
 	if err != nil {
 		return PRCreateRequest{}, err
 	}
@@ -378,8 +512,8 @@ func buildRepositoryPRCreateRequest(ctx context.Context, cfg *config.Service, jo
 }
 
 func buildRepositoryPRFeedbackPushRequest(_ context.Context, cfg *config.Service, job domain.Job, workDir string) (PRCreateRequest, error) {
-	artifactDir := repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerPR)
-	summaryRaw, err := readRepositoryPRFeedbackSummaryArtifact(cfg, workDir, job.GitHubNumber, job.ID)
+	artifactDir := repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerPR)
+	summaryRaw, err := readRepositoryPRFeedbackSummaryArtifact(cfg, job.Repository, job.GitHubNumber)
 	if err != nil {
 		return PRCreateRequest{}, err
 	}
@@ -396,8 +530,8 @@ func buildRepositoryPRFeedbackPushRequest(_ context.Context, cfg *config.Service
 	}, nil
 }
 
-func readRepositoryOptionalFixSummary(cfg *config.Service, workerDir string, issueNumber int, jobID string) (string, error) {
-	raw, err := readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, issueNumber, jobID, artifacts.WorkerFix, "result.md", "fix-summary.md")
+func readRepositoryOptionalFixSummary(cfg *config.Service, repository string, issueNumber int) (string, error) {
+	raw, err := readRepositoryWorkerArtifactFile(cfg, repository, issueNumber, artifacts.WorkerFix, "result.md", "fix-summary.md")
 	if err == nil {
 		return string(raw), nil
 	}
@@ -407,12 +541,12 @@ func readRepositoryOptionalFixSummary(cfg *config.Service, workerDir string, iss
 	return "", err
 }
 
-func readRepositoryPRFeedbackSummaryArtifact(cfg *config.Service, workerDir string, issueNumber int, jobID string) ([]byte, error) {
-	summaryRaw, err := readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, issueNumber, jobID, artifacts.WorkerImplementation, "review_fix.md", "result.md", "implement.md", "summary.md")
+func readRepositoryPRFeedbackSummaryArtifact(cfg *config.Service, repository string, issueNumber int) ([]byte, error) {
+	summaryRaw, err := readRepositoryWorkerArtifactFile(cfg, repository, issueNumber, artifacts.WorkerImplementation, "review_fix.md", "result.md", "implement.md", "summary.md")
 	if err == nil {
 		return summaryRaw, nil
 	}
-	return readRepositoryWorkerArtifactFile(cfg, workerDir, cfg.App().WorkspaceDir, issueNumber, jobID, artifacts.WorkerFix, "review_fix.md", "result.md", "fix-summary.md")
+	return readRepositoryWorkerArtifactFile(cfg, repository, issueNumber, artifacts.WorkerFix, "review_fix.md", "result.md", "fix-summary.md")
 }
 
 func readOptionalFixSummary(cfg *config.Service, jobID string) (string, error) {
@@ -462,13 +596,14 @@ func buildPRBody(job domain.Job, summary string, fixSummary string) string {
 	return body
 }
 
-func writePRCreateArtifact(artifactDir string, url string, req PRCreateRequest) error {
+func writePRCreateArtifact(artifactDir string, result PRCreateResult, req PRCreateRequest) error {
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		return err
 	}
 
 	raw, err := json.MarshalIndent(map[string]any{
-		"url":        url,
+		"url":        result.URL,
+		"pullNumber": result.PullNumber,
 		"repository": req.Repository,
 		"branchName": req.BranchName,
 		"title":      req.Title,

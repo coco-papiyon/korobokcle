@@ -29,6 +29,7 @@ export type JobDetail = {
   events: JobEvent[]
   issueBody?: string
   reviewComments?: ReviewComment[]
+  prComments?: ReviewComment[]
   designArtifact?: Artifact
   implementationArtifact?: Artifact
   fixArtifact?: Artifact
@@ -55,6 +56,7 @@ export type ReviewComment = {
   path?: string
   line?: number
   url?: string
+  createdAt?: string
 }
 
 export type JobLog = {

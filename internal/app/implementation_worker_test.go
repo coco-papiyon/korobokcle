@@ -32,14 +32,14 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 		WatchRuleID:  "rule-1",
 	}
 
-	designDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerDesign)
+	designDir := artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
 	if err := os.MkdirAll(designDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(designDir) error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(designDir, "result.md"), []byte("design content"), 0o644); err != nil {
 		t.Fatalf("WriteFile(result.md) error = %v", err)
 	}
-	implementationDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerImplementation)
+	implementationDir := artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(implementationDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(implementationDir) error = %v", err)
 	}
@@ -111,7 +111,7 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 		t.Fatalf("resolveImplementationRunSpec() error = %v", err)
 	}
 
-	got, err := buildImplementationContext(svc, job, events, runSpec)
+	got, err := buildImplementationContext(svc, root, job, events, runSpec)
 	if err != nil {
 		t.Fatalf("buildImplementationContext() error = %v", err)
 	}
@@ -130,7 +130,7 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	if got.ImplementationArtifact != "implementation content" {
 		t.Fatalf("expected implementation artifact to be captured, got %q", got.ImplementationArtifact)
 	}
-	if got.ArtifactDir != artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerImplementation) {
+	if got.ArtifactDir != artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerImplementation) {
 		t.Fatalf("expected changes artifact dir, got %q", got.ArtifactDir)
 	}
 }
@@ -209,7 +209,12 @@ func TestResolveImplementationRunSpecUsesFixSkillAfterTestFailureRerun(t *testin
 	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
 	svc := config.NewService(root, files)
 
-	job := domain.Job{ID: "job-1", WatchRuleID: "rule-1"}
+	job := domain.Job{
+		ID:           "job-1",
+		Repository:   "coco-papiyon/korobokcle",
+		GitHubNumber: 1,
+		WatchRuleID:  "rule-1",
+	}
 	testFailedID := int64(10)
 	rerunPayload, err := json.Marshal(map[string]any{
 		"eventId": testFailedID,
@@ -230,7 +235,7 @@ func TestResolveImplementationRunSpecUsesFixSkillAfterTestFailureRerun(t *testin
 	if got.SkillName != implementFixSkillName {
 		t.Fatalf("expected skill %q, got %q", implementFixSkillName, got.SkillName)
 	}
-	wantDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerFix)
+	wantDir := artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerFix)
 	if got.ArtifactDir != wantDir {
 		t.Fatalf("expected artifact dir %q, got %q", wantDir, got.ArtifactDir)
 	}
@@ -254,7 +259,7 @@ func TestBuildImplementationContextFallsBackToLegacyDesignFileName(t *testing.T)
 		WatchRuleID:  "rule-1",
 	}
 
-	designDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerDesign)
+	designDir := artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
 	if err := os.MkdirAll(designDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(designDir) error = %v", err)
 	}
@@ -267,7 +272,7 @@ func TestBuildImplementationContextFallsBackToLegacyDesignFileName(t *testing.T)
 		t.Fatalf("resolveImplementationRunSpec() error = %v", err)
 	}
 
-	got, err := buildImplementationContext(svc, job, nil, runSpec)
+	got, err := buildImplementationContext(svc, root, job, nil, runSpec)
 	if err != nil {
 		t.Fatalf("buildImplementationContext() error = %v", err)
 	}
@@ -285,8 +290,10 @@ func TestLoadImplementationRetryContextPrefersLatestImplementationReport(t *test
 	svc := config.NewService(root, files)
 
 	job := domain.Job{ID: "job-1"}
-	fixDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerFix)
-	implementationDir := artifacts.WorkerDir(root, "artifacts", job.ID, artifacts.WorkerImplementation)
+	job.Repository = "coco-papiyon/korobokcle"
+	job.GitHubNumber = 1
+	fixDir := artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerFix)
+	implementationDir := artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(fixDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(fixDir) error = %v", err)
 	}
