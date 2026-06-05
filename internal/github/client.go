@@ -124,7 +124,7 @@ func (c *Client) FetchIssueBody(ctx context.Context, repository string, issueNum
 	return payload.Body, nil
 }
 
-func (c *Client) ListPullRequestReviews(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error) {
+func (c *Client) ListPullRequestReviews(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {
 	normalizedRepository, err := normalizeRepository(repository)
 	if err != nil {
 		return nil, err
@@ -208,12 +208,17 @@ func (c *Client) ListPullRequestReviews(ctx context.Context, repository string, 
 		}
 	}
 
-	items := make([]domain.RepositoryItem, 0, len(grouped))
-	for pullNumber, reviewComments := range grouped {
-		if len(reviewComments) == 0 {
+	items := make([]domain.RepositoryItem, 0, len(openPRs))
+	for pullNumber, pull := range openPRs {
+		reviewComments := grouped[pullNumber]
+		reviewers := make([]string, 0, len(pull.Reviewers))
+		for _, reviewer := range pull.Reviewers {
+			reviewers = append(reviewers, reviewer.Login)
+		}
+
+		if len(reviewComments) == 0 && !anyReviewerMatches(rule.Reviewers, reviewers) {
 			continue
 		}
-		pull := openPRs[pullNumber]
 		item := pull.toDomain(normalizedRepository, "pulls")
 		item.Target = domain.TargetPullRequestReview
 		item.DefaultState = domain.StateImplementationRunning
@@ -676,6 +681,17 @@ func compactSearchValues(values []string) []string {
 		compacted = append(compacted, trimmed)
 	}
 	return compacted
+}
+
+func anyReviewerMatches(expected []string, actual []string) bool {
+	for _, candidate := range actual {
+		for _, reviewer := range expected {
+			if strings.EqualFold(strings.TrimSpace(reviewer), strings.TrimSpace(candidate)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func buildSearchORGroup(qualifier string, values []string) string {

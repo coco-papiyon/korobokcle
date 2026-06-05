@@ -939,17 +939,6 @@ function openPRCreateModal() {
         </PanelCard>
 
         <PanelCard
-          v-if="data.fixArtifact"
-          :title="isPRFeedbackJob ? '追加修正結果' : '修正成果物'"
-          :description="isPRFeedbackJob ? '再実行やテスト失敗後の追加修正結果です。' : 'test_failed 後の修正フェーズで生成された成果物です。'"
-        >
-          <details class="stack-sm">
-            <summary class="text-muted">{{ data.fixArtifact.path }}</summary>
-            <pre class="artifact-view">{{ data.fixArtifact.content }}</pre>
-          </details>
-        </PanelCard>
-
-        <PanelCard
           v-if="data.reviewArtifact"
           title="レビュー成果物"
         >
