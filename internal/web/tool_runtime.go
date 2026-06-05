@@ -335,10 +335,10 @@ func resolveJobToolWorkDir(cfg *config.Service, job domain.Job) (string, error) 
 	repoDir := artifacts.RepositoryWorkerSourceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, workerIndex)
 	info, err := os.Stat(repoDir)
 	if err != nil {
-		return "", fmt.Errorf("tool workspace is not available: %w", err)
+		return "", fmt.Errorf("tool workdir is not available: %w", err)
 	}
 	if !info.IsDir() {
-		return "", fmt.Errorf("tool workspace is not a directory: %s", repoDir)
+		return "", fmt.Errorf("tool workdir is not a directory: %s", repoDir)
 	}
 	return repoDir, nil
 }
