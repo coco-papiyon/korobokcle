@@ -18,16 +18,12 @@ func unmarshalEventPayload(payload string, out any) error {
 	return json.Unmarshal([]byte(payload), out)
 }
 
-func repositoryWorkerBaseDirFromWorkDir(workDir string) string {
-	return workDir
+func repositoryWorkerArtifactDir(cfg *config.Service, repository string, issueNumber int, phase string) string {
+	return artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, repository, issueNumber, phase)
 }
 
-func repositoryWorkerArtifactDir(workDir string, workspaceDir string, issueNumber int, phase string) string {
-	return artifacts.RepositoryWorkerArtifactDir(repositoryWorkerBaseDirFromWorkDir(workDir), workspaceDir, issueNumber, phase)
-}
-
-func readRepositoryWorkerArtifactFile(_ *config.Service, workDir string, workspaceDir string, issueNumber int, _ string, phase string, names ...string) ([]byte, error) {
-	dir := repositoryWorkerArtifactDir(workDir, workspaceDir, issueNumber, phase)
+func readRepositoryWorkerArtifactFile(cfg *config.Service, repository string, issueNumber int, phase string, names ...string) ([]byte, error) {
+	dir := repositoryWorkerArtifactDir(cfg, repository, issueNumber, phase)
 	return readFirstArtifactFile(dir, names...)
 }
 
@@ -39,7 +35,7 @@ func buildRepositoryDesignContext(cfg *config.Service, workDir string, job domai
 		Title:       job.Title,
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
-		ArtifactDir: repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerDesign),
+		ArtifactDir: repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerDesign),
 	}
 
 	for _, event := range events {
@@ -69,7 +65,7 @@ func buildRepositoryDesignContext(cfg *config.Service, workDir string, job domai
 		}
 	}
 
-	if existingDesign, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerDesign, "result.md", "design.md"); err == nil {
+	if existingDesign, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerDesign, job, repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerDesign), "result.md", "design.md"); err == nil {
 		ctxData.ExistingDesign = string(existingDesign)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return skill.DesignContext{}, err
@@ -98,7 +94,7 @@ func resolveRepositoryImplementationRunSpec(cfg *config.Service, workDir string,
 
 	return implementationRunSpec{
 		SkillName:   skillName,
-		ArtifactDir: repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifactPhase),
+		ArtifactDir: repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifactPhase),
 	}, nil
 }
 
@@ -107,8 +103,8 @@ func buildRepositoryImplementationContext(cfg *config.Service, workDir string, j
 		return buildRepositoryPRFeedbackImplementationContext(cfg, workDir, job, events, runSpec)
 	}
 
-	designArtifactDir := repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerDesign)
-	designArtifactRaw, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerDesign, "result.md", "design.md")
+	designArtifactDir := repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
+	designArtifactRaw, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerDesign, job, repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerDesign), "result.md", "design.md")
 	if err != nil {
 		return skill.ImplementationContext{}, err
 	}
@@ -125,7 +121,7 @@ func buildRepositoryImplementationContext(cfg *config.Service, workDir string, j
 		ArtifactDir:       runSpec.ArtifactDir,
 	}
 
-	implementationArtifact, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerImplementation, "result.md", "implement.md", "summary.md", "stdout.log")
+	implementationArtifact, err := readRepositoryWorkerArtifactFile(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation, "result.md", "implement.md", "summary.md", "stdout.log")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return skill.ImplementationContext{}, err
 	}
@@ -181,7 +177,7 @@ func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workDir
 		ArtifactDir: runSpec.ArtifactDir,
 	}
 
-	implementationArtifact, err := readRepositoryWorkerArtifactFile(cfg, workDir, cfg.App().WorkspaceDir, job.GitHubNumber, job.ID, artifacts.WorkerImplementation, "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
+	implementationArtifact, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerImplementation, job, repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation), "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return skill.ImplementationContext{}, err
 	}
@@ -242,7 +238,7 @@ func buildRepositoryReviewContext(cfg *config.Service, workDir string, job domai
 		Title:       job.Title,
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
-		ArtifactDir: repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerReview),
+		ArtifactDir: repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerReview),
 	}
 
 	for _, event := range events {
@@ -313,7 +309,7 @@ func loadRepositoryImplementationRetryContext(cfg *config.Service, workDir strin
 	}
 
 	if previousTestReport == "" {
-		reportDir := repositoryWorkerArtifactDir(workDir, cfg.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
+		reportDir := repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 		if raw, err := os.ReadFile(filepath.Join(reportDir, "test-report.json")); err == nil {
 			previousTestReport = string(raw)
 		} else if !errors.Is(err, os.ErrNotExist) {

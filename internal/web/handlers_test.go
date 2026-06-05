@@ -1198,8 +1198,7 @@ func TestHandleJobDetailIncludesFixArtifact(t *testing.T) {
 	server := &Server{config: svc}
 
 	job := domain.Job{Repository: "owner/repository", GitHubNumber: 1}
-	workDir := artifacts.RepositoryWorkerWorkDir(root, "artifacts", job.Repository, "")
-	artifactDir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerFix)
+	artifactDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerFix)
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(fixes) error = %v", err)
 	}
@@ -1216,6 +1215,40 @@ func TestHandleJobDetailIncludesFixArtifact(t *testing.T) {
 	}
 }
 
+func TestLoadDesignArtifactPrefersWorkingCopy(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	job := domain.Job{Repository: "owner/repository", GitHubNumber: 2, Title: "設計済み"}
+	workDir := artifacts.RepositoryWorkerWorkDir(root, svc.App().ArtifactsDir, job.Repository, "")
+	workingPath := artifacts.RepositoryWorkerWorkArtifactPath(workDir, artifacts.WorkerDesign, job.GitHubNumber, job.Title)
+	if err := os.MkdirAll(filepath.Dir(workingPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(workingPath dir) error = %v", err)
+	}
+	if err := os.WriteFile(workingPath, []byte("working design content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(workingPath) error = %v", err)
+	}
+	fallbackDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
+	if err := os.MkdirAll(fallbackDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(fallbackDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fallbackDir, "result.md"), []byte("fallback design content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	artifact, err := server.loadDesignArtifact(job, nil)
+	if err != nil {
+		t.Fatalf("loadDesignArtifact() error = %v", err)
+	}
+	if artifact.Content != "working design content" {
+		t.Fatalf("expected working design content, got %q", artifact.Content)
+	}
+}
+
 func TestLoadDesignArtifactFallsBackToLegacyFileName(t *testing.T) {
 	t.Parallel()
 
@@ -1225,8 +1258,7 @@ func TestLoadDesignArtifactFallsBackToLegacyFileName(t *testing.T) {
 	server := &Server{config: svc}
 
 	job := domain.Job{Repository: "owner/repository", GitHubNumber: 2}
-	workDir := artifacts.RepositoryWorkerWorkDir(root, "artifacts", job.Repository, "")
-	dir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerDesign)
+	dir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(design) error = %v", err)
 	}
@@ -1243,6 +1275,40 @@ func TestLoadDesignArtifactFallsBackToLegacyFileName(t *testing.T) {
 	}
 }
 
+func TestLoadImplementationArtifactPrefersWorkingCopy(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	job := domain.Job{Repository: "owner/repository", GitHubNumber: 3, Title: "実装済み"}
+	workDir := artifacts.RepositoryWorkerWorkDir(root, svc.App().ArtifactsDir, job.Repository, "")
+	workingPath := artifacts.RepositoryWorkerWorkArtifactPath(workDir, artifacts.WorkerImplementation, job.GitHubNumber, job.Title)
+	if err := os.MkdirAll(filepath.Dir(workingPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(workingPath dir) error = %v", err)
+	}
+	if err := os.WriteFile(workingPath, []byte("working implementation content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(workingPath) error = %v", err)
+	}
+	fallbackDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(fallbackDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(fallbackDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fallbackDir, "result.md"), []byte("fallback implementation content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	artifact, err := server.loadImplementationArtifact(job, nil)
+	if err != nil {
+		t.Fatalf("loadImplementationArtifact() error = %v", err)
+	}
+	if artifact.Content != "working implementation content" {
+		t.Fatalf("expected working implementation content, got %q", artifact.Content)
+	}
+}
+
 func TestLoadImplementationArtifactFallsBackToImplementFileName(t *testing.T) {
 	t.Parallel()
 
@@ -1252,8 +1318,7 @@ func TestLoadImplementationArtifactFallsBackToImplementFileName(t *testing.T) {
 	server := &Server{config: svc}
 
 	job := domain.Job{Repository: "owner/repository", GitHubNumber: 3}
-	workDir := artifacts.RepositoryWorkerWorkDir(root, "artifacts", job.Repository, "")
-	dir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
+	dir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(implementation) error = %v", err)
 	}
@@ -1270,6 +1335,40 @@ func TestLoadImplementationArtifactFallsBackToImplementFileName(t *testing.T) {
 	}
 }
 
+func TestLoadReviewArtifactPrefersWorkingCopy(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	server := &Server{config: svc}
+
+	job := domain.Job{Repository: "owner/repository", GitHubNumber: 4, Title: "レビュー済み"}
+	workDir := artifacts.RepositoryWorkerWorkDir(root, svc.App().ArtifactsDir, job.Repository, "")
+	workingPath := artifacts.RepositoryWorkerWorkArtifactPath(workDir, artifacts.WorkerReview, job.GitHubNumber, job.Title)
+	if err := os.MkdirAll(filepath.Dir(workingPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(workingPath dir) error = %v", err)
+	}
+	if err := os.WriteFile(workingPath, []byte("working review content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(workingPath) error = %v", err)
+	}
+	fallbackDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerReview)
+	if err := os.MkdirAll(fallbackDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(fallbackDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fallbackDir, "result.md"), []byte("fallback review content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	artifact, err := server.loadReviewArtifact(job, nil)
+	if err != nil {
+		t.Fatalf("loadReviewArtifact() error = %v", err)
+	}
+	if artifact.Content != "working review content" {
+		t.Fatalf("expected working review content, got %q", artifact.Content)
+	}
+}
+
 func TestLoadImplementationArtifactFallsBackToReviewFixFileName(t *testing.T) {
 	t.Parallel()
 
@@ -1279,8 +1378,7 @@ func TestLoadImplementationArtifactFallsBackToReviewFixFileName(t *testing.T) {
 	server := &Server{config: svc}
 
 	job := domain.Job{Repository: "owner/repository", GitHubNumber: 4}
-	workDir := artifacts.RepositoryWorkerWorkDir(root, "artifacts", job.Repository, "")
-	dir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
+	dir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(implementation) error = %v", err)
 	}
@@ -1306,8 +1404,7 @@ func TestLoadImplementationArtifactFallsBackToStdoutLog(t *testing.T) {
 	server := &Server{config: svc}
 
 	job := domain.Job{Repository: "owner/repository", GitHubNumber: 5}
-	workDir := artifacts.RepositoryWorkerWorkDir(root, "artifacts", job.Repository, "")
-	dir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
+	dir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(implementation) error = %v", err)
 	}
@@ -1333,9 +1430,8 @@ func TestLoadTestReportPrefersLatestImplementationReport(t *testing.T) {
 	server := &Server{config: svc}
 
 	job := domain.Job{Repository: "owner/repository", GitHubNumber: 6}
-	workDir := artifacts.RepositoryWorkerWorkDir(root, "artifacts", job.Repository, "")
-	fixDir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerFix)
-	implementationDir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
+	fixDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerFix)
+	implementationDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(fixDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(fixDir) error = %v", err)
 	}
@@ -1379,9 +1475,8 @@ func TestLoadTestReportPrefersFixReportForTestFailureRerun(t *testing.T) {
 	server := &Server{config: svc}
 
 	job := domain.Job{Repository: "owner/repository", GitHubNumber: 7}
-	workDir := artifacts.RepositoryWorkerWorkDir(root, "artifacts", job.Repository, "")
-	fixDir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerFix)
-	implementationDir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerImplementation)
+	fixDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerFix)
+	implementationDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 	if err := os.MkdirAll(fixDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(fixDir) error = %v", err)
 	}
@@ -1708,8 +1803,7 @@ func TestHandleSubmitReviewCommentUsesReviewArtifact(t *testing.T) {
 		t.Fatalf("UpsertJob() error = %v", err)
 	}
 
-	workDir := artifacts.RepositoryWorkerWorkDir(root, svc.App().ArtifactsDir, job.Repository, "")
-	reviewDir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerReview)
+	reviewDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerReview)
 	if err := os.MkdirAll(reviewDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(reviewDir) error = %v", err)
 	}
@@ -1887,6 +1981,85 @@ func TestHandleJobDetailForPRFeedbackIncludesReviewCommentsAndSanitizedPayload(t
 	}
 	if _, ok := reviewComment["body"]; ok {
 		t.Fatalf("expected nested review comment body to be omitted, got %s", got.Events[0].Payload)
+	}
+}
+
+func TestHandleJobDetailIncludesPRCommentsAndPullNumber(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-pr-1",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 12,
+		State:        domain.StateCompleted,
+		Title:        "PR job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	prDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerPR)
+	if err := os.MkdirAll(prDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(prDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prDir, "result.json"), []byte(`{"url":"https://github.com/owner/repository/pull/123","pullNumber":123,"repository":"owner/repository","branchName":"feature/pr-12","title":"PR job","pushed":true}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prDir, "gh-pr-comments.json"), []byte(`{"pullNumber":123,"comments":[{"author":"alice","body":"looks good","url":"https://github.com/owner/repository/pull/123#issuecomment-1","createdAt":"2026-06-05T00:00:00Z"}]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(gh-pr-comments.json) error = %v", err)
+	}
+	if err := store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "pr_created",
+		StateTo:   string(domain.StateCompleted),
+		Payload:   `{"artifactDir":"` + prDir + `","url":"https://github.com/owner/repository/pull/123","pullNumber":123,"title":"PR job","head":"feature/pr-12"}`,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	recorder := httptest.NewRecorder()
+
+	server.handleJobDetail(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	var got struct {
+		PRComments []struct {
+			Author    string `json:"author"`
+			Body      string `json:"body"`
+			URL       string `json:"url"`
+			CreatedAt string `json:"createdAt"`
+		} `json:"prComments"`
+		PRCreateArtifact struct {
+			Content string `json:"content"`
+		} `json:"prCreateArtifact"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("Decode(response) error = %v", err)
+	}
+	if len(got.PRComments) != 1 || got.PRComments[0].Body != "looks good" || got.PRComments[0].Author != "alice" {
+		t.Fatalf("unexpected pr comments: %+v", got.PRComments)
+	}
+	if !strings.Contains(got.PRCreateArtifact.Content, `"pullNumber":123`) {
+		t.Fatalf("expected pr create artifact to include pull number, got %s", got.PRCreateArtifact.Content)
 	}
 }
 
@@ -2166,8 +2339,7 @@ func TestHandlePurgeJobRequiresDeletedJobAndKeepsArtifacts(t *testing.T) {
 		t.Fatalf("expected delete to succeed, got %d body=%s", deleteRecorder.Code, deleteRecorder.Body.String())
 	}
 
-	workDir := artifacts.RepositoryWorkerWorkDir(root, svc.App().ArtifactsDir, job.Repository, "")
-	artifactDir := artifacts.RepositoryWorkerArtifactDir(workDir, svc.App().WorkspaceDir, job.GitHubNumber, artifacts.WorkerDesign)
+	artifactDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(artifactDir) error = %v", err)
 	}

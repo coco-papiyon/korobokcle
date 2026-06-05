@@ -60,7 +60,7 @@ func TestBuildDesignContextIncludesRerunComment(t *testing.T) {
 	files.App.ArtifactsDir = "artifacts"
 	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
 	svc := config.NewService(root, files)
-	designDir := filepath.Join(root, "artifacts", "jobs", "job-1", "design")
+	designDir := filepath.Join(root, "artifacts", "workers", "coco-papiyon-korobokcle", "jobs", "issue_42", "design")
 	if err := os.MkdirAll(designDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -89,7 +89,7 @@ func TestBuildDesignContextIncludesRerunComment(t *testing.T) {
 		},
 	}
 
-	got, err := buildDesignContext(svc, job, events)
+	got, err := buildDesignContext(svc, root, job, events)
 	if err != nil {
 		t.Fatalf("buildDesignContext() error = %v", err)
 	}

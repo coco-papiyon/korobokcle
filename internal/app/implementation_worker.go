@@ -77,7 +77,7 @@ func runPendingImplementations(ctx context.Context, repoRoot string, cfg *config
 			continue
 		}
 
-		contextData, err := buildImplementationContext(cfg, jobDetail, events, runSpec)
+		contextData, err := buildImplementationContext(cfg, repoRoot, jobDetail, events, runSpec)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 			continue
@@ -90,6 +90,10 @@ func runPendingImplementations(ctx context.Context, repoRoot string, cfg *config
 		}
 
 		if _, err := runner.RunImplementation(ctx, runSpec.SkillName, contextData, execution); err != nil {
+			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
+			continue
+		}
+		if err := copyAIResultToWorkDir(repoRoot, filepath.Base(runSpec.ArtifactDir), jobDetail, contextData.ArtifactDir); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 			continue
 		}
@@ -139,13 +143,13 @@ func runPendingImplementations(ctx context.Context, repoRoot string, cfg *config
 	return nil
 }
 
-func buildImplementationContext(cfg *config.Service, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
+func buildImplementationContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
 	if job.Type == domain.JobTypePRFeedback {
-		return buildPRFeedbackImplementationContext(cfg, job, events, runSpec)
+		return buildPRFeedbackImplementationContext(cfg, workDir, job, events, runSpec)
 	}
 
-	designArtifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerDesign)
-	designArtifactRaw, err := readFirstArtifactFile(designArtifactDir, "result.md", "design.md")
+	designArtifactDir := artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
+	designArtifactRaw, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerDesign, job, designArtifactDir, "result.md", "design.md")
 	if err != nil {
 		return skill.ImplementationContext{}, err
 	}
@@ -162,7 +166,7 @@ func buildImplementationContext(cfg *config.Service, job domain.Job, events []do
 		ArtifactDir:       runSpec.ArtifactDir,
 	}
 
-	implementationArtifact, err := readFirstArtifactFile(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "result.md", "implement.md", "summary.md", "stdout.log")
+	implementationArtifact, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerImplementation, job, artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation), "result.md", "implement.md", "summary.md", "stdout.log")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return skill.ImplementationContext{}, err
 	}
@@ -244,7 +248,7 @@ func readFirstArtifactFile(dir string, names ...string) ([]byte, error) {
 
 func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []domain.Event) (implementationRunSpec, error) {
 	isFix := false
-	artifactDir := artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
+	artifactDir := artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 
 	sourceEventType, err := latestImplementationRerunSourceEventType(events)
 	if err != nil {
@@ -252,7 +256,7 @@ func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []
 	}
 	if sourceEventType == "test_failed" {
 		isFix = true
-		artifactDir = artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerFix)
+		artifactDir = artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerFix)
 	}
 
 	skillName, err := resolveImplementationSkillName(cfg, job, isFix)
@@ -292,7 +296,7 @@ func resolveImplementationSkillName(cfg *config.Service, job domain.Job, isFix b
 	return filepath.ToSlash(filepath.Join(skillSet, baseName)), nil
 }
 
-func buildPRFeedbackImplementationContext(cfg *config.Service, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
+func buildPRFeedbackImplementationContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
 	ctxData := skill.ImplementationContext{
 		JobID:       job.ID,
 		Repository:  job.Repository,
@@ -303,7 +307,7 @@ func buildPRFeedbackImplementationContext(cfg *config.Service, job domain.Job, e
 		ArtifactDir: runSpec.ArtifactDir,
 	}
 
-	implementationArtifact, err := readFirstArtifactFile(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
+	implementationArtifact, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerImplementation, job, artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation), "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return skill.ImplementationContext{}, err
 	}
@@ -426,7 +430,7 @@ func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events 
 		reportPaths := []string{
 			filepath.Join(resolveImplementationRetryArtifactDir(cfg, job, events), "test-report.json"),
 		}
-		fallbackPath := filepath.Join(artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation), "test-report.json")
+		fallbackPath := filepath.Join(artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation), "test-report.json")
 		if fallbackPath != reportPaths[0] {
 			reportPaths = append(reportPaths, fallbackPath)
 		}
@@ -446,9 +450,9 @@ func loadImplementationRetryContext(cfg *config.Service, job domain.Job, events 
 func resolveImplementationRetryArtifactDir(cfg *config.Service, job domain.Job, events []domain.Event) string {
 	sourceEventType, err := latestImplementationRerunSourceEventType(events)
 	if err == nil && sourceEventType == "test_failed" {
-		return artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerFix)
+		return artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerFix)
 	}
-	return artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerImplementation)
+	return artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
 }
 
 func runTestsForJob(ctx context.Context, cfg *config.Service, testRunner *executor.TestRunner, job domain.Job, artifactDir string, repoRoot string) (executor.TestReport, error) {

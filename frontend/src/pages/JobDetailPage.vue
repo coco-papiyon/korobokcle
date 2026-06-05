@@ -142,6 +142,7 @@ const prCreateInfo = computed(() => {
       url?: string
       repository?: string
       branchName?: string
+      pullNumber?: number
       title?: string
       [key: string]: unknown
     }
@@ -268,6 +269,7 @@ const canApproveReview = computed(() => data.value?.job.type === 'pr_review' && 
 const isPRFeedbackJob = computed(() => data.value?.job.type === 'pr_feedback')
 const isIssueJob = computed(() => data.value?.job.type === 'issue')
 const hasReviewComments = computed(() => (data.value?.reviewComments?.length ?? 0) > 0)
+const hasPRComments = computed(() => (data.value?.prComments?.length ?? 0) > 0)
 const hasIssueBody = computed(() => (data.value?.issueBody?.trim().length ?? 0) > 0)
 const watchRuleNameByID = computed(() => {
   return new Map((watchRules.value ?? []).map((rule) => [rule.id, rule.name.trim() || rule.id]))
@@ -988,6 +990,26 @@ function openPRCreateModal() {
         </PanelCard>
 
         <PanelCard
+          v-if="hasPRComments"
+          title="PR コメント"
+          description="GitHub 上の PR コメントです。"
+        >
+          <div class="stack-sm">
+            <details v-for="(comment, index) in data.prComments" :key="`${comment.url ?? index}`" class="stack-sm">
+              <summary class="text-muted">
+                {{ comment.author || 'unknown' }}
+                <span v-if="comment.createdAt"> / {{ formatDateTime(comment.createdAt) }}</span>
+                <span v-if="comment.path || comment.line"> / {{ formatReviewCommentLocation(comment.path, comment.line) }}</span>
+              </summary>
+              <pre class="artifact-view">{{ comment.body }}</pre>
+              <p v-if="comment.url">
+                <a class="table-link" :href="comment.url" target="_blank" rel="noreferrer">GitHub で開く</a>
+              </p>
+            </details>
+          </div>
+        </PanelCard>
+
+        <PanelCard
           v-if="groupedLogs.length > 0"
           title="ログ"
           description="各フェーズの実行ログです。"
@@ -1245,6 +1267,7 @@ function openPRCreateModal() {
                 <p v-if="prCreateInfo.title"><strong>{{ prCreateInfo.title }}</strong></p>
                 <p v-if="prCreateInfo.repository" class="text-muted">リポジトリ: <code>{{ prCreateInfo.repository }}</code></p>
                 <p v-if="prCreateInfo.branchName" class="text-muted">ブランチ: <code>{{ prCreateInfo.branchName }}</code></p>
+                <p v-if="prCreateInfo.pullNumber" class="text-muted">PR 番号: <code>{{ prCreateInfo.pullNumber }}</code></p>
                 <p v-if="prCreateInfo.url">
                   <a class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">PR を開く</a>
                 </p>

@@ -25,7 +25,7 @@ func startDesignWorker(ctx context.Context, repoRoot string, cfg *config.Service
 		defer ticker.Stop()
 
 		for {
-			if err := runPendingDesigns(ctx, cfg, orch, runner, logger); err != nil && ctx.Err() == nil {
+			if err := runPendingDesigns(ctx, repoRoot, cfg, orch, runner, logger); err != nil && ctx.Err() == nil {
 				logger.Printf("design worker error: %v", err)
 			}
 
@@ -40,7 +40,7 @@ func startDesignWorker(ctx context.Context, repoRoot string, cfg *config.Service
 	return nil
 }
 
-func runPendingDesigns(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, logger *log.Logger) error {
+func runPendingDesigns(ctx context.Context, repoRoot string, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, logger *log.Logger) error {
 	jobs, err := orch.ListJobs(ctx)
 	if err != nil {
 		return err
@@ -71,7 +71,7 @@ func runPendingDesigns(ctx context.Context, cfg *config.Service, orch *orchestra
 			continue
 		}
 
-		contextData, err := buildDesignContext(cfg, jobDetail, events)
+		contextData, err := buildDesignContext(cfg, repoRoot, jobDetail, events)
 		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
 			continue
@@ -84,6 +84,10 @@ func runPendingDesigns(ctx context.Context, cfg *config.Service, orch *orchestra
 		}
 
 		if _, err := runner.RunDesign(ctx, skillName, contextData, execution); err != nil {
+			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
+			continue
+		}
+		if err := copyAIResultToWorkDir(repoRoot, artifacts.WorkerDesign, jobDetail, contextData.ArtifactDir); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
 			continue
 		}
@@ -117,7 +121,7 @@ func resolveDesignSkillName(cfg *config.Service, watchRuleID string) (string, er
 	return filepath.ToSlash(filepath.Join(skillSet, "design")), nil
 }
 
-func buildDesignContext(cfg *config.Service, job domain.Job, events []domain.Event) (skill.DesignContext, error) {
+func buildDesignContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event) (skill.DesignContext, error) {
 	ctxData := skill.DesignContext{
 		JobID:       job.ID,
 		Repository:  job.Repository,
@@ -125,7 +129,7 @@ func buildDesignContext(cfg *config.Service, job domain.Job, events []domain.Eve
 		Title:       job.Title,
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
-		ArtifactDir: artifacts.WorkerDir(cfg.Root(), cfg.App().ArtifactsDir, job.ID, artifacts.WorkerDesign),
+		ArtifactDir: artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerDesign),
 	}
 
 	for _, event := range events {
@@ -155,7 +159,7 @@ func buildDesignContext(cfg *config.Service, job domain.Job, events []domain.Eve
 		}
 	}
 
-	if existingDesign, err := readFirstArtifactFile(ctxData.ArtifactDir, "result.md", "design.md"); err == nil {
+	if existingDesign, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerDesign, job, ctxData.ArtifactDir, "result.md", "design.md"); err == nil {
 		ctxData.ExistingDesign = string(existingDesign)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return skill.DesignContext{}, err

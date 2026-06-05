@@ -63,7 +63,7 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 	}
 	startWatcher(ctx, configService, orch, infoLogger, debugLogger)
 	if err := prepareRepositoryWorkspaces(ctx, configService); err != nil {
-		return fmt.Errorf("prepare repository workspaces: %w", err)
+		return fmt.Errorf("prepare repository workdirs: %w", err)
 	}
 	if err := startRepositoryWorkers(ctx, configService, orch, infoLogger); err != nil {
 		return fmt.Errorf("start repository workers: %w", err)
