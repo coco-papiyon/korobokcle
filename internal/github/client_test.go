@@ -279,34 +279,41 @@ func TestClientListPullRequestsIncludesReviewers(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/search/issues" {
-			t.Fatalf("unexpected path: %s", got)
-		}
-		query := mustURLQuery(t, r.URL.RawQuery)
-		if got := query.Get("q"); got != `repo:owner/repo state:open is:pr` {
-			t.Fatalf("unexpected search query: %s", got)
-		}
-		_, _ = w.Write([]byte(`{"items":[
-			{
-				"number": 124,
-				"title": "Add review filter",
-				"body": "details",
-				"html_url": "https://github.com/owner/repo/pull/124",
-				"updated_at": "2026-05-15T09:00:00Z",
-				"user": {"login": "alice"},
-				"assignees": [{"login": "bob"}],
-				"requested_reviewers": [{"login": "carol"}],
-				"labels": [{"name": "ai:review"}],
-				"pull_request": {}
+		switch r.URL.Path {
+		case "/search/issues":
+			query := mustURLQuery(t, r.URL.RawQuery)
+			if got := query.Get("q"); got != `repo:owner/repo state:open is:pr review-requested:carol` {
+				t.Fatalf("unexpected search query: %s", got)
 			}
-		]}`))
+			_, _ = w.Write([]byte(`{"items":[
+				{
+					"number": 124,
+					"title": "Add review filter",
+					"body": "details",
+					"html_url": "https://github.com/owner/repo/pull/124",
+					"updated_at": "2026-05-15T09:00:00Z",
+					"user": {"login": "alice"},
+					"assignees": [{"login": "bob"}],
+					"labels": [{"name": "ai:review"}],
+					"pull_request": {},
+					"head": {"ref": "feature", "repo": {"full_name": "owner/repo"}}
+				}
+			]}`))
+		case "/repos/owner/repo/pulls/124/requested_reviewers":
+			_, _ = w.Write([]byte(`{"users":[{"login":"carol"}],"teams":[]}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
 	}))
 	defer server.Close()
 
 	client := NewClient(stubTokenProvider{}, nil)
 	client.baseURL = server.URL
 
-	items, err := client.ListPullRequests(context.Background(), config.WatchRule{Target: string(domain.TargetPullRequest)}, "owner/repo", time.Time{})
+	items, err := client.ListPullRequests(context.Background(), config.WatchRule{
+		Target:    string(domain.TargetPullRequest),
+		Reviewers: []string{"carol"},
+	}, "owner/repo", time.Time{})
 	if err != nil {
 		t.Fatalf("ListPullRequests() error = %v", err)
 	}

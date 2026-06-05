@@ -242,7 +242,17 @@ func (c *Client) listRepositoryItems(ctx context.Context, rule config.WatchRule,
 
 	items := make([]domain.RepositoryItem, 0, len(payload))
 	for _, item := range payload {
-		items = append(items, item.toDomain(normalizedRepository, searchEndpointForTarget(target)))
+		domainItem := item.toDomain(normalizedRepository, searchEndpointForTarget(target))
+		if target == domain.TargetPullRequest && len(rule.Reviewers) > 0 {
+			reviewers, err := c.loadPullRequestRequestedReviewers(ctx, normalizedRepository, domainItem.Number)
+			if err != nil {
+				return nil, err
+			}
+			if len(reviewers) > 0 {
+				domainItem.Reviewers = reviewers
+			}
+		}
+		items = append(items, domainItem)
 	}
 	return items, nil
 }
@@ -470,6 +480,61 @@ func (c *Client) listPullRequestReviewComments(ctx context.Context, repository s
 	return payload, nil
 }
 
+func (c *Client) loadPullRequestRequestedReviewers(ctx context.Context, repository string, pullNumber int) ([]string, error) {
+	ownerRepo := strings.SplitN(repository, "/", 2)
+	if len(ownerRepo) != 2 {
+		return nil, fmt.Errorf("repository must be owner/name: %q", repository)
+	}
+
+	token, err := c.tokenSrc.Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rawURL := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/requested_reviewers", c.baseURL, ownerRepo[0], ownerRepo[1], pullNumber)
+	c.infof("github api start name=pulls/requested_reviewers repository=%s pull_number=%d", repository, pullNumber)
+	c.debugf("github request method=%s url=%s", http.MethodGet, rawURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	c.debugf("github response url=%s status=%d body=%s", rawURL, resp.StatusCode, string(body))
+
+	if resp.StatusCode >= 300 {
+		c.infof("github api done name=pulls/requested_reviewers repository=%s pull_number=%d status=%d error=http_status", repository, pullNumber, resp.StatusCode)
+		return nil, fmt.Errorf("github api %s returned status %d", rawURL, resp.StatusCode)
+	}
+
+	var payload struct {
+		Users []apiUser `json:"users"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	reviewers := make([]string, 0, len(payload.Users))
+	for _, user := range payload.Users {
+		if trimmed := strings.TrimSpace(user.Login); trimmed != "" {
+			reviewers = append(reviewers, trimmed)
+		}
+	}
+	c.infof("github api done name=pulls/requested_reviewers repository=%s pull_number=%d status=%d reviewers=%d", repository, pullNumber, resp.StatusCode, len(reviewers))
+	return reviewers, nil
+}
+
 func (c *Client) infof(format string, args ...any) {
 	if c.info != nil {
 		c.info.Printf(format, args...)
@@ -660,6 +725,11 @@ func buildSearchQuery(repository string, target domain.MonitoredTarget, rule con
 	}
 	for _, label := range compactSearchValues(rule.Labels) {
 		parts = append(parts, fmt.Sprintf("label:%q", label))
+	}
+	if target == domain.TargetPullRequest {
+		if reviewers := buildSearchORGroup("review-requested", compactSearchValues(rule.Reviewers)); reviewers != "" {
+			parts = append(parts, reviewers)
+		}
 	}
 	if authors := buildSearchORGroup("author", compactSearchValues(rule.Authors)); authors != "" {
 		parts = append(parts, authors)
