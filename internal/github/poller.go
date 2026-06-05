@@ -14,7 +14,7 @@ type RepositoryLister interface {
 	ListIssues(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error)
 	ListProjectIssues(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error)
 	ListPullRequests(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error)
-	ListPullRequestReviews(ctx context.Context, repository string, since time.Time) ([]domain.RepositoryItem, error)
+	ListPullRequestReviews(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error)
 }
 
 type WatchRuleProvider func() []config.WatchRule
@@ -196,7 +196,7 @@ func (p *Poller) listItems(ctx context.Context, rule config.WatchRule, repositor
 	case string(domain.TargetPullRequest):
 		return p.client.ListPullRequests(ctx, rule, repository, since)
 	case string(domain.TargetPullRequestReview), "pull_request_review_comment":
-		return p.client.ListPullRequestReviews(ctx, repository, since)
+		return p.client.ListPullRequestReviews(ctx, rule, repository, since)
 	default:
 		return nil, nil
 	}

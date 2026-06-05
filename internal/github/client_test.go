@@ -318,6 +318,57 @@ func TestClientListPullRequestsIncludesReviewers(t *testing.T) {
 	}
 }
 
+func TestClientListPullRequestReviewsIncludesRequestedReviewersWithoutComments(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/owner/repo/pulls":
+			_, _ = w.Write([]byte(`[
+				{
+					"number": 124,
+					"title": "Add review filter",
+					"body": "details",
+					"html_url": "https://github.com/owner/repo/pull/124",
+					"updated_at": "2026-05-15T09:00:00Z",
+					"user": {"login": "alice"},
+					"assignees": [{"login": "bob"}],
+					"requested_reviewers": [{"login": "carol"}],
+					"labels": [{"name": "ai:review"}],
+					"head": {"ref": "feature", "repo": {"full_name": "owner/repo"}}
+				}
+			]`))
+		case "/repos/owner/repo/pulls/124/reviews":
+			_, _ = w.Write([]byte(`[]`))
+		case "/repos/owner/repo/pulls/comments":
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient(stubTokenProvider{}, nil)
+	client.baseURL = server.URL
+
+	items, err := client.ListPullRequestReviews(context.Background(), config.WatchRule{Reviewers: []string{"carol"}}, "owner/repo", time.Time{})
+	if err != nil {
+		t.Fatalf("ListPullRequestReviews() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	if items[0].Target != domain.TargetPullRequestReview {
+		t.Fatalf("expected pull_request_review target, got %s", items[0].Target)
+	}
+	if len(items[0].Reviewers) != 1 || items[0].Reviewers[0] != "carol" {
+		t.Fatalf("expected reviewers to include carol, got %+v", items[0].Reviewers)
+	}
+	if len(items[0].ReviewComments) != 0 {
+		t.Fatalf("expected no review comments, got %+v", items[0].ReviewComments)
+	}
+}
+
 func mustURLQuery(t *testing.T, raw string) url.Values {
 	t.Helper()
 

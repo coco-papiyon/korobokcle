@@ -31,7 +31,7 @@ func (s *countingRepositoryLister) ListPullRequests(context.Context, config.Watc
 	return nil, nil
 }
 
-func (s *countingRepositoryLister) ListPullRequestReviews(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
+func (s *countingRepositoryLister) ListPullRequestReviews(context.Context, config.WatchRule, string, time.Time) ([]domain.RepositoryItem, error) {
 	return nil, nil
 }
 

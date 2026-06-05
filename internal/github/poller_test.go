@@ -32,7 +32,7 @@ func (s stubRepositoryLister) ListPullRequests(_ context.Context, rule config.Wa
 	return s.prs, nil
 }
 
-func (s stubRepositoryLister) ListPullRequestReviews(context.Context, string, time.Time) ([]domain.RepositoryItem, error) {
+func (s stubRepositoryLister) ListPullRequestReviews(context.Context, config.WatchRule, string, time.Time) ([]domain.RepositoryItem, error) {
 	return s.prReviews, nil
 }
 
