@@ -6,9 +6,11 @@ import PanelCard from '@/components/PanelCard.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import {
+  analyzePRComment,
   deleteJob,
   fetchAppConfig,
   fetchJobDetail,
+  fetchPRComments,
   fetchToolCommands,
   fetchWatchRules,
   purgeJob,
@@ -37,7 +39,7 @@ import {
 } from '@/lib/format'
 import { rerunActionFromEvent, rerunButtonLabel, type RerunAction } from '@/lib/rerun-actions'
 import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
-import type { JobEvent, JobLog } from '@/types'
+import type { JobEvent, JobLog, ReviewComment } from '@/types'
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -105,6 +107,8 @@ const implementationArtifactModalOpen = ref(false)
 const testReportModalOpen = ref(false)
 const toolLogModalOpen = ref(false)
 const prCreateModalOpen = ref(false)
+const prCommentAnalysisModalOpen = ref(false)
+const prCommentsModalOpen = ref(false)
 const reviewArtifactModalOpen = ref(false)
 const issueBodyModalOpen = ref(false)
 const selectedLog = ref<{ groupTitle: string; log: JobLog } | null>(null)
@@ -124,6 +128,17 @@ const prRerunError = ref<string | null>(null)
 const reviewRerunError = ref<string | null>(null)
 const reviewSubmitError = ref<string | null>(null)
 const reviewApproveError = ref<string | null>(null)
+const prCommentsState = ref<'idle' | 'loading' | 'error'>('idle')
+const prCommentsError = ref<string | null>(null)
+const prCommentsPullNumber = ref<number | null>(null)
+const prComments = ref<ReviewComment[]>([])
+const prCommentAnalyzeState = ref<'idle' | 'saving' | 'error'>('idle')
+const prCommentAnalyzeError = ref<string | null>(null)
+const prCommentAnalyzingKey = ref<string | null>(null)
+const selectedPRCommentForAnalysis = ref<ReviewComment | null>(null)
+const prCommentAnalysisComment = ref('')
+const prCommentAnalysisActionState = ref<'idle' | 'saving' | 'error'>('idle')
+const prCommentAnalysisActionError = ref<string | null>(null)
 const toolCommandState = ref<'idle' | 'saving' | 'error'>('idle')
 const toolCommandAction = ref<'start' | 'stop' | null>(null)
 const toolCommandError = ref<string | null>(null)
@@ -151,6 +166,13 @@ const prCreateInfo = computed(() => {
   }
 })
 const prCreateRawContent = computed(() => data.value?.prCreateArtifact?.content ?? '')
+const prCommentAnalysisRawContent = computed(() => data.value?.prCommentAnalysisArtifact?.content ?? '')
+const hasPRCommentsArtifact = computed(() => {
+  if (prCreateInfo.value?.pullNumber) {
+    return true
+  }
+  return (data.value?.prComments?.length ?? 0) > 0
+})
 
 const latestEvent = computed(() => {
   const events = data.value?.events ?? []
@@ -175,7 +197,9 @@ const flowRerunEvent = computed<JobEvent | null>(() => {
   return null
 })
 
-const canReviewDesign = computed(() => data.value?.job.state === 'waiting_design_approval')
+const hasPRCommentAnalysis = computed(() => (data.value?.prCommentAnalysisArtifact?.content ?? '').trim().length > 0)
+const canReviewDesign = computed(() => data.value?.job.state === 'waiting_design_approval' && !hasPRCommentAnalysis.value)
+const canReviewPRCommentAnalysis = computed(() => data.value?.job.state === 'waiting_design_approval' && hasPRCommentAnalysis.value)
 const isDeletedJob = computed(() => !!data.value?.job.deletedAt)
 const canReviewImplementation = computed(() => {
   if (isDeletedJob.value) {
@@ -269,7 +293,6 @@ const canApproveReview = computed(() => data.value?.job.type === 'pr_review' && 
 const isPRFeedbackJob = computed(() => data.value?.job.type === 'pr_feedback')
 const isIssueJob = computed(() => data.value?.job.type === 'issue')
 const hasReviewComments = computed(() => (data.value?.reviewComments?.length ?? 0) > 0)
-const hasPRComments = computed(() => (data.value?.prComments?.length ?? 0) > 0)
 const hasIssueBody = computed(() => (data.value?.issueBody?.trim().length ?? 0) > 0)
 const watchRuleNameByID = computed(() => {
   return new Map((watchRules.value ?? []).map((rule) => [rule.id, rule.name.trim() || rule.id]))
@@ -607,6 +630,120 @@ async function sendReviewApproval() {
   }
 }
 
+function prCommentKey(comment: ReviewComment, index: number) {
+  return `${comment.url ?? ''}::${comment.createdAt ?? ''}::${comment.author ?? ''}::${index}`
+}
+
+async function loadPRComments() {
+  prCommentsState.value = 'loading'
+  prCommentsError.value = null
+  try {
+    const response = await fetchPRComments(jobID.value)
+    prCommentsPullNumber.value = response.pullNumber
+    prComments.value = response.comments
+    if (data.value) {
+      data.value = {
+        ...data.value,
+        prComments: response.comments,
+      }
+    }
+    prCommentsState.value = 'idle'
+  } catch (err) {
+    prCommentsState.value = 'error'
+    prCommentsError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
+  }
+}
+
+function openPRCommentsModal() {
+  prCommentsModalOpen.value = true
+  prCommentsState.value = 'loading'
+  prCommentsError.value = null
+  prCommentAnalyzeState.value = 'idle'
+  prCommentAnalyzeError.value = null
+  prCommentAnalyzingKey.value = null
+  prCommentsPullNumber.value = null
+  prComments.value = []
+  void loadPRComments()
+}
+
+function closePRCommentsModal() {
+  prCommentsModalOpen.value = false
+  prCommentsError.value = null
+  prCommentsState.value = 'idle'
+  prCommentAnalyzeState.value = 'idle'
+  prCommentAnalyzeError.value = null
+  prCommentAnalyzingKey.value = null
+}
+
+async function analyzePRCommentItem(comment: ReviewComment, index: number) {
+  prCommentAnalyzeState.value = 'saving'
+  prCommentAnalyzeError.value = null
+  prCommentAnalyzingKey.value = prCommentKey(comment, index)
+  try {
+    selectedPRCommentForAnalysis.value = comment
+    prCommentAnalysisComment.value = ''
+    data.value = await analyzePRComment(jobID.value, comment)
+    prCommentAnalyzeState.value = 'idle'
+    prCommentAnalyzingKey.value = null
+    prCommentsModalOpen.value = false
+    await reload()
+  } catch (err) {
+    prCommentAnalyzeState.value = 'error'
+    prCommentAnalyzingKey.value = null
+    prCommentAnalyzeError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
+  }
+}
+
+function buildPRCommentAnalysisPayload() {
+  const analysis = prCommentAnalysisRawContent.value.trim()
+  const note = prCommentAnalysisComment.value.trim()
+  if (!note) {
+    return analysis
+  }
+  if (!analysis) {
+    return note
+  }
+  return `${analysis}\n\n## コメント\n\n${note}`
+}
+
+async function rerunPRCommentAnalysis() {
+  const selectedComment = selectedPRCommentForAnalysis.value
+  if (!selectedComment) {
+    return
+  }
+  prCommentAnalysisActionState.value = 'saving'
+  prCommentAnalysisActionError.value = null
+  try {
+    const note = prCommentAnalysisComment.value.trim()
+    const rerunComment = note.length > 0
+      ? {
+          ...selectedComment,
+          body: `${selectedComment.body}\n\n## コメント\n\n${note}`,
+        }
+      : selectedComment
+    data.value = await analyzePRComment(jobID.value, rerunComment)
+    prCommentAnalysisActionState.value = 'idle'
+    await reload()
+  } catch (err) {
+    prCommentAnalysisActionState.value = 'error'
+    prCommentAnalysisActionError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
+  }
+}
+
+async function sendPRCommentAnalysisApproval(status: 'approved' | 'rejected') {
+  prCommentAnalysisActionState.value = 'saving'
+  prCommentAnalysisActionError.value = null
+  try {
+    data.value = await submitDesignApproval(jobID.value, status, buildPRCommentAnalysisPayload())
+    prCommentAnalysisActionState.value = 'idle'
+    prCommentAnalysisModalOpen.value = false
+    await reload()
+  } catch (err) {
+    prCommentAnalysisActionState.value = 'error'
+    prCommentAnalysisActionError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
+  }
+}
+
 async function archiveJob() {
   if (!window.confirm('このジョブを削除済みとして非表示にしますか？')) {
     return
@@ -783,6 +920,10 @@ function openPRCreateModal() {
               <p class="job-summary__id text-muted">ID: <code>{{ data.job.id || '-' }}</code></p>
               <p class="text-muted">種別: {{ formatJobTypeLabel(data.job.type) }}</p>
               <p class="text-muted">{{ data.job.repository }} #{{ data.job.githubNumber }}</p>
+              <p v-if="prCreateInfo?.pullNumber" class="text-muted">
+                PR: <code>#{{ prCreateInfo.pullNumber }}</code>
+                <a v-if="prCreateInfo.url" class="table-link" :href="prCreateInfo.url" target="_blank" rel="noreferrer">開く</a>
+              </p>
               <p v-if="isIssueJob" class="text-muted">ブランチ: <code>{{ data.job.branchName || '-' }}</code></p>
               <p class="text-muted">監視ルール: <code>{{ watchRuleDisplayName }}</code></p>
             </div>
@@ -990,22 +1131,24 @@ function openPRCreateModal() {
         </PanelCard>
 
         <PanelCard
-          v-if="hasPRComments"
+          v-if="hasPRCommentsArtifact"
           title="PR コメント"
-          description="GitHub 上の PR コメントです。"
         >
-          <div class="stack-sm">
-            <details v-for="(comment, index) in data.prComments" :key="`${comment.url ?? index}`" class="stack-sm">
-              <summary class="text-muted">
-                {{ comment.author || 'unknown' }}
-                <span v-if="comment.createdAt"> / {{ formatDateTime(comment.createdAt) }}</span>
-                <span v-if="comment.path || comment.line"> / {{ formatReviewCommentLocation(comment.path, comment.line) }}</span>
-              </summary>
-              <pre class="artifact-view">{{ comment.body }}</pre>
-              <p v-if="comment.url">
-                <a class="table-link" :href="comment.url" target="_blank" rel="noreferrer">GitHub で開く</a>
-              </p>
-            </details>
+          <div class="artifact-headline">
+            <button class="log-entry-button" type="button" :disabled="prCommentsState === 'loading'" @click="openPRCommentsModal">
+              {{ prCommentsState === 'loading' ? '取得中...' : 'PRコメントを開く' }}
+            </button>
+            <p class="text-muted">取得済みの PR コメントを確認し、必要なら修正案の検討を開始します。</p>
+          </div>
+        </PanelCard>
+
+        <PanelCard
+          v-if="hasPRCommentAnalysis"
+          title="PR コメント分析結果"
+        >
+          <div class="artifact-headline">
+            <button class="log-entry-button" type="button" @click="prCommentAnalysisModalOpen = true">分析結果を開く</button>
+            <p class="text-muted">取得した PR コメントに対する修正案の検討結果です。</p>
           </div>
         </PanelCard>
 
@@ -1274,6 +1417,90 @@ function openPRCreateModal() {
               </template>
               <p v-else class="text-muted">PR 作成結果を構造化表示できなかったため、生データを表示しています。</p>
               <pre class="artifact-view">{{ prCreateRawContent }}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="prCommentsModalOpen" class="modal-backdrop" @click.self="closePRCommentsModal">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">PR コメント</h3>
+                <p class="text-muted">
+                  <span v-if="prCommentsPullNumber">PR #{{ prCommentsPullNumber }}</span>
+                  <span v-else>PR コメントを取得しています。</span>
+                </p>
+              </div>
+              <button class="button button-secondary" type="button" @click="closePRCommentsModal">戻る</button>
+            </div>
+            <div class="stack-sm">
+              <p v-if="prCommentsState === 'loading'" class="text-muted">PR コメントを取得しています...</p>
+              <p v-if="prCommentsState === 'error'" class="notice notice-danger">{{ prCommentsError }}</p>
+              <p v-if="prCommentAnalyzeState === 'error'" class="notice notice-danger">{{ prCommentAnalyzeError }}</p>
+              <p v-if="prCommentsState !== 'loading' && prComments.length === 0 && !prCommentsError" class="text-muted">コメントはありません。</p>
+              <section v-for="(comment, index) in prComments" :key="prCommentKey(comment, index)" class="stack-sm">
+                <div class="text-muted">
+                  {{ comment.author || 'unknown' }}
+                  <span v-if="comment.createdAt"> / {{ formatDateTime(comment.createdAt) }}</span>
+                  <span v-if="comment.path || comment.line"> / {{ formatReviewCommentLocation(comment.path, comment.line) }}</span>
+                </div>
+                <pre class="artifact-view">{{ comment.body }}</pre>
+                <div class="button-row">
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    :disabled="prCommentAnalyzeState === 'saving'"
+                    @click="analyzePRCommentItem(comment, index)"
+                  >
+                    {{ prCommentAnalyzeState === 'saving' && prCommentAnalyzingKey === prCommentKey(comment, index) ? '分析中...' : 'PRコメント分析' }}
+                  </button>
+                  <button class="button button-secondary" type="button" @click="closePRCommentsModal">戻る</button>
+                </div>
+                <p v-if="comment.url">
+                  <a class="table-link" :href="comment.url" target="_blank" rel="noreferrer">GitHub で開く</a>
+                </p>
+              </section>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="prCommentAnalysisModalOpen && data.prCommentAnalysisArtifact" class="modal-backdrop" @click.self="prCommentAnalysisModalOpen = false">
+          <div class="modal-panel">
+              <div class="modal-panel__header">
+                <div>
+                  <h3 class="modal-panel__title">PR コメント分析結果</h3>
+                  <p class="text-muted"><code>{{ data.prCommentAnalysisArtifact.path }}</code></p>
+                </div>
+              <button class="button button-secondary" type="button" @click="prCommentAnalysisModalOpen = false">閉じる</button>
+            </div>
+            <div class="stack-sm">
+              <pre class="artifact-view">{{ prCommentAnalysisRawContent }}</pre>
+              <label class="field field-full">
+                <span class="field__label">コメント</span>
+                <textarea
+                  v-model="prCommentAnalysisComment"
+                  class="field__control field__control--textarea"
+                  rows="4"
+                  placeholder="再実行や承認時のコメントを入力してください。"
+                  spellcheck="false"
+                />
+              </label>
+              <div class="modal-actions">
+                <div class="button-row">
+                  <button v-if="canReviewPRCommentAnalysis" class="button button-primary" type="button" :disabled="prCommentAnalysisActionState === 'saving'" @click="sendPRCommentAnalysisApproval('approved')">
+                    {{ prCommentAnalysisActionState === 'saving' ? '承認中...' : '承認' }}
+                  </button>
+                  <button class="button button-secondary" type="button" :disabled="prCommentAnalysisActionState === 'saving'" @click="rerunPRCommentAnalysis">
+                    {{ prCommentAnalysisActionState === 'saving' ? '再実行中...' : '再実行' }}
+                  </button>
+                </div>
+                <div v-if="canReviewPRCommentAnalysis" class="modal-actions__right">
+                  <button class="button button-secondary" type="button" :disabled="prCommentAnalysisActionState === 'saving'" @click="sendPRCommentAnalysisApproval('rejected')">
+                    {{ prCommentAnalysisActionState === 'saving' ? '却下中...' : '却下' }}
+                  </button>
+                </div>
+              </div>
+              <p v-if="prCommentAnalysisActionState === 'error'" class="notice notice-danger">{{ prCommentAnalysisActionError }}</p>
             </div>
           </div>
         </div>

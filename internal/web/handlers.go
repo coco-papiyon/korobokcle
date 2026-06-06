@@ -50,20 +50,26 @@ type eventResponse struct {
 }
 
 type jobDetailResponse struct {
-	Job                    jobResponse             `json:"job"`
-	Events                 []eventResponse         `json:"events"`
-	IssueBody              string                  `json:"issueBody,omitempty"`
-	ReviewComments         []reviewCommentResponse `json:"reviewComments,omitempty"`
-	PRComments             []reviewCommentResponse `json:"prComments,omitempty"`
-	DesignArtifact         *artifactResponse       `json:"designArtifact,omitempty"`
-	ImplementationArtifact *artifactResponse       `json:"implementationArtifact,omitempty"`
-	FixArtifact            *artifactResponse       `json:"fixArtifact,omitempty"`
-	ReviewArtifact         *artifactResponse       `json:"reviewArtifact,omitempty"`
-	TestReport             *artifactResponse       `json:"testReport,omitempty"`
-	ToolCommand            *toolCommandResponse    `json:"toolCommand,omitempty"`
-	ToolExecution          *toolExecutionResponse  `json:"toolExecution,omitempty"`
-	PRCreateArtifact       *artifactResponse       `json:"prCreateArtifact,omitempty"`
-	Logs                   []logResponse           `json:"logs,omitempty"`
+	Job                       jobResponse             `json:"job"`
+	Events                    []eventResponse         `json:"events"`
+	IssueBody                 string                  `json:"issueBody,omitempty"`
+	ReviewComments            []reviewCommentResponse `json:"reviewComments,omitempty"`
+	PRComments                []reviewCommentResponse `json:"prComments,omitempty"`
+	DesignArtifact            *artifactResponse       `json:"designArtifact,omitempty"`
+	ImplementationArtifact    *artifactResponse       `json:"implementationArtifact,omitempty"`
+	FixArtifact               *artifactResponse       `json:"fixArtifact,omitempty"`
+	ReviewArtifact            *artifactResponse       `json:"reviewArtifact,omitempty"`
+	PRCommentAnalysisArtifact *artifactResponse       `json:"prCommentAnalysisArtifact,omitempty"`
+	TestReport                *artifactResponse       `json:"testReport,omitempty"`
+	ToolCommand               *toolCommandResponse    `json:"toolCommand,omitempty"`
+	ToolExecution             *toolExecutionResponse  `json:"toolExecution,omitempty"`
+	PRCreateArtifact          *artifactResponse       `json:"prCreateArtifact,omitempty"`
+	Logs                      []logResponse           `json:"logs,omitempty"`
+}
+
+type prCommentsResponse struct {
+	PullNumber int                     `json:"pullNumber"`
+	Comments   []reviewCommentResponse `json:"comments"`
 }
 
 type issueBodyResponse struct {
@@ -257,6 +263,87 @@ func (s *Server) handleJobIssueBody(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, issueBodyResponse{IssueBody: body})
 }
 
+func (s *Server) handlePRComments(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	job, events, err := s.orchestrator.JobDetail(r.Context(), jobID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err)
+		return
+	}
+	pullNumber, err := resolveJobPullNumber(s.config, job, events)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	artifactDir := resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"pr_started", "pr_created", "pr_updated"}, artifacts.WorkerPR)
+	if artifact, err := s.loadFirstArtifact(artifactDir, "gh-pr-comments.json"); err == nil {
+		var payload struct {
+			PullNumber int                     `json:"pullNumber"`
+			Comments   []reviewCommentResponse `json:"comments"`
+		}
+		if err := json.Unmarshal([]byte(artifact.Content), &payload); err == nil {
+			writeJSON(w, http.StatusOK, prCommentsResponse{PullNumber: payload.PullNumber, Comments: filterPRComments(payload.Comments)})
+			return
+		}
+	}
+	if s.prCommentsFetcher == nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("pr comments fetcher is not configured"))
+		return
+	}
+	artifact, err := s.prCommentsFetcher(r.Context(), PRCommentsFetchRequest{
+		Repository:  job.Repository,
+		PullNumber:  pullNumber,
+		ArtifactDir: artifactDir,
+	})
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	comments := make([]reviewCommentResponse, 0, len(artifact.Comments))
+	for _, comment := range artifact.Comments {
+		comments = append(comments, reviewCommentResponse{
+			Author:    comment.Author,
+			Body:      comment.Body,
+			URL:       comment.URL,
+			CreatedAt: comment.CreatedAt,
+			Path:      comment.Path,
+			Line:      comment.Line,
+		})
+	}
+	writeJSON(w, http.StatusOK, prCommentsResponse{PullNumber: artifact.PullNumber, Comments: filterPRComments(comments)})
+}
+
+func (s *Server) handleAnalyzePRComment(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	if s.prCommentAnalyzer == nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("pr comment analyzer is not configured"))
+		return
+	}
+	var payload struct {
+		Comment reviewCommentResponse `json:"comment"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("decode pr comment analysis request: %w", err))
+		return
+	}
+	if strings.TrimSpace(payload.Comment.Body) == "" {
+		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("comment body is empty"))
+		return
+	}
+	if err := s.prCommentAnalyzer(r.Context(), jobID, PRCommentData{
+		Author:    payload.Comment.Author,
+		Body:      payload.Comment.Body,
+		URL:       payload.Comment.URL,
+		CreatedAt: payload.Comment.CreatedAt,
+		Path:      payload.Comment.Path,
+		Line:      payload.Comment.Line,
+	}); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.handleJobDetail(w, r)
+}
+
 func (s *Server) handleRestoreJob(w http.ResponseWriter, r *http.Request) {
 	jobID := mux.Vars(r)["id"]
 	if err := s.orchestrator.RestoreJob(r.Context(), jobID); err != nil {
@@ -326,6 +413,9 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	if artifact, err := s.loadReviewArtifact(job, events); err == nil {
 		out.ReviewArtifact = artifact
 	}
+	if artifact, err := s.loadPRCommentAnalysisArtifact(job, events); err == nil {
+		out.PRCommentAnalysisArtifact = artifact
+	}
 	if artifact, err := s.loadTestReport(job, events); err == nil {
 		out.TestReport = artifact
 	}
@@ -352,7 +442,7 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 	out.Logs = append(out.Logs, s.loadLogResponses("design", resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"design_started", "design_ready", "waiting_design_approval"}, artifacts.WorkerDesign), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("implementation", resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"implementation_started", "implementation_ready", "waiting_final_approval", "test_started", "test_failed"}, artifacts.WorkerImplementation), []string{"stdout.log", "stderr.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("implement_fix", resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"implementation_started", "implementation_ready", "waiting_final_approval", "test_started", "test_failed"}, artifacts.WorkerFix), []string{"stdout.log", "stderr.log"})...)
-	out.Logs = append(out.Logs, s.loadLogResponses("pr", resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"pr_started", "pr_created", "pr_updated"}, artifacts.WorkerPR), []string{"git-push.log", "gh-pr-create.log"})...)
+	out.Logs = append(out.Logs, s.loadLogResponses("pr", resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"pr_started", "pr_created", "pr_updated"}, artifacts.WorkerPR), []string{"git-push.log", "gh-pr-create.log", "gh-pr-comments.log"})...)
 	out.Logs = append(out.Logs, s.loadLogResponses("review", resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"review_started", "review_ready", "review_completed"}, artifacts.WorkerReview), []string{"stdout.log", "stderr.log", "gh-pr-comment.log"})...)
 	writeJSON(w, http.StatusOK, out)
 }
@@ -362,6 +452,8 @@ type approvalRequest struct {
 	Comment string `json:"comment"`
 	EventID *int64 `json:"eventId,omitempty"`
 }
+
+const prCommentAnalysisPostedMarker = "<!-- korobokcle:pr-comment-analysis -->"
 
 func (s *Server) handleDesignApproval(w http.ResponseWriter, r *http.Request) {
 	jobID := mux.Vars(r)["id"]
@@ -388,7 +480,32 @@ func (s *Server) handleDesignApproval(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if job, events, err := s.orchestrator.JobDetail(r.Context(), jobID); err == nil {
-		if artifact, err := s.loadDesignArtifact(job, events); err == nil && strings.TrimSpace(artifact.Content) != "" {
+		if artifact, err := s.loadPRCommentAnalysisArtifact(job, events); err == nil && strings.TrimSpace(artifact.Content) != "" {
+			if strings.TrimSpace(payload.Status) == "approved" && s.prCommentSubmitter != nil {
+				pullNumber, err := resolveJobPullNumber(s.config, job, events)
+				if err == nil && pullNumber > 0 {
+					body := strings.TrimSpace(payload.Comment)
+					if body == "" {
+						body = strings.TrimSpace(artifact.Content)
+					}
+					if body != "" {
+						submitBody := prCommentAnalysisPostedBody(body)
+						if err := s.prCommentSubmitter(r.Context(), PRCommentSubmitRequest{
+							Repository:  job.Repository,
+							PullNumber:  pullNumber,
+							Body:        submitBody,
+							ArtifactDir: resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"pr_started", "pr_created", "pr_updated"}, artifacts.WorkerPR),
+						}); err != nil {
+							writeJSONError(w, http.StatusInternalServerError, err)
+							return
+						}
+					}
+				} else if err != nil {
+					writeJSONError(w, http.StatusInternalServerError, err)
+					return
+				}
+			}
+		} else if artifact, err := s.loadDesignArtifact(job, events); err == nil && strings.TrimSpace(artifact.Content) != "" {
 			if s.commenter != nil {
 				if err := s.commenter.Submit(r.Context(), IssueCommentSubmitRequest{
 					Repository:  job.Repository,
@@ -1615,6 +1732,19 @@ func (s *Server) loadReviewArtifact(job domain.Job, events []domain.Event) (*art
 	return s.loadPreferredAIArtifact(job, artifacts.WorkerReview, events, []string{"review_started", "review_ready", "review_completed"}, "result.md", "review.md")
 }
 
+func (s *Server) loadPRCommentAnalysisArtifact(job domain.Job, events []domain.Event) (*artifactResponse, error) {
+	if workDir := resolveRepositoryWorkerConfiguredWorkDir(s.config, job.Repository); workDir != "" {
+		workingPath := artifacts.RepositoryWorkerWorkArtifactPath(workDir, artifacts.WorkerReview, job.GitHubNumber, job.Title)
+		if artifact, err := s.loadArtifact(workingPath); err == nil {
+			return artifact, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+	}
+	dir := resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"pr_started", "pr_created", "pr_updated"}, artifacts.WorkerPR)
+	return s.loadFirstArtifact(dir, "result.md", "review_fix.md")
+}
+
 func (s *Server) loadTestReport(job domain.Job, events []domain.Event) (*artifactResponse, error) {
 	if path := resolveRepositoryWorkerTestReportPath(s.config, job.Repository, job.GitHubNumber, events); path != "" {
 		raw, err := os.ReadFile(path)
@@ -1662,6 +1792,37 @@ func (s *Server) loadPRCreateArtifact(job domain.Job, events []domain.Event) (*a
 	return s.loadFirstArtifact(dir, "result.json", "pr-create.json")
 }
 
+func resolveJobPullNumber(cfg *config.Service, job domain.Job, events []domain.Event) (int, error) {
+	if job.Type == domain.JobTypePRFeedback && job.GitHubNumber > 0 {
+		return job.GitHubNumber, nil
+	}
+	for i := len(events) - 1; i >= 0; i-- {
+		switch events[i].EventType {
+		case "pr_created", "pr_updated":
+			var payload struct {
+				PullNumber int `json:"pullNumber"`
+			}
+			if err := json.Unmarshal([]byte(events[i].Payload), &payload); err == nil && payload.PullNumber > 0 {
+				return payload.PullNumber, nil
+			}
+		}
+	}
+	dir := resolveRepositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, events, []string{"pr_started", "pr_created", "pr_updated"}, artifacts.WorkerPR)
+	for _, name := range []string{"result.json", "pr-create.json"} {
+		raw, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		var payload struct {
+			PullNumber int `json:"pullNumber"`
+		}
+		if err := json.Unmarshal(raw, &payload); err == nil && payload.PullNumber > 0 {
+			return payload.PullNumber, nil
+		}
+	}
+	return 0, os.ErrNotExist
+}
+
 func (s *Server) loadPRComments(job domain.Job, events []domain.Event) ([]reviewCommentResponse, error) {
 	dir := resolveRepositoryWorkerArtifactDir(s.config, job.Repository, job.GitHubNumber, events, []string{"pr_started", "pr_created", "pr_updated"}, artifacts.WorkerPR)
 	artifact, err := s.loadFirstArtifact(dir, "gh-pr-comments.json")
@@ -1674,7 +1835,26 @@ func (s *Server) loadPRComments(job domain.Job, events []domain.Event) ([]review
 	if err := json.Unmarshal([]byte(artifact.Content), &payload); err != nil {
 		return nil, err
 	}
-	return payload.Comments, nil
+	return filterPRComments(payload.Comments), nil
+}
+
+func filterPRComments(comments []reviewCommentResponse) []reviewCommentResponse {
+	filtered := make([]reviewCommentResponse, 0, len(comments))
+	for _, comment := range comments {
+		if strings.Contains(comment.Body, prCommentAnalysisPostedMarker) {
+			continue
+		}
+		filtered = append(filtered, comment)
+	}
+	return filtered
+}
+
+func prCommentAnalysisPostedBody(body string) string {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return ""
+	}
+	return prCommentAnalysisPostedMarker + "\n\n" + trimmed
 }
 
 func resolveRepositoryWorkerArtifactDir(cfg *config.Service, repository string, issueNumber int, events []domain.Event, eventTypes []string, fallbackPhase string) string {

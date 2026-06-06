@@ -8,6 +8,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,6 +23,18 @@ type Client struct {
 	tokenSrc   TokenProvider
 	info       *log.Logger
 	debug      *log.Logger
+}
+
+type PRComment struct {
+	Author    string `json:"author"`
+	Body      string `json:"body"`
+	URL       string `json:"url,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
+}
+
+type PRCommentsArtifact struct {
+	PullNumber int         `json:"pullNumber"`
+	Comments   []PRComment `json:"comments"`
 }
 
 func NewClient(tokenSrc TokenProvider, debug *log.Logger) *Client {
@@ -122,6 +136,85 @@ func (c *Client) FetchIssueBody(ctx context.Context, repository string, issueNum
 	}
 	c.infof("github api done name=repos/issues repository=%s issue_number=%d status=%d", normalizedRepository, issueNumber, resp.StatusCode)
 	return payload.Body, nil
+}
+
+func (c *Client) FetchPullRequestComments(ctx context.Context, repository string, pullNumber int, artifactDir string) (PRCommentsArtifact, error) {
+	normalizedRepository, err := normalizeRepository(repository)
+	if err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	if pullNumber < 1 {
+		return PRCommentsArtifact{}, fmt.Errorf("pull number must be positive")
+	}
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		return PRCommentsArtifact{}, err
+	}
+
+	token, err := c.tokenSrc.Token(ctx)
+	if err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	rawURL := fmt.Sprintf("%s/repos/%s/issues/%d/comments", c.baseURL, normalizedRepository, pullNumber)
+	c.infof("github api start name=repos/issues/comments repository=%s pull_number=%d", normalizedRepository, pullNumber)
+	c.debugf("github request method=%s url=%s", http.MethodGet, rawURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	c.debugf("github response url=%s status=%d body=%s", rawURL, resp.StatusCode, string(body))
+	if resp.StatusCode >= 300 {
+		c.infof("github api done name=repos/issues/comments repository=%s pull_number=%d status=%d error=http_status", normalizedRepository, pullNumber, resp.StatusCode)
+		return PRCommentsArtifact{}, fmt.Errorf("github api %s returned status %d", rawURL, resp.StatusCode)
+	}
+
+	var payload []struct {
+		Body      string `json:"body"`
+		HTMLURL   string `json:"html_url"`
+		CreatedAt string `json:"created_at"`
+		User      struct {
+			Login string `json:"login"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return PRCommentsArtifact{}, err
+	}
+
+	comments := make([]PRComment, 0, len(payload))
+	for _, comment := range payload {
+		comments = append(comments, PRComment{
+			Author:    comment.User.Login,
+			Body:      comment.Body,
+			URL:       comment.HTMLURL,
+			CreatedAt: comment.CreatedAt,
+		})
+	}
+	artifact := PRCommentsArtifact{PullNumber: pullNumber, Comments: comments}
+	rawArtifact, err := json.MarshalIndent(artifact, "", "  ")
+	if err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "gh-pr-comments.json"), rawArtifact, 0o644); err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "gh-pr-comments.log"), body, 0o644); err != nil {
+		return PRCommentsArtifact{}, err
+	}
+	c.infof("github api done name=repos/issues/comments repository=%s pull_number=%d status=%d comments=%d", normalizedRepository, pullNumber, resp.StatusCode, len(comments))
+	return artifact, nil
 }
 
 func (c *Client) ListPullRequestReviews(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {

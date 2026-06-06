@@ -34,11 +34,17 @@ export type JobDetail = {
   implementationArtifact?: Artifact
   fixArtifact?: Artifact
   reviewArtifact?: Artifact
+  prCommentAnalysisArtifact?: Artifact
   testReport?: Artifact
   toolCommand?: ToolCommand
   toolExecution?: ToolExecution
   prCreateArtifact?: Artifact
   logs?: JobLog[]
+}
+
+export type PRCommentsResponse = {
+  pullNumber: number
+  comments: ReviewComment[]
 }
 
 export type IssueBodyResponse = {

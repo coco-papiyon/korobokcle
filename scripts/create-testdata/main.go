@@ -33,7 +33,7 @@ func main() {
 
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "coco-papiyon/korobokcle", Branch: "main", WorkDir: "artifacts/workers/coco-papiyon_korobokcle/work", Workers: 1},
+		{Repository: "coco-papiyon/korobokcle", Branch: "main", WorkDir: "artifacts/workers/coco-papiyon-korobokcle/work", Workers: 1},
 	}
 	files.ToolCommands.Commands = []config.ToolCommand{
 		{
@@ -196,6 +196,32 @@ func buildFixtures(artifactsDir string) []jobFixture {
 		UpdatedAt:    base.Add(39 * time.Minute),
 	}
 
+	prCommentAnalysisRunningJob := domain.Job{
+		ID:           "fixture-pr-comment-analysis-running",
+		Type:         domain.JobTypeIssue,
+		Repository:   repository,
+		GitHubNumber: 108,
+		State:        domain.StateDesignRunning,
+		Title:        "PRコメント分析中",
+		BranchName:   "issue_108",
+		WatchRuleID:  "rule-1",
+		CreatedAt:    base.Add(52 * time.Minute),
+		UpdatedAt:    base.Add(54 * time.Minute),
+	}
+
+	prCommentAnalysisReadyJob := domain.Job{
+		ID:           "fixture-pr-comment-analysis-ready",
+		Type:         domain.JobTypeIssue,
+		Repository:   repository,
+		GitHubNumber: 109,
+		State:        domain.StateWaitingDesignApproval,
+		Title:        "PRコメント分析済み",
+		BranchName:   "issue_109",
+		WatchRuleID:  "rule-1",
+		CreatedAt:    base.Add(55 * time.Minute),
+		UpdatedAt:    base.Add(58 * time.Minute),
+	}
+
 	prFeedbackJob := domain.Job{
 		ID:           "fixture-pr-feedback-completed",
 		Type:         domain.JobTypePRFeedback,
@@ -301,6 +327,103 @@ func buildFixtures(artifactsDir string) []jobFixture {
 						},
 					},
 				})},
+			},
+		},
+		{
+			job: prCommentAnalysisRunningJob,
+			events: []domain.Event{
+				domainEvent(prCommentAnalysisRunningJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 108, prCommentAnalysisRunningJob.Title, domain.TargetIssue), base.Add(52*time.Minute)),
+				domainEvent(prCommentAnalysisRunningJob.ID, "pr_created", string(domain.StatePRCreating), string(domain.StateCompleted), marshalJSON(map[string]any{
+					"artifactDir": artifacts.RepositoryWorkerJobPhaseDir("", artifactsDir, repository, 108, artifacts.WorkerPR),
+					"url":         "https://github.com/coco-papiyon/korobokcle/pull/108",
+					"pullNumber":  108,
+					"title":       prCommentAnalysisRunningJob.Title,
+					"head":        prCommentAnalysisRunningJob.BranchName,
+				}), base.Add(53*time.Minute)),
+				domainEvent(prCommentAnalysisRunningJob.ID, "pr_comment_analysis_requested", string(domain.StateCompleted), string(domain.StateDesignRunning), marshalJSON(map[string]any{
+					"comment": map[string]any{
+						"author":    "fixture-reviewer",
+						"body":      "Please simplify the conditional.",
+						"url":       "https://github.com/coco-papiyon/korobokcle/pull/108#issuecomment-1",
+						"createdAt": "2026-05-20T09:53:00Z",
+					},
+				}), base.Add(54*time.Minute)),
+			},
+			artifacts: []artifactFile{
+				{worker: artifacts.WorkerImplementation, name: "result.md", content: "# Implementation Summary\n\n- Previous implementation result kept for analysis context.\n"},
+				{worker: artifacts.WorkerPR, name: "result.json", content: marshalJSON(map[string]any{
+					"url":        "https://github.com/coco-papiyon/korobokcle/pull/108",
+					"pullNumber": 108,
+					"repository": repository,
+					"branchName": prCommentAnalysisRunningJob.BranchName,
+					"title":      prCommentAnalysisRunningJob.Title,
+					"pushed":     true,
+				})},
+				{worker: artifacts.WorkerPR, name: "gh-pr-comments.json", content: marshalJSON(map[string]any{
+					"pullNumber": 108,
+					"comments": []map[string]any{
+						{
+							"author":    "fixture-reviewer",
+							"body":      "Please simplify the conditional.",
+							"url":       "https://github.com/coco-papiyon/korobokcle/pull/108#issuecomment-1",
+							"createdAt": "2026-05-20T09:53:00Z",
+						},
+					},
+				})},
+			},
+		},
+		{
+			job: prCommentAnalysisReadyJob,
+			events: []domain.Event{
+				domainEvent(prCommentAnalysisReadyJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 109, prCommentAnalysisReadyJob.Title, domain.TargetIssue), base.Add(55*time.Minute)),
+				domainEvent(prCommentAnalysisReadyJob.ID, "pr_created", string(domain.StatePRCreating), string(domain.StateCompleted), marshalJSON(map[string]any{
+					"artifactDir": artifacts.RepositoryWorkerJobPhaseDir("", artifactsDir, repository, 109, artifacts.WorkerPR),
+					"url":         "https://github.com/coco-papiyon/korobokcle/pull/109",
+					"pullNumber":  109,
+					"title":       prCommentAnalysisReadyJob.Title,
+					"head":        prCommentAnalysisReadyJob.BranchName,
+				}), base.Add(56*time.Minute)),
+				domainEvent(prCommentAnalysisReadyJob.ID, "pr_comment_analysis_requested", string(domain.StateCompleted), string(domain.StateDesignRunning), marshalJSON(map[string]any{
+					"comment": map[string]any{
+						"author":    "fixture-reviewer",
+						"body":      "Please split this logic into a helper.",
+						"url":       "https://github.com/coco-papiyon/korobokcle/pull/109#issuecomment-1",
+						"createdAt": "2026-05-20T09:56:00Z",
+					},
+				}), base.Add(57*time.Minute)),
+				domainEvent(prCommentAnalysisReadyJob.ID, "pr_comment_analysis_ready", string(domain.StateDesignRunning), string(domain.StateWaitingDesignApproval), marshalJSON(map[string]any{
+					"artifactDir": artifacts.RepositoryWorkerJobPhaseDir("", artifactsDir, repository, 109, artifacts.WorkerPR),
+					"pullNumber":  109,
+					"comment": map[string]any{
+						"author":    "fixture-reviewer",
+						"body":      "Please split this logic into a helper.",
+						"url":       "https://github.com/coco-papiyon/korobokcle/pull/109#issuecomment-1",
+						"createdAt": "2026-05-20T09:56:00Z",
+					},
+				}), base.Add(58*time.Minute)),
+			},
+			artifacts: []artifactFile{
+				{worker: artifacts.WorkerImplementation, name: "result.md", content: "# Previous Implementation\n\n- Keep the previous implementation result for analysis comparison.\n"},
+				{worker: artifacts.WorkerPR, name: "result.json", content: marshalJSON(map[string]any{
+					"url":        "https://github.com/coco-papiyon/korobokcle/pull/109",
+					"pullNumber": 109,
+					"repository": repository,
+					"branchName": prCommentAnalysisReadyJob.BranchName,
+					"title":      prCommentAnalysisReadyJob.Title,
+					"pushed":     true,
+				})},
+				{worker: artifacts.WorkerPR, name: "gh-pr-comments.json", content: marshalJSON(map[string]any{
+					"pullNumber": 109,
+					"comments": []map[string]any{
+						{
+							"author":    "fixture-reviewer",
+							"body":      "Please split this logic into a helper.",
+							"url":       "https://github.com/coco-papiyon/korobokcle/pull/109#issuecomment-1",
+							"createdAt": "2026-05-20T09:56:00Z",
+						},
+					},
+				})},
+				{worker: artifacts.WorkerPR, name: "result.md", content: "# PR Comment Analysis\n\n- Split the logic into a helper.\n- Keep the current behavior unchanged.\n"},
 			},
 		},
 		{
@@ -479,7 +602,7 @@ func writeReadme(root string) error {
 
 動作確認用の fixture です。` + "`KOROBOKCLE_TOOL_ROOT=test/data`" + ` を指定して起動すると、
 この配下の ` + "`config/`" + `、` + "`data/`" + `、` + "`artifacts/`" + ` を使って UI を確認できます。
-repository worker の作業ディレクトリは ` + "`artifacts/workers/coco-papiyon_korobokcle/work`" + `、成果物は ` + "`artifacts/workers/coco-papiyon_korobokcle/jobs/issue_<issue番号>/`" + ` 配下に出力されます。
+repository worker の作業ディレクトリは ` + "`artifacts/workers/coco-papiyon-korobokcle/work`" + `、成果物は ` + "`artifacts/workers/coco-papiyon-korobokcle/jobs/issue_<issue番号>/`" + ` 配下に出力されます。
 作業ディレクトリには、AI の ` + "`result.md`" + ` を ` + "`design/issue_<issue番号>_...md`" + ` などの形式で複製しています。
 
 含まれるジョブ:
@@ -492,6 +615,8 @@ repository worker の作業ディレクトリは ` + "`artifacts/workers/coco-pa
 | エラー状態 (fixture-failed) | issue | 103 | failed | issue_matched, design_approved, implementation_failed | implementation/result.md, implementation/test-report.json, implementation/stdout.log, implementation/stderr.log |
 | レビュー実行済み (fixture-review-completed) | pr_review | 104 | review_ready | pull_request_matched, review_started, review_ready | review/result.md, review/stdout.log, review/stderr.log |
 | PR 作成済み (fixture-pr-created) | issue | 106 | completed | issue_matched, pr_created | pr/result.json, pr/gh-pr-comments.json |
+| PRコメント分析中 (fixture-pr-comment-analysis-running) | issue | 108 | design_running | issue_matched, pr_created, pr_comment_analysis_requested | implementation/result.md, pr/result.json, pr/gh-pr-comments.json |
+| PRコメント分析済み (fixture-pr-comment-analysis-ready) | issue | 109 | waiting_design_approval | issue_matched, pr_created, pr_comment_analysis_requested, pr_comment_analysis_ready | implementation/result.md, pr/result.json, pr/gh-pr-comments.json, pr/result.md |
 | PR フィードバック完了 (fixture-pr-feedback-completed) | pr_feedback | 107 | completed | pull_request_review_matched, implementation_ready, waiting_final_approval, final_approved, pr_updated | implementation/result.md, implementation/stdout.log, implementation/stderr.log, pr/result.json, pr/gh-pr-comments.json |
 | 削除済み (fixture-deleted) | issue | 105 | waiting_design_approval | issue_matched, design_started, design_ready, waiting_design_approval | design/result.md, design/stdout.log, design/stderr.log |` + `
 

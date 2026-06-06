@@ -17,14 +17,17 @@ import (
 )
 
 type Server struct {
-	httpServer       *http.Server
-	orchestrator     *orchestrator.Orchestrator
-	config           *config.Service
-	staticDir        string
-	issueBodyFetcher IssueBodyFetcher
-	reviewer         ReviewSubmitter
-	commenter        IssueCommentSubmitter
-	tools            *toolRuntimeManager
+	httpServer                  *http.Server
+	orchestrator                *orchestrator.Orchestrator
+	config                      *config.Service
+	staticDir                   string
+	issueBodyFetcher            IssueBodyFetcher
+	prCommentsFetcher           func(context.Context, PRCommentsFetchRequest) (PRCommentsArtifact, error)
+	prCommentSubmitter          func(context.Context, PRCommentSubmitRequest) error
+	prCommentAnalyzer           func(context.Context, string, PRCommentData) error
+	reviewer                    ReviewSubmitter
+	commenter                   IssueCommentSubmitter
+	tools                       *toolRuntimeManager
 	prepareRepositoryWorkspaces func(context.Context, config.App) error
 }
 
@@ -54,6 +57,33 @@ type IssueCommentSubmitRequest struct {
 	ArtifactDir string
 }
 
+type PRCommentsFetchRequest struct {
+	Repository  string
+	PullNumber  int
+	ArtifactDir string
+}
+
+type PRCommentData struct {
+	Author    string
+	Body      string
+	URL       string
+	CreatedAt string
+	Path      string
+	Line      int
+}
+
+type PRCommentsArtifact struct {
+	PullNumber int
+	Comments   []PRCommentData
+}
+
+type PRCommentSubmitRequest struct {
+	Repository  string
+	PullNumber  int
+	Body        string
+	ArtifactDir string
+}
+
 type GHReviewSubmitter struct{}
 type GHIssueCommentSubmitter struct{}
 
@@ -77,6 +107,8 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator, issueBodyFetcher 
 	api.HandleFunc("/jobs", s.handleJobs).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}", s.handleJobDetail).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}/issue-body", s.handleJobIssueBody).Methods(http.MethodGet)
+	api.HandleFunc("/jobs/{id}/pr-comments", s.handlePRComments).Methods(http.MethodGet)
+	api.HandleFunc("/jobs/{id}/pr-comments/analyze", s.handleAnalyzePRComment).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/delete", s.handleDeleteJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/restore", s.handleRestoreJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/purge", s.handlePurgeJob).Methods(http.MethodPost)
@@ -118,6 +150,18 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator, issueBodyFetcher 
 
 func (s *Server) SetRepositoryWorkspacePreparer(fn func(context.Context, config.App) error) {
 	s.prepareRepositoryWorkspaces = fn
+}
+
+func (s *Server) SetPRCommentsFetcher(fn func(context.Context, PRCommentsFetchRequest) (PRCommentsArtifact, error)) {
+	s.prCommentsFetcher = fn
+}
+
+func (s *Server) SetPRCommentSubmitter(fn func(context.Context, PRCommentSubmitRequest) error) {
+	s.prCommentSubmitter = fn
+}
+
+func (s *Server) SetPRCommentAnalyzer(fn func(context.Context, string, PRCommentData) error) {
+	s.prCommentAnalyzer = fn
 }
 
 func resolveStaticDir() (string, error) {
