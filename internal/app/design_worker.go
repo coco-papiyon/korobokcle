@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/issuebody"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
 	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
@@ -134,25 +134,11 @@ func buildDesignContext(cfg *config.Service, workDir string, job domain.Job, eve
 
 	for _, event := range events {
 		switch event.EventType {
-		case string(domain.DomainEventIssueMatched):
-			var payload struct {
-				Body      string   `json:"body"`
-				Author    string   `json:"author"`
-				Labels    []string `json:"labels"`
-				Assignees []string `json:"assignees"`
-			}
-			if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
-				return skill.DesignContext{}, err
-			}
-			ctxData.Body = payload.Body
-			ctxData.Author = payload.Author
-			ctxData.Labels = payload.Labels
-			ctxData.Assignees = payload.Assignees
 		case "design_rerun_requested":
 			var payload struct {
 				Comment string `json:"comment"`
 			}
-			if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			if err := unmarshalEventPayload(event.Payload, &payload); err != nil {
 				return skill.DesignContext{}, err
 			}
 			ctxData.RerunComment = strings.TrimSpace(payload.Comment)
@@ -164,6 +150,15 @@ func buildDesignContext(cfg *config.Service, workDir string, job domain.Job, eve
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return skill.DesignContext{}, err
 	}
+
+	snapshot, err := issuebody.Resolve(events)
+	if err != nil {
+		return skill.DesignContext{}, err
+	}
+	ctxData.Body = snapshot.Body
+	ctxData.Author = snapshot.Author
+	ctxData.Labels = snapshot.Labels
+	ctxData.Assignees = snapshot.Assignees
 
 	return ctxData, nil
 }

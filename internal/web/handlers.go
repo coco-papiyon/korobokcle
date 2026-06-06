@@ -18,6 +18,7 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/issuebody"
 	"github.com/coco-papiyon/korobokcle/internal/naming"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
 	"github.com/coco-papiyon/korobokcle/internal/skill"
@@ -254,6 +255,11 @@ func (s *Server) handleJobIssueBody(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.orchestrator.RecordIssueBodyRefresh(r.Context(), jobID, body); err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, issueBodyResponse{IssueBody: body})
 }
 
@@ -294,11 +300,14 @@ func (s *Server) handleJobDetail(w http.ResponseWriter, r *http.Request) {
 		Job:    toJobResponse(job),
 		Events: make([]eventResponse, 0, len(events)),
 	}
+	if snapshot, err := issuebody.Resolve(events); err == nil {
+		out.IssueBody = snapshot.Body
+	} else {
+		writeJSONError(w, http.StatusInternalServerError, err)
+		return
+	}
 	for _, event := range events {
 		sourceEventType := sourceEventTypeForEvent(events, event)
-		if out.IssueBody == "" && event.EventType == string(domain.DomainEventIssueMatched) {
-			out.IssueBody = extractIssueBody(event.Payload)
-		}
 		if len(out.ReviewComments) == 0 && event.EventType == string(domain.DomainEventPRReviewMatched) {
 			out.ReviewComments = extractReviewComments(event.Payload)
 		}
@@ -1750,16 +1759,6 @@ func extractArtifactDirFromPayload(payload string) string {
 		return filepath.Dir(eventPayload.ReportPath)
 	}
 	return ""
-}
-
-func extractIssueBody(payload string) string {
-	var eventPayload struct {
-		Body string `json:"body"`
-	}
-	if err := json.Unmarshal([]byte(payload), &eventPayload); err != nil {
-		return ""
-	}
-	return eventPayload.Body
 }
 
 func extractReviewComments(payload string) []reviewCommentResponse {
