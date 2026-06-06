@@ -50,6 +50,15 @@
 | `waiting_final_approval` | `final_rejected` | `final_rejected` | 最終差し戻し |
 | `pr_creating` | `pr_created` | `completed` | 新規 PR 作成完了 |
 
+### PR コメント分析
+
+| From | Event / Action | To | 補足 |
+| --- | --- | --- | --- |
+| `completed` | `pr_comment_analysis_requested` | `design_running` | PR コメント分析の開始 |
+| `design_running` | `pr_comment_analysis_ready` | `waiting_design_approval` | 分析結果の生成完了 |
+| `waiting_design_approval` | `design_approved` | `implementation_running` | 分析結果を承認して実装へ進む |
+| `waiting_design_approval` | `design_rejected` | `design_rejected` | 分析結果を差し戻す |
+
 ### Failure / Rerun / Recovery
 
 | From | Event / Action | To | 補足 |
@@ -160,5 +169,7 @@
 - `review_ready` はレビュー実行済みで、承認待ちの状態です。
 - `ApproveFinal` は `issue` / `pr_feedback` ジョブで、通常 `waiting_final_approval` からのみ許可されます。
   例外として、`failed` でも直近イベントが `test_failed` の場合のみ許可されます。
+- PR コメント分析は `pr_comment_analysis_requested` で `design_running` に入り、`pr_comment_analysis_ready` で `waiting_design_approval` に戻ります。
+- `waiting_design_approval` は通常の設計承認だけでなく、PR コメント分析結果の承認にも使います。
 - `pr_feedback` ジョブは `pull_request_review_matched` で開始し、レビューコメント反映のため `implementation_running` から始まります。
 - 本書は現在のコード上の実装整理であり、状態遷移の妥当性そのものを保証する仕様書ではありません。

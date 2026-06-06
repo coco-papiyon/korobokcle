@@ -33,6 +33,15 @@ func (r *recordingReviewSubmitter) Submit(_ context.Context, req ReviewSubmitReq
 	return nil
 }
 
+type recordingPRCommentSubmitter struct {
+	req PRCommentSubmitRequest
+}
+
+func (r *recordingPRCommentSubmitter) Submit(_ context.Context, req PRCommentSubmitRequest) error {
+	r.req = req
+	return nil
+}
+
 type recordingIssueBodyFetcher struct {
 	repository  string
 	issueNumber int
@@ -2060,6 +2069,347 @@ func TestHandleJobDetailIncludesPRCommentsAndPullNumber(t *testing.T) {
 	}
 	if !strings.Contains(got.PRCreateArtifact.Content, `"pullNumber":123`) {
 		t.Fatalf("expected pr create artifact to include pull number, got %s", got.PRCreateArtifact.Content)
+	}
+}
+
+func TestHandlePRCommentsFetchesAndShowsAnalysis(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-pr-2",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 33,
+		State:        domain.StateCompleted,
+		Title:        "PR comments",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	prDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerPR)
+	if err := os.MkdirAll(prDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(prDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prDir, "result.json"), []byte(`{"url":"https://github.com/owner/repository/pull/444","pullNumber":444,"repository":"owner/repository","branchName":"feature/pr","title":"PR comments","pushed":true}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.json) error = %v", err)
+	}
+	server.SetPRCommentsFetcher(func(_ context.Context, req PRCommentsFetchRequest) (PRCommentsArtifact, error) {
+		if req.PullNumber != 444 {
+			t.Fatalf("unexpected pullNumber %d", req.PullNumber)
+		}
+		if err := os.WriteFile(filepath.Join(prDir, "gh-pr-comments.json"), []byte(`{"pullNumber":444,"comments":[{"author":"alice","body":"please rename"}]}`), 0o644); err != nil {
+			t.Fatalf("WriteFile(gh-pr-comments.json) error = %v", err)
+		}
+		return PRCommentsArtifact{
+			PullNumber: 444,
+			Comments: []PRCommentData{
+				{Author: "alice", Body: "please rename"},
+			},
+		}, nil
+	})
+	server.SetPRCommentAnalyzer(func(_ context.Context, jobID string, comment PRCommentData) error {
+		if jobID != job.ID {
+			t.Fatalf("unexpected jobID %q", jobID)
+		}
+		if comment.Body != "please rename" {
+			t.Fatalf("unexpected comment body %q", comment.Body)
+		}
+		if err := os.WriteFile(filepath.Join(prDir, "result.md"), []byte("analysis result"), 0o644); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID+"/pr-comments", nil)
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	rec := httptest.NewRecorder()
+
+	server.handlePRComments(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var got struct {
+		PullNumber int `json:"pullNumber"`
+		Comments   []struct {
+			Author string `json:"author"`
+			Body   string `json:"body"`
+		} `json:"comments"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(rec.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("Decode(response) error = %v", err)
+	}
+	if got.PullNumber != 444 {
+		t.Fatalf("unexpected pull number: %+v", got.PullNumber)
+	}
+	if len(got.Comments) != 1 || got.Comments[0].Body != "please rename" {
+		t.Fatalf("unexpected pr comments: %+v", got.Comments)
+	}
+
+	analysisReqBody := bytes.NewBufferString(`{"comment":{"author":"alice","body":"please rename"}}`)
+	analysisReq := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/pr-comments/analyze", analysisReqBody)
+	analysisReq = mux.SetURLVars(analysisReq, map[string]string{"id": job.ID})
+	analysisRec := httptest.NewRecorder()
+
+	server.handleAnalyzePRComment(analysisRec, analysisReq)
+	if analysisRec.Code != http.StatusOK {
+		t.Fatalf("expected analysis status %d, got %d body=%s", http.StatusOK, analysisRec.Code, analysisRec.Body.String())
+	}
+	var analyzed struct {
+		PRCommentAnalysisArtifact struct {
+			Content string `json:"content"`
+		} `json:"prCommentAnalysisArtifact"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(analysisRec.Body.Bytes())).Decode(&analyzed); err != nil {
+		t.Fatalf("Decode(analysis response) error = %v", err)
+	}
+	if analyzed.PRCommentAnalysisArtifact.Content != "analysis result" {
+		t.Fatalf("unexpected analyzed content: %+v", analyzed.PRCommentAnalysisArtifact)
+	}
+}
+
+func TestHandlePRCommentsUsesLocalArtifactWithoutFetcher(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-pr-local-comments",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 34,
+		State:        domain.StateWaitingDesignApproval,
+		Title:        "PR local comments",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	prDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerPR)
+	if err := os.MkdirAll(prDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(prDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prDir, "result.json"), []byte(`{"url":"https://github.com/owner/repository/pull/555","pullNumber":555,"repository":"owner/repository","branchName":"feature/pr-local","title":"PR local comments","pushed":true}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prDir, "gh-pr-comments.json"), []byte(`{"pullNumber":555,"comments":[{"author":"alice","body":"local fixture comment","url":"https://github.com/owner/repository/pull/555#issuecomment-1","createdAt":"2026-06-06T00:00:00Z"}]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(gh-pr-comments.json) error = %v", err)
+	}
+	if err := store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "pr_created",
+		StateTo:   string(domain.StateCompleted),
+		Payload:   `{"artifactDir":"` + prDir + `","url":"https://github.com/owner/repository/pull/555","pullNumber":555,"title":"PR local comments","head":"feature/pr-local"}`,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID+"/pr-comments", nil)
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	rec := httptest.NewRecorder()
+
+	server.handlePRComments(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var got struct {
+		PullNumber int `json:"pullNumber"`
+		Comments   []struct {
+			Author string `json:"author"`
+			Body   string `json:"body"`
+		} `json:"comments"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(rec.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("Decode(response) error = %v", err)
+	}
+	if got.PullNumber != 555 {
+		t.Fatalf("unexpected pull number: %+v", got.PullNumber)
+	}
+	if len(got.Comments) != 1 || got.Comments[0].Author != "alice" || got.Comments[0].Body != "local fixture comment" {
+		t.Fatalf("unexpected pr comments: %+v", got.Comments)
+	}
+}
+
+func TestHandlePRCommentsFiltersAnalysisComments(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-pr-filtered-comments",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 35,
+		State:        domain.StateCompleted,
+		Title:        "PR filtered comments",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	prDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerPR)
+	if err := os.MkdirAll(prDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(prDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prDir, "result.json"), []byte(`{"url":"https://github.com/owner/repository/pull/556","pullNumber":556,"repository":"owner/repository","branchName":"feature/pr-filtered","title":"PR filtered comments","pushed":true}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prDir, "gh-pr-comments.json"), []byte(`{"pullNumber":556,"comments":[{"author":"alice","body":"local fixture comment","url":"https://github.com/owner/repository/pull/556#issuecomment-1","createdAt":"2026-06-06T00:00:00Z"},{"author":"korobokcle","body":"<!-- korobokcle:pr-comment-analysis -->\n\nhidden analysis comment","url":"https://github.com/owner/repository/pull/556#issuecomment-2","createdAt":"2026-06-06T00:01:00Z"}]}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(gh-pr-comments.json) error = %v", err)
+	}
+	if err := store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "pr_created",
+		StateTo:   string(domain.StateCompleted),
+		Payload:   `{"artifactDir":"` + prDir + `","url":"https://github.com/owner/repository/pull/556","pullNumber":556,"title":"PR filtered comments","head":"feature/pr-filtered"}`,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID+"/pr-comments", nil)
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	rec := httptest.NewRecorder()
+
+	server.handlePRComments(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	var got struct {
+		Comments []struct {
+			Author string `json:"author"`
+			Body   string `json:"body"`
+		} `json:"comments"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(rec.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("Decode(response) error = %v", err)
+	}
+	if len(got.Comments) != 1 {
+		t.Fatalf("expected only one visible comment, got %+v", got.Comments)
+	}
+	if got.Comments[0].Author != "alice" || got.Comments[0].Body != "local fixture comment" {
+		t.Fatalf("unexpected visible comment: %+v", got.Comments[0])
+	}
+}
+
+func TestHandleDesignApprovalPostsPRCommentAnalysis(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	submitter := &recordingPRCommentSubmitter{}
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	server.SetPRCommentSubmitter(func(_ context.Context, req PRCommentSubmitRequest) error {
+		submitter.req = req
+		return nil
+	})
+
+	job := domain.Job{
+		ID:           "job-pr-comment-analysis-approve",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 36,
+		State:        domain.StateWaitingDesignApproval,
+		Title:        "PR comment analysis",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	prDir := artifacts.RepositoryWorkerJobPhaseDir(root, svc.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerPR)
+	if err := os.MkdirAll(prDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(prDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prDir, "result.json"), []byte(`{"url":"https://github.com/owner/repository/pull/557","pullNumber":557,"repository":"owner/repository","branchName":"feature/pr-analysis","title":"PR comment analysis","pushed":true}`), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(prDir, "result.md"), []byte("analysis result body"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+	if err := store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "pr_created",
+		StateTo:   string(domain.StateCompleted),
+		Payload:   `{"artifactDir":"` + prDir + `","url":"https://github.com/owner/repository/pull/557","pullNumber":557,"title":"PR comment analysis","head":"feature/pr-analysis"}`,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent(pr_created) error = %v", err)
+	}
+	if err := store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "pr_comment_analysis_ready",
+		StateFrom: string(domain.StateDesignRunning),
+		StateTo:   string(domain.StateWaitingDesignApproval),
+		Payload:   `{"artifactDir":"` + prDir + `","pullNumber":557,"comment":{"author":"alice","body":"Please split this logic into a helper.","url":"https://github.com/owner/repository/pull/557#issuecomment-1","createdAt":"2026-06-06T00:00:00Z"}}`,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent(pr_comment_analysis_ready) error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/approvals/design", bytes.NewBufferString(`{"status":"approved","comment":"analysis result body"}`))
+	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
+	rec := httptest.NewRecorder()
+
+	server.handleDesignApproval(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+	if submitter.req.Repository != job.Repository {
+		t.Fatalf("unexpected repository: %+v", submitter.req)
+	}
+	if submitter.req.PullNumber != 557 {
+		t.Fatalf("unexpected pull number: %+v", submitter.req)
+	}
+	if !strings.HasPrefix(submitter.req.Body, prCommentAnalysisPostedMarker) {
+		t.Fatalf("expected posted comment to include marker, got %q", submitter.req.Body)
+	}
+	if !strings.Contains(submitter.req.Body, "analysis result body") {
+		t.Fatalf("expected posted comment to include analysis body, got %q", submitter.req.Body)
 	}
 }
 

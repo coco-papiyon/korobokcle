@@ -1,4 +1,4 @@
-import type { AppConfig, IssueBodyResponse, Job, JobDetail, NotificationConfig, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
+import type { AppConfig, IssueBodyResponse, Job, JobDetail, NotificationConfig, PRCommentsResponse, ReviewComment, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
 import { requestFailedMessage } from '@/lib/ui-text'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -29,6 +29,17 @@ export function fetchJobDetail(jobId: string): Promise<JobDetail> {
 
 export function refreshIssueBody(jobId: string): Promise<IssueBodyResponse> {
   return request<IssueBodyResponse>(`/api/jobs/${jobId}/issue-body`)
+}
+
+export function fetchPRComments(jobId: string): Promise<PRCommentsResponse> {
+  return request<PRCommentsResponse>(`/api/jobs/${jobId}/pr-comments`)
+}
+
+export function analyzePRComment(jobId: string, comment: ReviewComment): Promise<JobDetail> {
+  return request<JobDetail>(`/api/jobs/${jobId}/pr-comments/analyze`, {
+    method: 'POST',
+    body: JSON.stringify({ comment }),
+  })
 }
 
 export function deleteJob(jobId: string): Promise<JobDetail> {

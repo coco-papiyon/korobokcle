@@ -156,6 +156,9 @@ export function formatLogName(name: string): string {
   if (name === 'gh-pr-create.log') {
     return 'gh pr create'
   }
+  if (name === 'gh-pr-comments.log') {
+    return 'gh pr comments'
+  }
   if (name === 'gh-pr-comment.log') {
     return 'gh pr comment'
   }

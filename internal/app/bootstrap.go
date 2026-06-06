@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
+	"github.com/coco-papiyon/korobokcle/internal/domain"
 	gh "github.com/coco-papiyon/korobokcle/internal/github"
 	"github.com/coco-papiyon/korobokcle/internal/notification"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
@@ -74,6 +75,45 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 	if err != nil {
 		return fmt.Errorf("build web server: %w", err)
 	}
+	server.SetPRCommentsFetcher(func(ctx context.Context, req web.PRCommentsFetchRequest) (web.PRCommentsArtifact, error) {
+		fetcher := gh.NewClient(gh.NewGHTokenProvider(10*time.Minute), debugLogger).WithInfoLogger(infoLogger)
+		artifact, err := fetcher.FetchPullRequestComments(ctx, req.Repository, req.PullNumber, req.ArtifactDir)
+		if err != nil {
+			return web.PRCommentsArtifact{}, err
+		}
+		comments := make([]web.PRCommentData, 0, len(artifact.Comments))
+		for _, comment := range artifact.Comments {
+			comments = append(comments, web.PRCommentData{
+				Author:    comment.Author,
+				Body:      comment.Body,
+				URL:       comment.URL,
+				CreatedAt: comment.CreatedAt,
+			})
+		}
+		return web.PRCommentsArtifact{PullNumber: artifact.PullNumber, Comments: comments}, nil
+	})
+	server.SetPRCommentSubmitter(func(ctx context.Context, req web.PRCommentSubmitRequest) error {
+		submitter := GHPRCommentSubmitter{}
+		return submitter.Submit(ctx, PRCommentSubmitRequest{
+			Repository:  req.Repository,
+			PullNumber:  req.PullNumber,
+			Body:        req.Body,
+			ArtifactDir: req.ArtifactDir,
+		})
+	})
+	server.SetPRCommentAnalyzer(func(ctx context.Context, jobID string, comment web.PRCommentData) error {
+		if err := orch.UpdateJobState(ctx, jobID, domain.StateDesignRunning, "pr_comment_analysis_requested", map[string]any{
+			"comment": comment,
+		}); err != nil {
+			return err
+		}
+		go func() {
+			if err := processPRCommentAnalysis(context.Background(), configService, orch, jobID, PRComment{Author: comment.Author, Body: comment.Body, URL: comment.URL, CreatedAt: comment.CreatedAt}, infoLogger); err != nil {
+				infoLogger.Printf("pr comment analysis failed job_id=%s error=%v", jobID, err)
+			}
+		}()
+		return nil
+	})
 	server.SetRepositoryWorkspacePreparer(func(ctx context.Context, appConfig config.App) error {
 		snapshot := configService.App()
 		snapshot.MonitoredRepositories = append([]config.MonitoredRepository(nil), appConfig.MonitoredRepositories...)
