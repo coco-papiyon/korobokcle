@@ -307,9 +307,9 @@ function parseIntegerField(value: string, label: string) {
         <div v-for="channel in notificationChannels" :key="`${channel.name}-${channel.type}`" class="stack-md">
           <div class="settings-row">
             <span class="settings-row__label">通知方法</span>
-            <label class="field field--inline">
-              <span class="field__label">{{ channel.name }} ({{ channel.type }})</span>
+            <label class="field field-checkbox">
               <input v-model="channel.enabled" type="checkbox" />
+              <span class="field__label">{{ channel.name }} ({{ channel.type }})</span>
             </label>
           </div>
 
@@ -319,15 +319,15 @@ function parseIntegerField(value: string, label: string) {
               <label
                 v-for="option in notificationEventOptions"
                 :key="`${channel.name}-${option.value}`"
-                class="field field--inline"
+                class="field field-checkbox"
               >
-                <span class="field__label">{{ option.label }}</span>
                 <input
                   :checked="channelHasEvent(channel, option.value)"
                   type="checkbox"
                   :disabled="!channel.enabled"
                   @change="updateChannelEvent(channel, option.value, ($event.target as HTMLInputElement).checked)"
                 />
+                <span class="field__label">{{ option.label }}</span>
               </label>
             </div>
           </div>
