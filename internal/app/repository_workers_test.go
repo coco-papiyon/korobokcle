@@ -203,6 +203,81 @@ func TestBuildRepositoryDesignContextIgnoresLegacyArtifactDirectory(t *testing.T
 	}
 }
 
+func TestBuildRepositoryContextsUseLatestIssueBody(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.ArtifactsDir = "artifacts"
+	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
+	svc := config.NewService(root, files)
+
+	job := domain.Job{
+		ID:           "job-42",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		Title:        "Issue",
+		WatchRuleID:  "rule-1",
+		BranchName:   "issue-42",
+	}
+
+	designDir := repositoryWorkerArtifactDir(svc, job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
+	if err := os.MkdirAll(designDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(designDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(designDir, "result.md"), []byte("design"), 0o644); err != nil {
+		t.Fatalf("WriteFile(design result.md) error = %v", err)
+	}
+
+	events := []domain.Event{
+		{
+			EventType: string(domain.DomainEventIssueMatched),
+			Payload:   `{"body":"original body","author":"alice","labels":["bug"],"assignees":["bob"]}`,
+			CreatedAt: time.Now(),
+		},
+		{
+			EventType: "issue_body_refreshed",
+			Payload:   `{"body":"latest body"}`,
+			CreatedAt: time.Now(),
+		},
+	}
+
+	designCtx, err := buildRepositoryDesignContext(svc, root, job, events)
+	if err != nil {
+		t.Fatalf("buildRepositoryDesignContext() error = %v", err)
+	}
+	if designCtx.Body != "latest body" {
+		t.Fatalf("expected latest body in design context, got %q", designCtx.Body)
+	}
+	if designCtx.Author != "alice" || len(designCtx.Labels) != 1 || designCtx.Labels[0] != "bug" || len(designCtx.Assignees) != 1 || designCtx.Assignees[0] != "bob" {
+		t.Fatalf("expected issue metadata in design context, got %+v", designCtx)
+	}
+
+	runSpec := implementationRunSpec{
+		SkillName:   "implement",
+		ArtifactDir: repositoryWorkerArtifactDir(svc, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation),
+	}
+	implDir := repositoryWorkerArtifactDir(svc, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(implDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(implDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(implDir, "result.md"), []byte("implementation"), 0o644); err != nil {
+		t.Fatalf("WriteFile(implementation result.md) error = %v", err)
+	}
+
+	implCtx, err := buildRepositoryImplementationContext(svc, root, job, events, runSpec)
+	if err != nil {
+		t.Fatalf("buildRepositoryImplementationContext() error = %v", err)
+	}
+	if implCtx.Body != "latest body" {
+		t.Fatalf("expected latest body in implementation context, got %q", implCtx.Body)
+	}
+	if implCtx.Author != "alice" || len(implCtx.Labels) != 1 || implCtx.Labels[0] != "bug" || len(implCtx.Assignees) != 1 || implCtx.Assignees[0] != "bob" {
+		t.Fatalf("expected issue metadata in implementation context, got %+v", implCtx)
+	}
+}
+
 func TestSyncRepositoryWorkspaceResetsToBaseBranchAndPulls(t *testing.T) {
 	t.Parallel()
 

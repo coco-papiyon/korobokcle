@@ -83,6 +83,11 @@ func TestBuildDesignContextIncludesRerunComment(t *testing.T) {
 			CreatedAt: time.Now(),
 		},
 		{
+			EventType: "issue_body_refreshed",
+			Payload:   `{"body":"latest issue body"}`,
+			CreatedAt: time.Now(),
+		},
+		{
 			EventType: "design_rerun_requested",
 			Payload:   `{"comment":"  prioritize architecture and keep the API stable  "}`,
 			CreatedAt: time.Now(),
@@ -95,6 +100,12 @@ func TestBuildDesignContextIncludesRerunComment(t *testing.T) {
 	}
 	if got.RerunComment != "prioritize architecture and keep the API stable" {
 		t.Fatalf("expected rerun comment to be captured, got %q", got.RerunComment)
+	}
+	if got.Body != "latest issue body" {
+		t.Fatalf("expected latest issue body to be used, got %q", got.Body)
+	}
+	if got.Author != "alice" || len(got.Labels) != 1 || got.Labels[0] != "bug" || len(got.Assignees) != 1 || got.Assignees[0] != "bob" {
+		t.Fatalf("expected issue metadata from issue matched, got %+v", got)
 	}
 	if got.ExistingDesign != "# existing design\n\n- keep the API stable\n" {
 		t.Fatalf("expected existing design to be loaded, got %q", got.ExistingDesign)
