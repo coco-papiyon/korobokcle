@@ -90,6 +90,11 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 			CreatedAt: time.Now(),
 		},
 		{
+			EventType: "issue_body_refreshed",
+			Payload:   `{"body":"latest issue body"}`,
+			CreatedAt: time.Now(),
+		},
+		{
 			EventType: "design_approved",
 			Payload:   `{"comment":"keep the implementation small and avoid new dependencies"}`,
 			CreatedAt: time.Now(),
@@ -126,6 +131,12 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	}
 	if got.PreviousTestReport == "" {
 		t.Fatalf("expected previous test report to be captured")
+	}
+	if got.Body != "latest issue body" {
+		t.Fatalf("expected latest issue body to be used, got %q", got.Body)
+	}
+	if got.Author != "alice" || len(got.Labels) != 1 || got.Labels[0] != "bug" || len(got.Assignees) != 1 || got.Assignees[0] != "bob" {
+		t.Fatalf("expected issue metadata from issue matched, got %+v", got)
 	}
 	if got.ImplementationArtifact != "implementation content" {
 		t.Fatalf("expected implementation artifact to be captured, got %q", got.ImplementationArtifact)

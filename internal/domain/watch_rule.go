@@ -68,9 +68,10 @@ type MatchResult struct {
 type DomainEventType string
 
 const (
-	DomainEventIssueMatched    DomainEventType = "issue_matched"
-	DomainEventPRMatched       DomainEventType = "pull_request_matched"
-	DomainEventPRReviewMatched DomainEventType = "pull_request_review_matched"
+	DomainEventIssueMatched       DomainEventType = "issue_matched"
+	DomainEventIssueBodyRefreshed DomainEventType = "issue_body_refreshed"
+	DomainEventPRMatched          DomainEventType = "pull_request_matched"
+	DomainEventPRReviewMatched    DomainEventType = "pull_request_review_matched"
 )
 
 type DomainEvent struct {

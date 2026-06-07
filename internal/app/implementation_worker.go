@@ -15,6 +15,7 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	"github.com/coco-papiyon/korobokcle/internal/executor"
+	"github.com/coco-papiyon/korobokcle/internal/issuebody"
 	"github.com/coco-papiyon/korobokcle/internal/orchestrator"
 	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
@@ -193,26 +194,14 @@ func buildImplementationContext(cfg *config.Service, workDir string, job domain.
 	ctxData.PreviousFailure = previousFailure
 	ctxData.PreviousTestReport = previousTestReport
 
-	for _, event := range events {
-		if event.EventType != string(domain.DomainEventIssueMatched) {
-			continue
-		}
-
-		var payload struct {
-			Body      string   `json:"body"`
-			Author    string   `json:"author"`
-			Labels    []string `json:"labels"`
-			Assignees []string `json:"assignees"`
-		}
-		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
-			return skill.ImplementationContext{}, err
-		}
-		ctxData.Body = payload.Body
-		ctxData.Author = payload.Author
-		ctxData.Labels = payload.Labels
-		ctxData.Assignees = payload.Assignees
-		break
+	snapshot, err := issuebody.Resolve(events)
+	if err != nil {
+		return skill.ImplementationContext{}, err
 	}
+	ctxData.Body = snapshot.Body
+	ctxData.Author = snapshot.Author
+	ctxData.Labels = snapshot.Labels
+	ctxData.Assignees = snapshot.Assignees
 
 	return ctxData, nil
 }

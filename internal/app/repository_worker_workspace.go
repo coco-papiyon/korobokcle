@@ -11,6 +11,7 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/issuebody"
 	"github.com/coco-papiyon/korobokcle/internal/skill"
 )
 
@@ -40,20 +41,6 @@ func buildRepositoryDesignContext(cfg *config.Service, workDir string, job domai
 
 	for _, event := range events {
 		switch event.EventType {
-		case string(domain.DomainEventIssueMatched):
-			var payload struct {
-				Body      string   `json:"body"`
-				Author    string   `json:"author"`
-				Labels    []string `json:"labels"`
-				Assignees []string `json:"assignees"`
-			}
-			if err := unmarshalEventPayload(event.Payload, &payload); err != nil {
-				return skill.DesignContext{}, err
-			}
-			ctxData.Body = payload.Body
-			ctxData.Author = payload.Author
-			ctxData.Labels = payload.Labels
-			ctxData.Assignees = payload.Assignees
 		case "design_rerun_requested":
 			var payload struct {
 				Comment string `json:"comment"`
@@ -71,6 +58,15 @@ func buildRepositoryDesignContext(cfg *config.Service, workDir string, job domai
 		return skill.DesignContext{}, err
 	}
 	ctxData.ExistingImprovements = loadExistingImprovements(cfg, job.Repository)
+
+	snapshot, err := issuebody.Resolve(events)
+	if err != nil {
+		return skill.DesignContext{}, err
+	}
+	ctxData.Body = snapshot.Body
+	ctxData.Author = snapshot.Author
+	ctxData.Labels = snapshot.Labels
+	ctxData.Assignees = snapshot.Assignees
 
 	return ctxData, nil
 }
@@ -144,26 +140,14 @@ func buildRepositoryImplementationContext(cfg *config.Service, workDir string, j
 	ctxData.PreviousFailure = previousFailure
 	ctxData.PreviousTestReport = previousTestReport
 
-	for _, event := range events {
-		if event.EventType != string(domain.DomainEventIssueMatched) {
-			continue
-		}
-
-		var payload struct {
-			Body      string   `json:"body"`
-			Author    string   `json:"author"`
-			Labels    []string `json:"labels"`
-			Assignees []string `json:"assignees"`
-		}
-		if err := unmarshalEventPayload(event.Payload, &payload); err != nil {
-			return skill.ImplementationContext{}, err
-		}
-		ctxData.Body = payload.Body
-		ctxData.Author = payload.Author
-		ctxData.Labels = payload.Labels
-		ctxData.Assignees = payload.Assignees
-		break
+	snapshot, err := issuebody.Resolve(events)
+	if err != nil {
+		return skill.ImplementationContext{}, err
 	}
+	ctxData.Body = snapshot.Body
+	ctxData.Author = snapshot.Author
+	ctxData.Labels = snapshot.Labels
+	ctxData.Assignees = snapshot.Assignees
 
 	return ctxData, nil
 }

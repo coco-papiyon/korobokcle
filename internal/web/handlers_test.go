@@ -457,6 +457,25 @@ func TestHandleJobIssueBodyRefreshSuccess(t *testing.T) {
 	if got.IssueBody != "latest issue body" {
 		t.Fatalf("expected latest issue body, got %q", got.IssueBody)
 	}
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
+	detailReq = mux.SetURLVars(detailReq, map[string]string{"id": job.ID})
+	detailRecorder := httptest.NewRecorder()
+
+	server.handleJobDetail(detailRecorder, detailReq)
+
+	if detailRecorder.Code != http.StatusOK {
+		t.Fatalf("expected job detail status %d, got %d body=%s", http.StatusOK, detailRecorder.Code, detailRecorder.Body.String())
+	}
+	var detail struct {
+		IssueBody string `json:"issueBody"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(detailRecorder.Body.Bytes())).Decode(&detail); err != nil {
+		t.Fatalf("Decode(detail) error = %v", err)
+	}
+	if detail.IssueBody != "latest issue body" {
+		t.Fatalf("expected job detail to return latest issue body, got %q", detail.IssueBody)
+	}
 }
 
 func TestHandleJobIssueBodyRefreshFailure(t *testing.T) {
@@ -489,6 +508,15 @@ func TestHandleJobIssueBodyRefreshFailure(t *testing.T) {
 	if err := store.UpsertJob(context.Background(), job); err != nil {
 		t.Fatalf("UpsertJob() error = %v", err)
 	}
+	if err := store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: string(domain.DomainEventIssueMatched),
+		StateTo:   string(domain.StateDetected),
+		Payload:   `{"body":"existing issue body","author":"alice","labels":["bug"],"assignees":["bob"]}`,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID+"/issue-body", nil)
 	req = mux.SetURLVars(req, map[string]string{"id": job.ID})
@@ -501,6 +529,25 @@ func TestHandleJobIssueBodyRefreshFailure(t *testing.T) {
 	}
 	if !strings.Contains(recorder.Body.String(), "github unavailable") {
 		t.Fatalf("expected error body to mention upstream failure, got %s", recorder.Body.String())
+	}
+
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
+	detailReq = mux.SetURLVars(detailReq, map[string]string{"id": job.ID})
+	detailRecorder := httptest.NewRecorder()
+
+	server.handleJobDetail(detailRecorder, detailReq)
+
+	if detailRecorder.Code != http.StatusOK {
+		t.Fatalf("expected job detail status %d, got %d body=%s", http.StatusOK, detailRecorder.Code, detailRecorder.Body.String())
+	}
+	var detail struct {
+		IssueBody string `json:"issueBody"`
+	}
+	if err := json.NewDecoder(bytes.NewReader(detailRecorder.Body.Bytes())).Decode(&detail); err != nil {
+		t.Fatalf("Decode(detail) error = %v", err)
+	}
+	if detail.IssueBody != "existing issue body" {
+		t.Fatalf("expected existing issue body to remain, got %q", detail.IssueBody)
 	}
 }
 

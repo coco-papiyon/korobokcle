@@ -13,6 +13,7 @@ import (
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/issuebody"
 	"github.com/coco-papiyon/korobokcle/internal/naming"
 	"github.com/coco-papiyon/korobokcle/internal/notification"
 	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
@@ -66,6 +67,31 @@ func (o *Orchestrator) JobDetail(ctx context.Context, jobID string) (domain.Job,
 		return domain.Job{}, nil, err
 	}
 	return job, events, nil
+}
+
+func (o *Orchestrator) RecordIssueBodyRefresh(ctx context.Context, jobID string, body string) error {
+	job, err := o.store.GetJob(ctx, jobID)
+	if err != nil {
+		return err
+	}
+
+	payload, err := json.Marshal(map[string]any{"body": body})
+	if err != nil {
+		return err
+	}
+	storedEvent := domain.Event{
+		JobID:     job.ID,
+		EventType: issuebody.EventTypeRefreshed,
+		StateFrom: string(job.State),
+		StateTo:   string(job.State),
+		Payload:   string(payload),
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := o.store.AppendEvent(ctx, storedEvent); err != nil {
+		return err
+	}
+	log.Printf("info job issue body refreshed job=%s state=%s", job.ID, job.State)
+	return nil
 }
 
 func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, rule config.WatchRule, event domain.DomainEvent) error {
