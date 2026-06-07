@@ -155,10 +155,14 @@ type providerSpecResponse struct {
 }
 
 type monitoredRepositoryResponse struct {
-	Repository string `json:"repository"`
-	Branch     string `json:"branch"`
-	WorkDir    string `json:"workDir"`
-	Workers    int    `json:"workers"`
+	Repository         string `json:"repository"`
+	Branch             string `json:"branch"`
+	WorkDir            string `json:"workDir"`
+	Workers            int    `json:"workers"`
+	ImprovementEnabled bool   `json:"improvementEnabled"`
+	ImprovementBranch  string `json:"improvementBranch"`
+	ImprovementDir     string `json:"improvementDir"`
+	ImprovementWorkDir string `json:"improvementWorkDir"`
 }
 
 type appConfigResponse struct {
@@ -1542,10 +1546,14 @@ func toMonitoredRepositoryResponses(values []config.MonitoredRepository) []monit
 			workers = 1
 		}
 		out = append(out, monitoredRepositoryResponse{
-			Repository: repository,
-			Branch:     strings.TrimSpace(value.Branch),
-			WorkDir:    strings.TrimSpace(value.WorkDir),
-			Workers:    workers,
+			Repository:         repository,
+			Branch:             strings.TrimSpace(value.Branch),
+			WorkDir:            strings.TrimSpace(value.WorkDir),
+			Workers:            workers,
+			ImprovementEnabled: value.ImprovementEnabled,
+			ImprovementBranch:  strings.TrimSpace(value.ImprovementBranch),
+			ImprovementDir:     strings.TrimSpace(value.ImprovementDir),
+			ImprovementWorkDir: strings.TrimSpace(value.ImprovementWorkDir),
 		})
 	}
 	return out
@@ -1569,10 +1577,14 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 		}
 		seen[repository] = struct{}{}
 		out = append(out, config.MonitoredRepository{
-			Repository: repository,
-			Branch:     branch,
-			WorkDir:    strings.TrimSpace(value.WorkDir),
-			Workers:    workers,
+			Repository:         repository,
+			Branch:             branch,
+			WorkDir:            strings.TrimSpace(value.WorkDir),
+			Workers:            workers,
+			ImprovementEnabled: value.ImprovementEnabled,
+			ImprovementBranch:  strings.TrimSpace(value.ImprovementBranch),
+			ImprovementDir:     strings.TrimSpace(value.ImprovementDir),
+			ImprovementWorkDir: strings.TrimSpace(value.ImprovementWorkDir),
 		})
 	}
 	return out, nil

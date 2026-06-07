@@ -6,6 +6,7 @@ import PanelCard from '@/components/PanelCard.vue'
 import StateBadge from '@/components/StateBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import {
+  generateImprovement,
   analyzePRComment,
   deleteJob,
   fetchAppConfig,
@@ -111,6 +112,7 @@ const prCommentAnalysisModalOpen = ref(false)
 const prCommentsModalOpen = ref(false)
 const reviewArtifactModalOpen = ref(false)
 const issueBodyModalOpen = ref(false)
+const improvementModalOpen = ref(false)
 const selectedLog = ref<{ groupTitle: string; log: JobLog } | null>(null)
 const designArtifactComment = ref('')
 const implementationArtifactComment = ref('')
@@ -147,6 +149,9 @@ const issueBodyRefreshError = ref<string | null>(null)
 const selectedToolCommandName = ref('')
 const popupLoadingState = ref<'idle' | 'loading' | 'error'>('idle')
 const popupLoadingError = ref<string | null>(null)
+const improvementCreateState = ref<'idle' | 'saving' | 'error'>('idle')
+const improvementCreateError = ref<string | null>(null)
+const improvementComment = ref('')
 const prCreateInfo = computed(() => {
   const raw = data.value?.prCreateArtifact?.content
   if (!raw) {
@@ -789,6 +794,20 @@ async function purgeArchivedJob() {
   }
 }
 
+async function createImprovementDraft() {
+  improvementCreateState.value = 'saving'
+  improvementCreateError.value = null
+  try {
+    await generateImprovement(jobID.value, improvementComment.value)
+    improvementCreateState.value = 'idle'
+    improvementComment.value = ''
+    improvementModalOpen.value = false
+  } catch (err) {
+    improvementCreateState.value = 'error'
+    improvementCreateError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
+  }
+}
+
 async function startSelectedToolCommand() {
   if (!selectedToolCommand.value || toolExecution.value?.running) {
     return
@@ -1035,6 +1054,13 @@ function openPRCreateModal() {
           <div class="artifact-headline">
             <button class="log-entry-button" type="button" @click="openIssueBodyModal">Issue 本文を開く</button>
             <p class="text-muted">元の issue 内容です。</p>
+          </div>
+        </PanelCard>
+
+        <PanelCard v-if="!isDeletedJob" title="改善案生成">
+          <div class="artifact-headline">
+            <button class="log-entry-button" type="button" @click="improvementModalOpen = true">改善案を生成</button>
+            <p class="text-muted">コメントを入力して改善 draft を生成し、改善点画面で編集と承認を行います。</p>
           </div>
         </PanelCard>
 
@@ -1540,6 +1566,38 @@ function openPRCreateModal() {
               <p v-if="reviewRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_review') }}: {{ reviewRerunError }}</p>
               <p v-if="reviewSubmitState === 'error'" class="notice notice-danger">{{ reviewSubmitError }}</p>
               <p v-if="reviewApproveState === 'error'" class="notice notice-danger">{{ reviewApproveError }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="improvementModalOpen" class="modal-backdrop" @click.self="improvementModalOpen = false">
+          <div class="modal-panel">
+            <div class="modal-panel__header">
+              <div>
+                <h3 class="modal-panel__title">改善案生成</h3>
+                <p class="text-muted">改善したい点を入力すると、改善点画面で扱う draft を自動生成します。</p>
+              </div>
+              <button class="button button-secondary" type="button" @click="improvementModalOpen = false">閉じる</button>
+            </div>
+            <div class="stack-sm">
+              <label class="field field-full">
+                <span class="field__label">コメント</span>
+                <textarea
+                  v-model="improvementComment"
+                  class="field__control field__control--textarea"
+                  rows="8"
+                  placeholder="例: ボタンは左、説明文は右に配置したい"
+                  spellcheck="false"
+                />
+              </label>
+              <div class="modal-actions">
+                <div class="modal-actions__right">
+                  <button class="button button-primary" type="button" :disabled="improvementCreateState === 'saving' || !improvementComment.trim()" @click="createImprovementDraft">
+                    {{ improvementCreateState === 'saving' ? '生成中...' : '改善案を生成' }}
+                  </button>
+                </div>
+              </div>
+              <p v-if="improvementCreateState === 'error'" class="notice notice-danger">{{ improvementCreateError }}</p>
             </div>
           </div>
         </div>

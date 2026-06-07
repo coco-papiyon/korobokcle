@@ -1,4 +1,4 @@
-import type { AppConfig, IssueBodyResponse, Job, JobDetail, NotificationConfig, PRCommentsResponse, ReviewComment, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
+import type { AppConfig, ImprovementDetail, ImprovementItem, IssueBodyResponse, Job, JobDetail, NotificationConfig, PRCommentsResponse, ReviewComment, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
 import { requestFailedMessage } from '@/lib/ui-text'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -163,6 +163,38 @@ export function stopToolCommand(jobId: string): Promise<JobDetail> {
 
 export function fetchAppConfig(): Promise<AppConfig> {
   return request<AppConfig>('/api/app-config')
+}
+
+export function fetchImprovements(): Promise<ImprovementItem[]> {
+  return request<ImprovementItem[]>('/api/improvements')
+}
+
+export function fetchImprovementDetail(repository: string, issueNumber: number): Promise<ImprovementDetail> {
+  const params = new URLSearchParams({ repository, issueNumber: String(issueNumber) })
+  return request<ImprovementDetail>(`/api/improvement?${params.toString()}`)
+}
+
+export function saveImprovementDraft(repository: string, issueNumber: number, draft: string): Promise<ImprovementDetail> {
+  const params = new URLSearchParams({ repository, issueNumber: String(issueNumber) })
+  return request<ImprovementDetail>(`/api/improvement/draft?${params.toString()}`, {
+    method: 'PUT',
+    body: JSON.stringify({ draft }),
+  })
+}
+
+export function approveImprovement(repository: string, issueNumber: number, status: 'approved' | 'no_improvement_needed', comment: string): Promise<ImprovementDetail> {
+  const params = new URLSearchParams({ repository, issueNumber: String(issueNumber) })
+  return request<ImprovementDetail>(`/api/improvement/approve?${params.toString()}`, {
+    method: 'POST',
+    body: JSON.stringify({ status, comment }),
+  })
+}
+
+export function generateImprovement(jobId: string, comment: string): Promise<ImprovementDetail> {
+  return request<ImprovementDetail>(`/api/jobs/${jobId}/improvements`, {
+    method: 'POST',
+    body: JSON.stringify({ comment }),
+  })
 }
 
 export function saveAppConfig(

@@ -14,7 +14,7 @@ import (
 
 var skillSetNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
-var managedSkillNames = []string{"design", "implement", "implement_fix", "review", "review_fix"}
+var managedSkillNames = []string{"design", "implement", "implement_fix", "review", "review_fix", "improvement"}
 
 type SkillFile struct {
 	Definition     Definition `json:"definition"`

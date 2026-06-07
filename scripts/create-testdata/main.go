@@ -33,7 +33,16 @@ func main() {
 
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "coco-papiyon/korobokcle", Branch: "main", WorkDir: "artifacts/workers/coco-papiyon-korobokcle/work", Workers: 1},
+		{
+			Repository:         "coco-papiyon/korobokcle",
+			Branch:             "main",
+			WorkDir:            "artifacts/workers/coco-papiyon-korobokcle/work",
+			Workers:            1,
+			ImprovementEnabled: true,
+			ImprovementBranch:  "develop",
+			ImprovementDir:     ".improvements",
+			ImprovementWorkDir: ".improvement",
+		},
 	}
 	files.ToolCommands.Commands = []config.ToolCommand{
 		{
@@ -109,9 +118,10 @@ type jobFixture struct {
 }
 
 type artifactFile struct {
-	worker  string
-	name    string
-	content string
+	worker      string
+	name        string
+	content     string
+	destination string
 }
 
 func buildFixtures(artifactsDir string) []jobFixture {
@@ -327,6 +337,23 @@ func buildFixtures(artifactsDir string) []jobFixture {
 						},
 					},
 				})},
+				{worker: "improvement", name: "input.md", content: "ボタンを左に配置し、右に説明文を配置してほしい。\n"},
+				{worker: "improvement", name: "context.json", content: marshalJSON(map[string]any{
+					"jobId":       prCreatedJob.ID,
+					"repository":  repository,
+					"issueNumber": 106,
+					"title":       prCreatedJob.Title,
+					"jobType":     string(prCreatedJob.Type),
+					"comment":     "ボタンを左に配置し、右に説明文を配置してほしい。",
+					"createdAt":   "2026-05-20T09:40:30Z",
+				})},
+				{worker: "improvement", name: "draft.md", content: "# 画面レイアウト方針\n\n- 操作要素は左、補足説明は右に配置する。\n- モーダルでは主要情報を開いた時点で表示する。\n"},
+				{worker: "improvement", name: "decision.json", content: marshalJSON(map[string]any{
+					"decision":  "draft_created",
+					"reason":    "",
+					"updatedAt": "2026-05-20T09:41:00Z",
+				})},
+				{worker: "improvement", name: "issue_106_画面レイアウト方針.md", content: "# 画面レイアウト方針\n\n- 操作要素は左、補足説明は右に配置する。\n- モーダルでは主要情報を開いた時点で表示する。\n", destination: "improvement-draft"},
 			},
 		},
 		{
@@ -424,6 +451,30 @@ func buildFixtures(artifactsDir string) []jobFixture {
 					},
 				})},
 				{worker: artifacts.WorkerPR, name: "result.md", content: "# PR Comment Analysis\n\n- Split the logic into a helper.\n- Keep the current behavior unchanged.\n"},
+				{worker: "improvement", name: "input.md", content: "PR コメントをもとに、継続利用できる実装方針へ整理してほしい。\n"},
+				{worker: "improvement", name: "context.json", content: marshalJSON(map[string]any{
+					"jobId":       prCommentAnalysisReadyJob.ID,
+					"repository":  repository,
+					"issueNumber": 109,
+					"title":       prCommentAnalysisReadyJob.Title,
+					"jobType":     string(prCommentAnalysisReadyJob.Type),
+					"comment":     "PR コメントをもとに、継続利用できる実装方針へ整理してほしい。",
+					"createdAt":   "2026-05-20T09:57:30Z",
+				})},
+				{worker: "improvement", name: "draft.md", content: "# ロジック分割方針\n\n- 条件分岐が増える処理は helper 関数へ分割する。\n- 既存の振る舞いを変えないことを先に確認する。\n"},
+				{worker: "improvement", name: "result.md", content: "# ロジック分割方針\n\n- 条件分岐が増える処理は helper 関数へ分割する。\n- 既存の振る舞いを変えないことを先に確認する。\n"},
+				{worker: "improvement", name: "approval.json", content: marshalJSON(map[string]any{
+					"status":     "approved",
+					"comment":    "この方針で継続利用する",
+					"approvedAt": "2026-05-20T09:58:30Z",
+				})},
+				{worker: "improvement", name: "decision.json", content: marshalJSON(map[string]any{
+					"decision":  "approved",
+					"reason":    "",
+					"updatedAt": "2026-05-20T09:58:30Z",
+				})},
+				{worker: "improvement", name: "issue_109_ロジック分割方針.md", content: "# ロジック分割方針\n\n- 条件分岐が増える処理は helper 関数へ分割する。\n- 既存の振る舞いを変えないことを先に確認する。\n", destination: "improvement-draft"},
+				{worker: "improvement", name: "issue_109_ロジック分割方針.md", content: improvementApprovedDocument(repository, 109, "ロジック分割方針", prCommentAnalysisReadyJob.ID, []string{"implementation", "fix"}, "# ロジック分割方針\n\n- 条件分岐が増える処理は helper 関数へ分割する。\n- 既存の振る舞いを変えないことを先に確認する。\n", "2026-05-20T09:58:30Z"), destination: "improvement-approved"},
 			},
 		},
 		{
@@ -438,6 +489,21 @@ func buildFixtures(artifactsDir string) []jobFixture {
 				{worker: artifacts.WorkerImplementation, name: "test-report.json", content: "{\n  \"success\": false,\n  \"commands\": [\n    {\n      \"command\": \"go test ./...\",\n      \"success\": false,\n      \"stderr\": \"expected 200, got 500\"\n    }\n  ]\n}\n"},
 				{worker: artifacts.WorkerImplementation, name: "stdout.log", content: "implementation worker started\nrunning go test ./...\n"},
 				{worker: artifacts.WorkerImplementation, name: "stderr.log", content: "FAIL\tinternal/web\tapproval handler returned 500\n"},
+				{worker: "improvement", name: "input.md", content: "この件は一時的な失敗なので恒久改善は不要なら不要と判断してほしい。\n"},
+				{worker: "improvement", name: "context.json", content: marshalJSON(map[string]any{
+					"jobId":       failedJob.ID,
+					"repository":  repository,
+					"issueNumber": 103,
+					"title":       failedJob.Title,
+					"jobType":     string(failedJob.Type),
+					"comment":     "この件は一時的な失敗なので恒久改善は不要なら不要と判断してほしい。",
+					"createdAt":   "2026-05-20T09:28:30Z",
+				})},
+				{worker: "improvement", name: "decision.json", content: marshalJSON(map[string]any{
+					"decision":  "no_improvement_needed",
+					"reason":    "一時的なテスト失敗であり、継続利用する改善方針は不要です。",
+					"updatedAt": "2026-05-20T09:29:00Z",
+				})},
 			},
 		},
 		{
@@ -566,6 +632,26 @@ func writeConfigFiles(root string, files config.Files) error {
 func writeRepositoryArtifacts(root string, artifactsDir string, workDirSetting string, repository string, issueNumber int, title string, files []artifactFile) error {
 	workDir := artifacts.RepositoryWorkerWorkDir(root, artifactsDir, repository, workDirSetting)
 	for _, file := range files {
+		switch file.destination {
+		case "improvement-draft":
+			path := filepath.Join(artifacts.RepositoryWorkerImprovementDir(workDir, ".improvement"), file.name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(path, []byte(file.content), 0o644); err != nil {
+				return err
+			}
+			continue
+		case "improvement-approved":
+			path := filepath.Join(artifacts.RepositoryWorkerImprovementApprovedDir(workDir, ".improvements"), file.name)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(path, []byte(file.content), 0o644); err != nil {
+				return err
+			}
+			continue
+		}
 		path := filepath.Join(artifacts.RepositoryWorkerJobPhaseDir(root, artifactsDir, repository, issueNumber, file.worker), file.name)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
@@ -597,6 +683,30 @@ func artifactPayload(artifactsDir string, repository string, issueNumber int, wo
 	return marshalJSON(payload)
 }
 
+func improvementApprovedDocument(repository string, issueNumber int, title string, jobID string, phases []string, body string, updatedAt string) string {
+	if len(phases) == 0 {
+		phases = []string{"design", "implementation"}
+	}
+	raw, err := yaml.Marshal(map[string]any{
+		"id":        fmt.Sprintf("issue-%d", issueNumber),
+		"title":     title,
+		"scope":     "repository",
+		"phases":    phases,
+		"status":    "active",
+		"updatedAt": updatedAt,
+		"source": map[string]any{
+			"jobId":       jobID,
+			"issueNumber": issueNumber,
+			"repository":  repository,
+			"event":       "improvement_approved",
+		},
+	})
+	if err != nil {
+		fail(err)
+	}
+	return "---\n" + string(raw) + "---\n\n" + strings.TrimSpace(body) + "\n"
+}
+
 func writeReadme(root string) error {
 	const body = `# Test Data
 
@@ -604,6 +714,7 @@ func writeReadme(root string) error {
 この配下の ` + "`config/`" + `、` + "`data/`" + `、` + "`artifacts/`" + ` を使って UI を確認できます。
 repository worker の作業ディレクトリは ` + "`artifacts/workers/coco-papiyon-korobokcle/work`" + `、成果物は ` + "`artifacts/workers/coco-papiyon-korobokcle/jobs/issue_<issue番号>/`" + ` 配下に出力されます。
 作業ディレクトリには、AI の ` + "`result.md`" + ` を ` + "`design/issue_<issue番号>_...md`" + ` などの形式で複製しています。
+改善機能も有効化済みで、承認前 draft は ` + "`work/.improvement/`" + `、承認済み方針は ` + "`work/.improvements/`" + ` で確認できます。
 
 含まれるジョブ:
 
@@ -619,6 +730,14 @@ repository worker の作業ディレクトリは ` + "`artifacts/workers/coco-pa
 | PRコメント分析済み (fixture-pr-comment-analysis-ready) | issue | 109 | waiting_design_approval | issue_matched, pr_created, pr_comment_analysis_requested, pr_comment_analysis_ready | implementation/result.md, pr/result.json, pr/gh-pr-comments.json, pr/result.md |
 | PR フィードバック完了 (fixture-pr-feedback-completed) | pr_feedback | 107 | completed | pull_request_review_matched, implementation_ready, waiting_final_approval, final_approved, pr_updated | implementation/result.md, implementation/stdout.log, implementation/stderr.log, pr/result.json, pr/gh-pr-comments.json |
 | 削除済み (fixture-deleted) | issue | 105 | waiting_design_approval | issue_matched, design_started, design_ready, waiting_design_approval | design/result.md, design/stdout.log, design/stderr.log |` + `
+
+改善点画面用レコード:
+
+` + `- ` + "`fixture-pr-created`" + `: ` + "`draft_created`" + ` の改善案
+- ` + "`fixture-pr-comment-analysis-ready`" + `: ` + "`approved`" + ` の改善案
+- ` + "`fixture-failed`" + `: ` + "`no_improvement_needed`" + ` の改善案
+- 承認前 draft は ` + "`work/.improvement/*.md`" + `、承認済み方針は ` + "`work/.improvements/*.md`" + ` に生成済み
+` + `
 
 再生成:
 

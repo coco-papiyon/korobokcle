@@ -70,6 +70,7 @@ func buildRepositoryDesignContext(cfg *config.Service, workDir string, job domai
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return skill.DesignContext{}, err
 	}
+	ctxData.ExistingImprovements = loadExistingImprovements(cfg, job.Repository)
 
 	return ctxData, nil
 }
@@ -128,6 +129,7 @@ func buildRepositoryImplementationContext(cfg *config.Service, workDir string, j
 	if err == nil {
 		ctxData.ImplementationArtifact = string(implementationArtifact)
 	}
+	ctxData.ExistingImprovements = loadExistingImprovements(cfg, job.Repository)
 
 	ctxData.DesignApprovalComment, err = loadDesignApprovalComment(events)
 	if err != nil {
@@ -184,6 +186,7 @@ func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workDir
 	if err == nil {
 		ctxData.ImplementationArtifact = string(implementationArtifact)
 	}
+	ctxData.ExistingImprovements = loadExistingImprovements(cfg, job.Repository)
 
 	rerunComment, previousFailure, previousTestReport, err := loadRepositoryImplementationRetryContext(cfg, workDir, job, events)
 	if err != nil {
@@ -264,6 +267,7 @@ func buildRepositoryReviewContext(cfg *config.Service, workDir string, job domai
 		ctxData.RepositoryHint = job.Repository
 		break
 	}
+	ctxData.ExistingImprovements = loadExistingImprovements(cfg, job.Repository)
 
 	return ctxData, nil
 }

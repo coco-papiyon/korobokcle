@@ -25,6 +25,8 @@ type Server struct {
 	prCommentsFetcher           func(context.Context, PRCommentsFetchRequest) (PRCommentsArtifact, error)
 	prCommentSubmitter          func(context.Context, PRCommentSubmitRequest) error
 	prCommentAnalyzer           func(context.Context, string, PRCommentData) error
+	improvementGenerator        func(context.Context, string, string) error
+	improvementApprover         func(context.Context, string, int, string, string, string) error
 	reviewer                    ReviewSubmitter
 	commenter                   IssueCommentSubmitter
 	tools                       *toolRuntimeManager
@@ -109,6 +111,7 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator, issueBodyFetcher 
 	api.HandleFunc("/jobs/{id}/issue-body", s.handleJobIssueBody).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}/pr-comments", s.handlePRComments).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}/pr-comments/analyze", s.handleAnalyzePRComment).Methods(http.MethodPost)
+	api.HandleFunc("/jobs/{id}/improvements", s.handleGenerateImprovement).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/delete", s.handleDeleteJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/restore", s.handleRestoreJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/purge", s.handlePurgeJob).Methods(http.MethodPost)
@@ -124,6 +127,10 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator, issueBodyFetcher 
 	api.HandleFunc("/jobs/{id}/tool/stop", s.handleStopToolCommand).Methods(http.MethodPost)
 	api.HandleFunc("/app-config", s.handleAppConfig).Methods(http.MethodGet)
 	api.HandleFunc("/app-config", s.handleSaveAppConfig).Methods(http.MethodPut)
+	api.HandleFunc("/improvements", s.handleImprovements).Methods(http.MethodGet)
+	api.HandleFunc("/improvement", s.handleImprovementDetail).Methods(http.MethodGet)
+	api.HandleFunc("/improvement/draft", s.handleSaveImprovementDraft).Methods(http.MethodPut)
+	api.HandleFunc("/improvement/approve", s.handleApproveImprovement).Methods(http.MethodPost)
 	api.HandleFunc("/notification-config", s.handleNotificationConfig).Methods(http.MethodGet)
 	api.HandleFunc("/notification-config", s.handleSaveNotificationConfig).Methods(http.MethodPut)
 	api.HandleFunc("/watch-rules", s.handleWatchRules).Methods(http.MethodGet)
@@ -162,6 +169,14 @@ func (s *Server) SetPRCommentSubmitter(fn func(context.Context, PRCommentSubmitR
 
 func (s *Server) SetPRCommentAnalyzer(fn func(context.Context, string, PRCommentData) error) {
 	s.prCommentAnalyzer = fn
+}
+
+func (s *Server) SetImprovementGenerator(fn func(context.Context, string, string) error) {
+	s.improvementGenerator = fn
+}
+
+func (s *Server) SetImprovementApprover(fn func(context.Context, string, int, string, string, string) error) {
+	s.improvementApprover = fn
 }
 
 func resolveStaticDir() (string, error) {

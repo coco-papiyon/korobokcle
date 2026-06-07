@@ -164,6 +164,7 @@ func buildDesignContext(cfg *config.Service, workDir string, job domain.Job, eve
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return skill.DesignContext{}, err
 	}
+	ctxData.ExistingImprovements = loadExistingImprovements(cfg, job.Repository)
 
 	return ctxData, nil
 }

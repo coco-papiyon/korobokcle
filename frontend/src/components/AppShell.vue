@@ -16,6 +16,7 @@ defineProps<{
         <RouterLink class="nav-tabs__link" to="/settings/skillsets">スキルセット</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings/test-profiles">テストプロファイル</RouterLink>
         <RouterLink class="nav-tabs__link" to="/settings/tool-commands">ツールコマンド</RouterLink>
+        <RouterLink class="nav-tabs__link" to="/improvements">改善点</RouterLink>
         <RouterLink class="nav-tabs__link" to="/guide">ガイド</RouterLink>
       </nav>
       <p class="hero__description">{{ description }}</p>

@@ -20,13 +20,31 @@ watch(
       branch: entry.branch ?? '',
       workDir: entry.workDir ?? '',
       workers: Math.max(1, Number(entry.workers) || 1),
+      improvementEnabled: !!entry.improvementEnabled,
+      improvementBranch: entry.improvementBranch ?? '',
+      improvementDir: entry.improvementDir ?? '',
+      improvementWorkDir: entry.improvementWorkDir ?? '',
+      workerDirs: entry.workerDirs ?? [],
     }))
   },
   { immediate: true },
 )
 
 function addMonitoredRepository() {
-  monitoredRepositories.value = [...monitoredRepositories.value, { repository: '', branch: '', workDir: '', workers: 1 }]
+  monitoredRepositories.value = [
+    ...monitoredRepositories.value,
+    {
+      repository: '',
+      branch: '',
+      workDir: '',
+      workers: 1,
+      improvementEnabled: false,
+      improvementBranch: '',
+      improvementDir: '',
+      improvementWorkDir: '',
+      workerDirs: [],
+    },
+  ]
 }
 
 function removeMonitoredRepository(index: number) {
@@ -64,6 +82,10 @@ function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
       branch: entry.branch.trim(),
       workDir: entry.workDir.trim(),
       workers: Math.floor(Number(entry.workers)),
+      improvementEnabled: !!entry.improvementEnabled,
+      improvementBranch: entry.improvementBranch.trim(),
+      improvementDir: entry.improvementDir.trim(),
+      improvementWorkDir: entry.improvementWorkDir.trim(),
     }))
     .filter((entry) => entry.repository.length > 0)
     .map((entry) => ({
@@ -71,6 +93,10 @@ function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
       branch: entry.branch,
       workDir: entry.workDir,
       workers: Number.isInteger(entry.workers) && entry.workers >= 1 ? entry.workers : 1,
+      improvementEnabled: entry.improvementEnabled,
+      improvementBranch: entry.improvementBranch,
+      improvementDir: entry.improvementDir,
+      improvementWorkDir: entry.improvementWorkDir,
     }))
     .filter((entry, index, items) => items.findIndex((candidate) => candidate.repository === entry.repository) === index)
 }
@@ -87,6 +113,11 @@ async function persistConfig() {
       branch: entry.branch ?? '',
       workDir: entry.workDir ?? '',
       workers: Math.max(1, Number(entry.workers) || 1),
+      improvementEnabled: !!entry.improvementEnabled,
+      improvementBranch: entry.improvementBranch ?? '',
+      improvementDir: entry.improvementDir ?? '',
+      improvementWorkDir: entry.improvementWorkDir ?? '',
+      workerDirs: entry.workerDirs ?? [],
     }))
     saveState.value = 'saved'
     await reload()
@@ -127,7 +158,7 @@ async function persistConfig() {
               </label>
               <label class="field field-full">
                 <span class="field__label">ブランチ</span>
-                <input v-model="entry.branch" class="field__control" type="text" placeholder="main" />
+                <input v-model="entry.branch" class="field__control" type="text" placeholder="develop" />
               </label>
               <label class="field field-full">
                 <span class="field__label">作業ディレクトリ</span>
@@ -142,10 +173,29 @@ async function persistConfig() {
                 <span class="field__label">ワーカー数</span>
                 <input v-model.number="entry.workers" class="field__control" type="number" min="1" step="1" />
               </label>
+              <label class="field field-full">
+                <span class="field__label">改善機能</span>
+                <select v-model="entry.improvementEnabled" class="field__control">
+                  <option :value="false">無効</option>
+                  <option :value="true">有効</option>
+                </select>
+              </label>
+              <label class="field field-full">
+                <span class="field__label">改善ブランチ名</span>
+                <input v-model="entry.improvementBranch" class="field__control" type="text" placeholder="develop" />
+              </label>
+              <label class="field field-full">
+                <span class="field__label">改善指示ディレクトリ</span>
+                <input v-model="entry.improvementDir" class="field__control" type="text" placeholder=".improvements" />
+              </label>
+              <label class="field field-full">
+                <span class="field__label">承認前作業ディレクトリ</span>
+                <input v-model="entry.improvementWorkDir" class="field__control" type="text" placeholder=".improvement" />
+              </label>
               <button class="button button-secondary" type="button" @click="removeMonitoredRepository(index)">削除</button>
             </div>
           </div>
-          <p class="text-muted">作業ディレクトリを空にすると既定の `artifacts/workers/&lt;repo&gt;/work` を使います。`&lt;repo&gt;` は `owner-repository` のようなリポジトリ識別子です。ブランチを空にするとリモートの既定ブランチを使います。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
+          <p class="text-muted">作業ディレクトリを空にすると既定の `artifacts/workers/&lt;repo&gt;/work` を使います。`&lt;repo&gt;` は `owner-repository` のようなリポジトリ識別子です。ブランチを空にするとリモートの既定ブランチを使います。改善機能は既定で無効です。改善ブランチ名は空欄なら `develop`、改善指示ディレクトリは `.improvements`、承認前作業ディレクトリは `.improvement` を使います。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
         </div>
 
         <div v-if="saveState === 'saved'" class="notice notice-success">ワーカー設定を更新しました。</div>

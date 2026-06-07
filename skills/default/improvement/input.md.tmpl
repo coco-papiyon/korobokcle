@@ -1,0 +1,44 @@
+Repository: {{ .Repository }}
+Issue: #{{ .IssueNumber }}
+Title: {{ .Title }}
+Job Type: {{ .JobType }}
+
+## User Comment
+```
+{{ .Comment }}
+```
+
+{{- if .ExistingImprovements }}
+## Existing Improvements
+```
+{{ .ExistingImprovements }}
+```
+{{- end }}
+
+{{- if .ExistingDesign }}
+## Existing Design
+```
+{{ .ExistingDesign }}
+```
+{{- end }}
+
+{{- if .ExistingImplementation }}
+## Existing Implementation
+```
+{{ .ExistingImplementation }}
+```
+{{- end }}
+
+{{- if .ExistingReview }}
+## Existing Review
+```
+{{ .ExistingReview }}
+```
+{{- end }}
+
+{{- if .ExistingPRCommentResult }}
+## Existing PR Comment Analysis
+```
+{{ .ExistingPRCommentResult }}
+```
+{{- end }}

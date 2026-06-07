@@ -31,10 +31,13 @@
 | SQLite DB | `データディレクトリ` | `korobokcle.db` | 永続データ保存先 | `tool root` |
 | AI成果物 | `結果格納ディレクトリ/{design,implementation,fix,review}/` | `*.md` | 各フェーズの要約、設計書、修正内容などの本文成果物 | 結果格納ディレクトリ |
 | AI成果物(作業用) | `作業ディレクトリ/{design,implementation,fix,review}/` | `**issue番号**_**issueタイトル**.md` | 各フェーズの要約、設計書、修正内容などの本文成果物 | 作業ディレクトリ |
+| 改善入力・下書き | `作業ディレクトリ/.improvement/` | `input.md`, `context.json`, `**issue番号**_**タイトル**.md` | 改善生成の入力、関連 job 情報、承認前 draft | 作業ディレクトリ |
+| 承認済み改善方針 | `作業ディレクトリ/.improvements/` | `*.md` | front matter 付きの承認済み改善方針 | 作業ディレクトリ |
 | AIログ | `結果格納ディレクトリ/{design,implementation,fix,review}/` | `*.log` | 各フェーズの標準出力・標準エラー | 結果格納ディレクトリ |
 | テストレポート | `結果格納ディレクトリ/{implementation,fix}/` | `test-report.json` | 実装・修正フェーズのテスト結果 | 結果格納ディレクトリ |
 | PR 生成結果 | `結果格納ディレクトリ/pr/` | `result.json` | PR URL、PR 番号、ブランチ名などの保存 | 結果格納ディレクトリ |
 | PR 関連ログ・補助ファイル | `結果格納ディレクトリ/pr/` | `body.md`, `gh-pr-comments.json`, `gh-pr-comment-body.md`, `gh-pr-comment.log`, `gh-pr-create.log`, `git-*.log` | PR 本文、会話コメント、`git push` / `gh pr create` / `gh pr comment` のログ | 結果格納ディレクトリ |
+| 改善成果物 | `結果格納ディレクトリ/improvement/` | `input.md`, `context.json`, `draft.md`, `result.md`, `approval.json`, `decision.json`, `git-*.log` | 改善生成の入力、承認前 draft、承認結果、改善ブランチ反映ログ | 結果格納ディレクトリ |
 | worker ログ | `ワーカー作業ディレクトリ/logs/**日付**/` | `*.log` | ワーカーごとの実行ログ | ワーカー作業ディレクトリ |
 | Web entrypoint | `frontend/dist/` | `index.html` | Web UI の SPA エントリ | 実行ファイル配置ディレクトリ |
 

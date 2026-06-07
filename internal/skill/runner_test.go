@@ -115,6 +115,45 @@ func TestRunImplementationUsesRootAsWorkDirForCodex(t *testing.T) {
 	}
 }
 
+func TestRunImplementationWritesAGENTSForCodex(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "skills", "default", "implement")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: implement\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
+		t.Fatalf("WriteFile(prompt) error = %v", err)
+	}
+
+	scriptPath := writeProviderScript(t, root, "cwd-provider", "@echo off\r\necho %cd%\r\n", "#!/usr/bin/env sh\npwd\n")
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `[]`)
+
+	runner := NewRunner(root, root, "", nil)
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-improvements", artifacts.WorkerImplementation)
+	_, err := runner.RunImplementation(context.Background(), "implement", ImplementationContext{
+		Title:                "My Issue",
+		ArtifactDir:          artifactDir,
+		DesignArtifact:       "approved design",
+		DesignArtifactDir:    artifacts.WorkerDir(root, "artifacts", "job-improvements", artifacts.WorkerDesign),
+		ExistingImprovements: "## policy\n\n- Keep buttons left aligned.\n",
+	}, ExecutionConfig{Provider: "codex"})
+	if err != nil {
+		t.Fatalf("RunImplementation() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
+	}
+	if !strings.Contains(string(raw), "Keep buttons left aligned.") {
+		t.Fatalf("expected AGENTS.md to include improvements, got %q", string(raw))
+	}
+}
+
 func TestRunImplementationUsesRootAsWorkDirForCopilot(t *testing.T) {
 	root := t.TempDir()
 	skillDir := filepath.Join(root, "skills", "default", "implement")

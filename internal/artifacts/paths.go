@@ -60,6 +60,10 @@ func RepositoryWorkerJobDir(root string, artifactsDir string, repository string,
 	return filepath.Join(WorkersDir(root, artifactsDir), repositoryWorkerComponent(repository), "jobs", fmt.Sprintf("issue_%d", issueNumber))
 }
 
+func RepositoryWorkerComponent(repository string) string {
+	return repositoryWorkerComponent(repository)
+}
+
 func RepositoryWorkerJobPhaseDir(root string, artifactsDir string, repository string, issueNumber int, phase string) string {
 	return filepath.Join(RepositoryWorkerJobDir(root, artifactsDir, repository, issueNumber), phase)
 }
@@ -78,6 +82,32 @@ func RepositoryWorkerWorkArtifactFileName(issueNumber int, title string) string 
 
 func RepositoryWorkerWorkArtifactPath(workDir string, phase string, issueNumber int, title string) string {
 	return filepath.Join(RepositoryWorkerWorkArtifactDir(workDir, phase), RepositoryWorkerWorkArtifactFileName(issueNumber, title))
+}
+
+func RepositoryWorkerImprovementDir(workDir string, configuredDir string) string {
+	trimmed := strings.TrimSpace(configuredDir)
+	if trimmed == "" {
+		trimmed = ".improvement"
+	}
+	if filepath.IsAbs(trimmed) {
+		return filepath.Clean(trimmed)
+	}
+	return filepath.Join(workDir, trimmed)
+}
+
+func RepositoryWorkerImprovementDraftPath(workDir string, configuredDir string, issueNumber int, title string) string {
+	return filepath.Join(RepositoryWorkerImprovementDir(workDir, configuredDir), RepositoryWorkerWorkArtifactFileName(issueNumber, title))
+}
+
+func RepositoryWorkerImprovementApprovedDir(workDir string, configuredDir string) string {
+	trimmed := strings.TrimSpace(configuredDir)
+	if trimmed == "" {
+		trimmed = ".improvements"
+	}
+	if filepath.IsAbs(trimmed) {
+		return filepath.Clean(trimmed)
+	}
+	return filepath.Join(workDir, trimmed)
 }
 
 func RepositoryWorkerWorkspaceDir(workerDir string, workspaceDir string) string {

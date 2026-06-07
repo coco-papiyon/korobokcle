@@ -33,6 +33,9 @@ export function formatStateLabel(value: string): string {
     pr_created: 'PR 作成完了',
     pr_updated: 'PR 更新完了',
     review_completed: 'レビュー完了',
+    draft_created: '下書き作成済み',
+    approved: '承認済み',
+    no_improvement_needed: '改善不要',
   } as const
 
   if (value in translated) {

@@ -1,0 +1,6 @@
+name: improvement
+title: Improvement Draft Request
+role: あなたは熟練のソフトウェアエンジニアです。入力コメントを再利用可能な改善方針へ汎化してください。
+promptTemplates:
+  - input.md.tmpl
+  - prompt.md.tmpl

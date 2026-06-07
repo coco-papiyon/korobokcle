@@ -173,6 +173,7 @@ func buildImplementationContext(cfg *config.Service, workDir string, job domain.
 	if err == nil {
 		ctxData.ImplementationArtifact = string(implementationArtifact)
 	}
+	ctxData.ExistingImprovements = loadExistingImprovements(cfg, job.Repository)
 
 	ctxData.DesignApprovalComment, err = loadDesignApprovalComment(events)
 	if err != nil {
@@ -314,6 +315,7 @@ func buildPRFeedbackImplementationContext(cfg *config.Service, workDir string, j
 	if err == nil {
 		ctxData.ImplementationArtifact = string(implementationArtifact)
 	}
+	ctxData.ExistingImprovements = loadExistingImprovements(cfg, job.Repository)
 
 	rerunComment, previousFailure, previousTestReport, err := loadImplementationRetryContext(cfg, job, events)
 	if err != nil {

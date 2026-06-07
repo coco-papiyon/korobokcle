@@ -156,6 +156,7 @@ func buildReviewContext(cfg *config.Service, job domain.Job, events []domain.Eve
 		ctxData.RepositoryHint = job.Repository
 		break
 	}
+	ctxData.ExistingImprovements = loadExistingImprovements(cfg, job.Repository)
 
 	return ctxData, nil
 }

@@ -179,6 +179,14 @@
   color: var(--accent-deep);
 }
 
+.data-table__row-clickable {
+  cursor: pointer;
+}
+
+.data-table__row-clickable:hover td {
+  background: rgba(188, 90, 34, 0.06);
+}
+
 .state-badge {
   display: inline-flex;
   align-items: center;

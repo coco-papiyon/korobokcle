@@ -149,8 +149,43 @@ export type MonitoredRepository = {
   branch: string
   workDir: string
   workers: number
+  improvementEnabled: boolean
+  improvementBranch: string
+  improvementDir: string
+  improvementWorkDir: string
   workerDir?: string
   workerDirs: string[]
+}
+
+export type ImprovementItem = {
+  repository: string
+  issueNumber: number
+  title: string
+  state: string
+  updatedAt: string
+  draftPath?: string
+  relatedJobId?: string
+  decisionReason?: string
+}
+
+export type ImprovementDetail = {
+  repository: string
+  issueNumber: number
+  state: string
+  title: string
+  phases: string[]
+  input: string
+  draft: string
+  result: string
+  decision: string
+  approvalStatus: string
+  decisionReason: string
+  relatedJobId: string
+  improvementBranch: string
+  improvementDir: string
+  improvementWorkDir: string
+  draftPath: string
+  updatedAt: string
 }
 
 export type ProviderSpec = {
