@@ -156,10 +156,14 @@ type providerSpecResponse struct {
 }
 
 type monitoredRepositoryResponse struct {
-	Repository string `json:"repository"`
-	Branch     string `json:"branch"`
-	WorkDir    string `json:"workDir"`
-	Workers    int    `json:"workers"`
+	Repository         string `json:"repository"`
+	Branch             string `json:"branch"`
+	WorkDir            string `json:"workDir"`
+	Workers            int    `json:"workers"`
+	ImprovementEnabled bool   `json:"improvementEnabled"`
+	ImprovementBranch  string `json:"improvementBranch"`
+	ImprovementDir     string `json:"improvementDir"`
+	ImprovementWorkDir string `json:"improvementWorkDir"`
 }
 
 type appConfigResponse struct {
@@ -483,6 +487,11 @@ func (s *Server) handleDesignApproval(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, http.StatusInternalServerError, err)
 			return
 		}
+		if s.improvementGenerator != nil {
+			if err := s.improvementGenerator(r.Context(), jobID, "design_rejected"); err != nil {
+				log.Printf("improvement generation failed job=%s source=design_rejected error=%v", jobID, err)
+			}
+		}
 	default:
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("status must be approved or rejected"))
 		return
@@ -558,6 +567,11 @@ func (s *Server) handleFinalApproval(w http.ResponseWriter, r *http.Request) {
 			writeJSONError(w, status, err)
 			return
 		}
+		if s.improvementGenerator != nil {
+			if err := s.improvementGenerator(r.Context(), jobID, "final_rejected"); err != nil {
+				log.Printf("improvement generation failed job=%s source=final_rejected error=%v", jobID, err)
+			}
+		}
 	default:
 		writeJSONError(w, http.StatusBadRequest, fmt.Errorf("status must be approved or rejected"))
 		return
@@ -582,6 +596,7 @@ func (s *Server) handleDesignRerun(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, status, err)
 		return
 	}
+	s.triggerImprovementGenerationInBackground(jobID, "design_rerun_requested")
 
 	s.handleJobDetail(w, r)
 }
@@ -602,6 +617,7 @@ func (s *Server) handleImplementationRerun(w http.ResponseWriter, r *http.Reques
 		writeJSONError(w, status, err)
 		return
 	}
+	s.triggerImprovementGenerationInBackground(jobID, "implementation_rerun_requested")
 
 	s.handleJobDetail(w, r)
 }
@@ -622,6 +638,7 @@ func (s *Server) handlePRRerun(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, status, err)
 		return
 	}
+	s.triggerImprovementGenerationInBackground(jobID, "pr_rerun_requested")
 
 	s.handleJobDetail(w, r)
 }
@@ -642,8 +659,20 @@ func (s *Server) handleReviewRerun(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, status, err)
 		return
 	}
+	s.triggerImprovementGenerationInBackground(jobID, "review_rerun_requested")
 
 	s.handleJobDetail(w, r)
+}
+
+func (s *Server) triggerImprovementGenerationInBackground(jobID string, sourceEventType string) {
+	if s.improvementGenerator == nil {
+		return
+	}
+	go func() {
+		if err := s.improvementGenerator(context.Background(), jobID, sourceEventType); err != nil {
+			log.Printf("improvement generation failed job=%s source=%s error=%v", jobID, sourceEventType, err)
+		}
+	}()
 }
 
 func (s *Server) handleReviewApproval(w http.ResponseWriter, r *http.Request) {
@@ -1551,10 +1580,14 @@ func toMonitoredRepositoryResponses(values []config.MonitoredRepository) []monit
 			workers = 1
 		}
 		out = append(out, monitoredRepositoryResponse{
-			Repository: repository,
-			Branch:     strings.TrimSpace(value.Branch),
-			WorkDir:    strings.TrimSpace(value.WorkDir),
-			Workers:    workers,
+			Repository:         repository,
+			Branch:             strings.TrimSpace(value.Branch),
+			WorkDir:            strings.TrimSpace(value.WorkDir),
+			Workers:            workers,
+			ImprovementEnabled: value.ImprovementEnabled,
+			ImprovementBranch:  strings.TrimSpace(value.ImprovementBranch),
+			ImprovementDir:     strings.TrimSpace(value.ImprovementDir),
+			ImprovementWorkDir: strings.TrimSpace(value.ImprovementWorkDir),
 		})
 	}
 	return out
@@ -1578,10 +1611,14 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 		}
 		seen[repository] = struct{}{}
 		out = append(out, config.MonitoredRepository{
-			Repository: repository,
-			Branch:     branch,
-			WorkDir:    strings.TrimSpace(value.WorkDir),
-			Workers:    workers,
+			Repository:         repository,
+			Branch:             branch,
+			WorkDir:            strings.TrimSpace(value.WorkDir),
+			Workers:            workers,
+			ImprovementEnabled: value.ImprovementEnabled,
+			ImprovementBranch:  strings.TrimSpace(value.ImprovementBranch),
+			ImprovementDir:     strings.TrimSpace(value.ImprovementDir),
+			ImprovementWorkDir: strings.TrimSpace(value.ImprovementWorkDir),
 		})
 	}
 	return out, nil

@@ -14,10 +14,15 @@
 | 削除済み (fixture-deleted) | issue | 105 | waiting_design_approval | issue_matched, design_started, design_ready, waiting_design_approval | design/result.md, design/stdout.log, design/stderr.log |
 | レビュー済み (fixture-review-completed) | pr_review | 104 | review_ready | pull_request_matched, review_started, review_ready | review/result.md, review/stdout.log, review/stderr.log |
 | PR フィードバック完了 (fixture-pr-feedback-completed) | pr_feedback | 107 | completed | pull_request_review_matched, implementation_ready, waiting_final_approval, final_approved, pr_updated | implementation/result.md, implementation/stdout.log, implementation/stderr.log, pr/result.json, pr/gh-pr-comments.json |
+| PRコメント分析中 (fixture-pr-comment-analysis-running) | issue | 108 | design_running | issue_matched, pr_created, pr_comment_analysis_requested | implementation/result.md, pr/result.json, pr/gh-pr-comments.json |
+| PRコメント分析済み (fixture-pr-comment-analysis-ready) | issue | 109 | waiting_design_approval | issue_matched, pr_created, pr_comment_analysis_requested, pr_comment_analysis_ready | implementation/result.md, pr/result.json, pr/gh-pr-comments.json, pr/result.md |
 
 ## 補足
 
 - `fixture-pr-created` は issue 起点で PR を作成した完了レコードです。
+- `fixture-pr-created` には改善案 `draft_created` の監査成果物と shared workdir の `.improvement/` が含まれます。
+- `fixture-pr-comment-analysis-ready` には改善案 `approved` と shared workdir の `.improvements/*.md` が含まれます。
+- `fixture-failed` には改善不要 `no_improvement_needed` の `improvement/decision.json` が含まれます。
 - `fixture-pr-feedback-completed` は PR フィードバックを反映した完了レコードです。
 - `fixture-deleted` は論理削除済みのレコードです。UI 上で削除済み一覧の確認に使えます。
 

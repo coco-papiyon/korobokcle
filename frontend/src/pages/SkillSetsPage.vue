@@ -7,7 +7,7 @@ import { createSkillSet, deleteSkillSet, fetchSkillSet, fetchSkillSets, saveSkil
 import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { SkillFile, SkillSet, SkillSetSummary } from '@/types'
 
-const skillOrder = ['design', 'implement', 'implement_fix', 'review', 'review_fix'] as const
+const skillOrder = ['design', 'implement', 'implement_fix', 'review', 'review_fix', 'improvement_consideration', 'improvement_implementation'] as const
 
 const { data, isLoading, error, reload } = useAsyncData(fetchSkillSets)
 const selectedName = ref('default')
@@ -134,6 +134,10 @@ function skillLabel(name: string) {
       return 'レビュー'
     case 'review_fix':
       return 'レビュー修正'
+    case 'improvement_consideration':
+      return '改善検討'
+    case 'improvement_implementation':
+      return '改善実装'
     default:
       return name
   }

@@ -31,6 +31,47 @@ func TestDefaultWorkspaceDir(t *testing.T) {
 	}
 }
 
+func TestDefaultImprovementSettings(t *testing.T) {
+	t.Parallel()
+
+	app := DefaultFiles().App
+	if len(app.MonitoredRepositories) != 1 {
+		t.Fatalf("expected one default repository, got %d", len(app.MonitoredRepositories))
+	}
+	repository := app.MonitoredRepositories[0]
+	if repository.ImprovementEnabled {
+		t.Fatalf("expected improvement feature disabled by default")
+	}
+	if got := ResolveImprovementBranch(repository); got != DefaultImprovementBranch {
+		t.Fatalf("expected default improvement branch %q, got %q", DefaultImprovementBranch, got)
+	}
+	if got := ResolveImprovementDir(repository); got != DefaultImprovementDir {
+		t.Fatalf("expected default improvement dir %q, got %q", DefaultImprovementDir, got)
+	}
+	if got := ResolveImprovementWorkDir(repository); got != DefaultImprovementWorkDir {
+		t.Fatalf("expected default improvement work dir %q, got %q", DefaultImprovementWorkDir, got)
+	}
+}
+
+func TestResolveImprovementSettingsUsesConfiguredValues(t *testing.T) {
+	t.Parallel()
+
+	repository := MonitoredRepository{
+		ImprovementBranch:  " custom-branch ",
+		ImprovementDir:     " .rules/improvements ",
+		ImprovementWorkDir: " .rules/draft ",
+	}
+	if got := ResolveImprovementBranch(repository); got != "custom-branch" {
+		t.Fatalf("expected trimmed improvement branch, got %q", got)
+	}
+	if got := ResolveImprovementDir(repository); got != ".rules/improvements" {
+		t.Fatalf("expected trimmed improvement dir, got %q", got)
+	}
+	if got := ResolveImprovementWorkDir(repository); got != ".rules/draft" {
+		t.Fatalf("expected trimmed improvement work dir, got %q", got)
+	}
+}
+
 func TestDefaultNotificationChannelUsesWindowsDesktopNotification(t *testing.T) {
 	t.Parallel()
 

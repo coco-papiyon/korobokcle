@@ -169,6 +169,89 @@ func TestCloneRepositoryWorkspaceRemovesStaleWorkspaceDirectory(t *testing.T) {
 	}
 }
 
+func TestCloneRepositoryWorkspaceUsesRepositoryRemoteInsteadOfSharedImprovementCheckout(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile README main error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add main error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit main error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "-b", "develop"); err != nil {
+		t.Fatalf("git checkout develop error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("develop\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile README develop error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add develop error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "develop"); err != nil {
+		t.Fatalf("git commit develop error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "main"); err != nil {
+		t.Fatalf("git checkout main error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	workDir, err := prepareRepositoryWorkspace(context.Background(), cfg, source, "")
+	if err != nil {
+		t.Fatalf("prepareRepositoryWorkspace() error = %v", err)
+	}
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, source)
+	if _, err := prepareRepositoryImprovementWorkspace(context.Background(), cfg, source); err != nil {
+		t.Fatalf("prepareRepositoryImprovementWorkspace() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(improvementDir, ".improvement", "draft"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.improvement/draft) error = %v", err)
+	}
+	repositoryConfig := config.MonitoredRepository{
+		Repository:         source,
+		ImprovementEnabled: true,
+		ImprovementBranch:  "develop",
+	}
+	if err := syncRepositoryImprovementWorkspace(context.Background(), cfg, repositoryConfig, improvementDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("syncRepositoryImprovementWorkspace() error = %v", err)
+	}
+
+	workerDir, err := cloneRepositoryWorkspace(context.Background(), cfg, source, 0, workDir)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
+	}
+
+	currentBranch, err := runGitCommand(context.Background(), workerDir, "git", "branch", "--show-current")
+	if err != nil {
+		t.Fatalf("git branch --show-current error = %v", err)
+	}
+	if strings.TrimSpace(currentBranch) != "main" {
+		t.Fatalf("expected worker clone to stay on main, got %q", currentBranch)
+	}
+
+	readmeRaw, err := os.ReadFile(filepath.Join(workerDir, "README.md"))
+	if err != nil {
+		t.Fatalf("ReadFile README.md error = %v", err)
+	}
+	if string(readmeRaw) != "main\n" {
+		t.Fatalf("expected worker clone from repository remote, got %q", string(readmeRaw))
+	}
+}
+
 func TestBuildRepositoryDesignContextIgnoresLegacyArtifactDirectory(t *testing.T) {
 	t.Parallel()
 
@@ -194,7 +277,7 @@ func TestBuildRepositoryDesignContextIgnoresLegacyArtifactDirectory(t *testing.T
 		WatchRuleID:  "rule-1",
 	}
 
-	ctx, err := buildRepositoryDesignContext(svc, workerDir, job, nil)
+	ctx, err := buildRepositoryDesignContext(svc, workerDir, "", job, nil)
 	if err != nil {
 		t.Fatalf("buildRepositoryDesignContext() error = %v", err)
 	}
@@ -243,7 +326,7 @@ func TestBuildRepositoryContextsUseLatestIssueBody(t *testing.T) {
 		},
 	}
 
-	designCtx, err := buildRepositoryDesignContext(svc, root, job, events)
+	designCtx, err := buildRepositoryDesignContext(svc, root, "", job, events)
 	if err != nil {
 		t.Fatalf("buildRepositoryDesignContext() error = %v", err)
 	}
@@ -266,7 +349,7 @@ func TestBuildRepositoryContextsUseLatestIssueBody(t *testing.T) {
 		t.Fatalf("WriteFile(implementation result.md) error = %v", err)
 	}
 
-	implCtx, err := buildRepositoryImplementationContext(svc, root, job, events, runSpec)
+	implCtx, err := buildRepositoryImplementationContext(svc, root, "", job, events, runSpec)
 	if err != nil {
 		t.Fatalf("buildRepositoryImplementationContext() error = %v", err)
 	}
@@ -589,11 +672,198 @@ func TestSyncRepositoryWorkspaceUsesDefaultBranchWhenMonitoringBranchIsEmpty(t *
 	}
 }
 
+func TestSyncRepositoryImprovementWorkspaceChecksOutImprovementBranchAndPreservesDraftDir(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile README main error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add main error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit main error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "-b", "develop"); err != nil {
+		t.Fatalf("git checkout develop error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(source, ".improvements"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.improvements) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, ".improvements", "policy.md"), []byte("---\nid: policy\ntitle: Policy\nscope: repository\nphases:\n  - design\nstatus: active\nupdatedAt: 2026-06-08T00:00:00Z\nsource:\n  repository: owner/repository\n\n---\n\nAlways keep tests green.\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(policy.md) error = %v", err)
+	}
+	if err := runGit(t, source, "add", ".improvements/policy.md"); err != nil {
+		t.Fatalf("git add policy error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "develop"); err != nil {
+		t.Fatalf("git commit develop error = %v", err)
+	}
+	if err := runGit(t, source, "checkout", "main"); err != nil {
+		t.Fatalf("git checkout main error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	_, err := prepareRepositoryWorkspace(context.Background(), cfg, source, "")
+	if err != nil {
+		t.Fatalf("prepareRepositoryWorkspace() error = %v", err)
+	}
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, source)
+	if _, err := prepareRepositoryImprovementWorkspace(context.Background(), cfg, source); err != nil {
+		t.Fatalf("prepareRepositoryImprovementWorkspace() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(improvementDir, ".improvement", "draft"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.improvement/draft) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(improvementDir, ".improvement", "draft", "draft.md"), []byte("keep me\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(draft.md) error = %v", err)
+	}
+
+	repositoryConfig := config.MonitoredRepository{
+		Repository:         source,
+		ImprovementEnabled: true,
+		ImprovementBranch:  "develop",
+		ImprovementDir:     ".improvements",
+		ImprovementWorkDir: ".improvement",
+	}
+	if err := syncRepositoryImprovementWorkspace(context.Background(), cfg, repositoryConfig, improvementDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("syncRepositoryImprovementWorkspace() error = %v", err)
+	}
+
+	currentBranch, err := runGitCommand(context.Background(), improvementDir, "git", "branch", "--show-current")
+	if err != nil {
+		t.Fatalf("git branch --show-current error = %v", err)
+	}
+	if strings.TrimSpace(currentBranch) != "develop" {
+		t.Fatalf("expected develop branch, got %q", currentBranch)
+	}
+
+	policyRaw, err := os.ReadFile(filepath.Join(improvementDir, ".improvements", "policy.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(policy.md) error = %v", err)
+	}
+	if !strings.Contains(string(policyRaw), "Always keep tests green.") {
+		t.Fatalf("expected improvement policy from develop branch, got %q", string(policyRaw))
+	}
+
+	draftRaw, err := os.ReadFile(filepath.Join(improvementDir, ".improvement", "draft", "draft.md"))
+	if err != nil {
+		t.Fatalf("ReadFile(draft.md) error = %v", err)
+	}
+	if string(draftRaw) != "keep me\n" {
+		t.Fatalf("expected draft dir to be preserved, got %q", string(draftRaw))
+	}
+}
+
+func TestSyncRepositoryImprovementWorkspaceNoopWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile README error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	_, err := prepareRepositoryWorkspace(context.Background(), cfg, source, "")
+	if err != nil {
+		t.Fatalf("prepareRepositoryWorkspace() error = %v", err)
+	}
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, source)
+	if err := os.MkdirAll(improvementDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(improvementDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(improvementDir, "LOCAL.txt"), []byte("keep\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(LOCAL.txt) error = %v", err)
+	}
+
+	repositoryConfig := config.MonitoredRepository{Repository: source, ImprovementEnabled: false}
+	if err := syncRepositoryImprovementWorkspace(context.Background(), cfg, repositoryConfig, improvementDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("syncRepositoryImprovementWorkspace() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(improvementDir, "LOCAL.txt")); err != nil {
+		t.Fatalf("expected disabled sync to keep local file: %v", err)
+	}
+}
+
+func TestBuildRepositoryDesignContextLoadsInstructionsFromImprovementWorkspace(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.MonitoredRepositories = []config.MonitoredRepository{
+		{
+			Repository:         "owner/repository",
+			Workers:            1,
+			ImprovementEnabled: true,
+			ImprovementDir:     ".improvements",
+		},
+	}
+	svc := config.NewService(root, files)
+
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, svc.App().ArtifactsDir, "owner/repository")
+	if err := os.MkdirAll(filepath.Join(workDir, ".improvements"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.improvements) error = %v", err)
+	}
+	raw := []byte("---\nid: policy\ntitle: Policy\nscope: repository\nphases:\n  - design\nstatus: active\nupdatedAt: 2026-06-08T00:00:00Z\nsource:\n  repository: owner/repository\n\n---\n\nAlways include rollback steps.\n")
+	if err := os.WriteFile(filepath.Join(workDir, ".improvements", "policy.md"), raw, 0o644); err != nil {
+		t.Fatalf("WriteFile(policy.md) error = %v", err)
+	}
+
+	job := domain.Job{
+		ID:           "job-42",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		Title:        "Issue",
+		WatchRuleID:  "rule-1",
+	}
+	ctx, err := buildRepositoryDesignContext(svc, workDir, workDir, job, nil)
+	if err != nil {
+		t.Fatalf("buildRepositoryDesignContext() error = %v", err)
+	}
+	if len(ctx.ManagedInstructions) != 1 {
+		t.Fatalf("managed instruction count = %d, want 1", len(ctx.ManagedInstructions))
+	}
+	if ctx.ManagedInstructions[0].Title != "Policy" {
+		t.Fatalf("managed instruction title = %q, want %q", ctx.ManagedInstructions[0].Title, "Policy")
+	}
+}
+
 func TestRepositoryWorkerDirUsesOwnerRepoName(t *testing.T) {
 	t.Parallel()
 
 	got := artifacts.RepositoryWorkerDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	want := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2")
+	want := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "workers", "worker-2")
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
@@ -604,13 +874,13 @@ func TestRepositoryWorkerSourceAndLogPaths(t *testing.T) {
 
 	startedAt := time.Date(2026, 5, 19, 14, 52, 0, 0, time.Local)
 	sourceDir := artifacts.RepositoryWorkerSourceDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "source")
+	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "workers", "worker-2", "source")
 	if sourceDir != wantSourceDir {
 		t.Fatalf("expected source dir %q, got %q", wantSourceDir, sourceDir)
 	}
 
 	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
-	wantLogPath := filepath.Join("C:\\repo", "artifacts", "workers", "coco-papiyon-korobokcle", "worker-2", "logs", "2026-05-19", "2026-05-19_14-52-00.log")
+	wantLogPath := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "workers", "worker-2", "logs", "2026-05-19", "2026-05-19_14-52-00.log")
 	if logPath != wantLogPath {
 		t.Fatalf("expected log path %q, got %q", wantLogPath, logPath)
 	}
@@ -663,12 +933,12 @@ func TestRepositoryWorkerSourceDirUsesConfiguredWorkerDir(t *testing.T) {
 	cfg := config.NewService(root, files)
 
 	got0 := repositoryWorkerSourceDir(cfg, "owner/repository", 0)
-	want0 := filepath.Join(root, "artifacts", "workers", "owner-repository", "worker-0", "source")
+	want0 := filepath.Join(root, "artifacts", "owner-repository", "workers", "worker-0", "source")
 	if got0 != want0 {
 		t.Fatalf("expected worker dir %q, got %q", want0, got0)
 	}
 	got1 := repositoryWorkerSourceDir(cfg, "owner/repository", 1)
-	want1 := filepath.Join(root, "artifacts", "workers", "owner-repository", "worker-1", "source")
+	want1 := filepath.Join(root, "artifacts", "owner-repository", "workers", "worker-1", "source")
 	if got1 != want1 {
 		t.Fatalf("expected worker dir %q, got %q", want1, got1)
 	}

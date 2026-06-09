@@ -30,6 +30,9 @@ func (p *MockProvider) Run(_ context.Context, req AIRequest) (AIResult, error) {
 	if req.SkillName == "review" {
 		output = "## Summary\n\n- Reviewed the pull request context.\n\n## Findings\n\n- No real review was performed by the mock provider.\n\n## Recommendations\n\n- Verify the changes manually.\n\n## Notes\n\n- This output is synthetic.\n"
 	}
+	if req.SkillName == "improvement_consideration" {
+		output = "# 改善方針案\n\n## タイトル\n\nMock provider が汎化した改善方針\n\n## 適用対象\n\n- repository: mock/repository\n- phases: design\n- sourceEvent: design_rerun_requested\n\n## 改善項目\n\n- 画面レイアウト方針\n  - 画面ごとの主要アクションと補足説明の配置ルールを明文化する\n\n## 汎化メモ\n\n- 元コメントを継続利用できる指示へ整理した mock 出力です。\n\n## 元コメント\n\nXX画面で、ボタンを左に、説明を右に配置する\n"
+	}
 	return AIResult{
 		Stdout: "mock provider executed",
 		Output: output,

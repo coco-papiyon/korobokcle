@@ -83,6 +83,9 @@ func processPRCommentAnalysisWithDeps(ctx context.Context, cfg *config.Service, 
 	}); err != nil {
 		return err
 	}
+	if _, err := generateImprovementDraft(ctx, cfg, orch, job.ID, improvementSourcePRCommentAnalysis, logger); err != nil {
+		return err
+	}
 	if logger != nil {
 		logger.Printf("pr comment analysis completed job_id=%s pull_number=%d comment_count=1", jobID, pullNumber)
 	}
@@ -145,6 +148,13 @@ func buildPRCommentAnalysisContext(cfg *config.Service, workDir string, job doma
 		Body:   selectedComment.Body,
 		URL:    selectedComment.URL,
 	}}
+
+	improvementWorkDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository)
+	if instructions, err := loadRepositoryImprovementInstructions(cfg, improvementWorkDir, job.Repository, reviewFixSkillName); err != nil {
+		return skill.ImplementationContext{}, err
+	} else {
+		ctxData.ManagedInstructions = instructions
+	}
 
 	return ctxData, nil
 }

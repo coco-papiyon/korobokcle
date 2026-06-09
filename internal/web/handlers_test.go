@@ -359,8 +359,12 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 			Models []string `json:"models"`
 		} `json:"providers"`
 		MonitoredRepositories []struct {
-			Repository string `json:"repository"`
-			Workers    int    `json:"workers"`
+			Repository         string `json:"repository"`
+			Workers            int    `json:"workers"`
+			ImprovementEnabled bool   `json:"improvementEnabled"`
+			ImprovementBranch  string `json:"improvementBranch"`
+			ImprovementDir     string `json:"improvementDir"`
+			ImprovementWorkDir string `json:"improvementWorkDir"`
 		} `json:"monitoredRepositories"`
 	}
 	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
@@ -399,6 +403,12 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	}
 	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].Workers != 1 {
 		t.Fatalf("unexpected monitored repositories: %#v", got.MonitoredRepositories)
+	}
+	if got.MonitoredRepositories[0].ImprovementEnabled {
+		t.Fatalf("expected improvement feature disabled by default")
+	}
+	if got.MonitoredRepositories[0].ImprovementBranch != "" || got.MonitoredRepositories[0].ImprovementDir != "" || got.MonitoredRepositories[0].ImprovementWorkDir != "" {
+		t.Fatalf("expected raw improvement settings to be empty by default, got %#v", got.MonitoredRepositories[0])
 	}
 }
 
@@ -945,7 +955,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","branch":"main","workDir":"artifacts/custom/repository-0","workers":1},{"repository":"owner/other","branch":"release/1.x","workDir":"/tmp/korobokcle-worker","workers":3}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","branch":"main","workDir":"artifacts/custom/repository-0","workers":1,"improvementEnabled":true,"improvementBranch":"develop-ai","improvementDir":".improvements-custom","improvementWorkDir":".improvement-custom"},{"repository":"owner/other","branch":"release/1.x","workDir":"/tmp/korobokcle-worker","workers":3,"improvementEnabled":false,"improvementBranch":"","improvementDir":"","improvementWorkDir":""}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -954,7 +964,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
-	if got := svc.App().MonitoredRepositories; len(got) != 2 || got[0].Repository != "owner/repository" || got[0].Branch != "main" || got[0].Workers != 1 || got[0].WorkDir != "artifacts/custom/repository-0" || got[1].Repository != "owner/other" || got[1].Branch != "release/1.x" || got[1].Workers != 3 || got[1].WorkDir != "/tmp/korobokcle-worker" {
+	if got := svc.App().MonitoredRepositories; len(got) != 2 || got[0].Repository != "owner/repository" || got[0].Branch != "main" || got[0].Workers != 1 || got[0].WorkDir != "artifacts/custom/repository-0" || !got[0].ImprovementEnabled || got[0].ImprovementBranch != "develop-ai" || got[0].ImprovementDir != ".improvements-custom" || got[0].ImprovementWorkDir != ".improvement-custom" || got[1].Repository != "owner/other" || got[1].Branch != "release/1.x" || got[1].Workers != 3 || got[1].WorkDir != "/tmp/korobokcle-worker" {
 		t.Fatalf("unexpected monitored repositories: %#v", got)
 	}
 
@@ -963,7 +973,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read saved config: %v", err)
 	}
-	if !bytes.Contains(raw, []byte("monitoredRepositories:")) || !bytes.Contains(raw, []byte("repository: owner/other")) || !bytes.Contains(raw, []byte("branch: release/1.x")) || !bytes.Contains(raw, []byte("workers: 3")) || !bytes.Contains(raw, []byte("workDir: /tmp/korobokcle-worker")) {
+	if !bytes.Contains(raw, []byte("monitoredRepositories:")) || !bytes.Contains(raw, []byte("repository: owner/other")) || !bytes.Contains(raw, []byte("branch: release/1.x")) || !bytes.Contains(raw, []byte("workers: 3")) || !bytes.Contains(raw, []byte("workDir: /tmp/korobokcle-worker")) || !bytes.Contains(raw, []byte("improvementEnabled: true")) || !bytes.Contains(raw, []byte("improvementBranch: develop-ai")) || !bytes.Contains(raw, []byte("improvementDir: .improvements-custom")) || !bytes.Contains(raw, []byte("improvementWorkDir: .improvement-custom")) {
 		t.Fatalf("expected saved config to contain monitoredRepositories, got %s", string(raw))
 	}
 }
@@ -2852,4 +2862,448 @@ func TestHandleJobDetailDoesNotReusePurgedArtifacts(t *testing.T) {
 	if detail.DesignArtifact != nil {
 		t.Fatalf("expected recreated job to ignore stale artifact, got %+v", detail.DesignArtifact)
 	}
+}
+
+func TestHandleImprovementsListsDraftAndNoImprovementNeeded(t *testing.T) {
+	t.Parallel()
+
+	server, _, jobs := setupImprovementServer(t)
+	writeImprovementFixture(t, server, jobs[0], "draft_created", "", "design_rejected", []string{"design"}, "draft body", true)
+	writeImprovementFixture(t, server, jobs[1], "no_improvement_needed", "comment was empty", "final_rejected", []string{"implementation"}, "", false)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/improvements", nil)
+	server.handleImprovements(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected improvements list to succeed, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var got []improvementSummaryResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("Decode(improvements) error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("improvement count = %d, want 2", len(got))
+	}
+	gotByJobID := make(map[string]improvementSummaryResponse, len(got))
+	for _, item := range got {
+		gotByJobID[item.JobID] = item
+	}
+	if item := gotByJobID[jobs[0].ID]; item.Decision != "draft_created" || !item.HasDraft {
+		t.Fatalf("unexpected first improvement: %+v", item)
+	}
+	if item := gotByJobID[jobs[0].ID]; item.Status != "draft_created" {
+		t.Fatalf("unexpected first improvement status: %+v", item)
+	}
+	if item := gotByJobID[jobs[1].ID]; item.Decision != "no_improvement_needed" || item.Reason != "comment was empty" || item.HasDraft {
+		t.Fatalf("unexpected second improvement: %+v", item)
+	}
+	if item := gotByJobID[jobs[1].ID]; item.Status != "no_improvement_needed" {
+		t.Fatalf("unexpected second improvement status: %+v", item)
+	}
+}
+
+func TestHandleImprovementDetailReturnsDraftArtifacts(t *testing.T) {
+	t.Parallel()
+
+	server, _, jobs := setupImprovementServer(t)
+	writeImprovementFixture(t, server, jobs[0], "draft_created", "", "design_rejected", []string{"design"}, "# draft\n", true)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/improvements/"+jobs[0].ID, nil)
+	request = mux.SetURLVars(request, map[string]string{"id": jobs[0].ID})
+	server.handleImprovementDetail(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected improvement detail to succeed, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var got improvementDetailResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("Decode(improvement detail) error = %v", err)
+	}
+	if got.Summary.Decision != "draft_created" {
+		t.Fatalf("decision = %q, want draft_created", got.Summary.Decision)
+	}
+	if got.Summary.Status != "draft_created" {
+		t.Fatalf("status = %q, want draft_created", got.Summary.Status)
+	}
+	if got.Draft == nil || !strings.Contains(got.Draft.Content, "# draft") {
+		t.Fatalf("expected draft content, got %+v", got.Draft)
+	}
+	if got.Context == nil || !strings.Contains(got.Context.Content, "design_rejected") {
+		t.Fatalf("expected context content, got %+v", got.Context)
+	}
+}
+
+func TestHandleImprovementDetailReturnsGeneratingStatusWithoutDecision(t *testing.T) {
+	t.Parallel()
+
+	server, _, jobs := setupImprovementServer(t)
+	writeImprovementGeneratingFixture(t, server, jobs[0], "design_rerun_requested", []string{"design"})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/improvements/"+jobs[0].ID, nil)
+	request = mux.SetURLVars(request, map[string]string{"id": jobs[0].ID})
+	server.handleImprovementDetail(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected improvement detail to succeed, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var got improvementDetailResponse
+	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
+		t.Fatalf("Decode(improvement detail) error = %v", err)
+	}
+	if got.Summary.Status != "generating" {
+		t.Fatalf("status = %q, want generating", got.Summary.Status)
+	}
+	if got.Summary.Decision != "" {
+		t.Fatalf("decision = %q, want empty", got.Summary.Decision)
+	}
+}
+
+func TestHandleSaveImprovementDraftUpdatesWorkFiles(t *testing.T) {
+	t.Parallel()
+
+	server, repoConfig, jobs := setupImprovementServer(t)
+	writeImprovementFixture(t, server, jobs[0], "draft_created", "", "design_rejected", []string{"design"}, "before\n", true)
+
+	body := []byte(`{"draft":"after","notes":"memo"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPut, "/api/improvements/"+jobs[0].ID+"/draft", bytes.NewReader(body))
+	request = mux.SetURLVars(request, map[string]string{"id": jobs[0].ID})
+	server.handleSaveImprovementDraft(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected save draft to succeed, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(server.config.Root(), server.config.App().ArtifactsDir, jobs[0].Repository)
+	draftRaw, err := os.ReadFile(artifacts.RepositoryWorkerImprovementWorkFile(workDir, repoConfig.ImprovementWorkDir, filepath.Join(improvementDraftDirName, improvementDraftFileName)))
+	if err != nil {
+		t.Fatalf("ReadFile(draft.md) error = %v", err)
+	}
+	if string(draftRaw) != "after\n" {
+		t.Fatalf("draft = %q, want %q", string(draftRaw), "after\n")
+	}
+}
+
+func TestHandleGenerateImprovementInvokesConfiguredHook(t *testing.T) {
+	t.Parallel()
+
+	server, _, jobs := setupImprovementServer(t)
+	writeImprovementFixture(t, server, jobs[0], "draft_created", "", "pr_comment_analysis_ready", []string{"fix"}, "draft body", true)
+
+	var gotJobID string
+	var gotSource string
+	server.SetImprovementGenerator(func(_ context.Context, jobID string, sourceEventType string) error {
+		gotJobID = jobID
+		gotSource = sourceEventType
+		return nil
+	})
+
+	body := []byte(`{"sourceEventType":"pr_comment_analysis_ready"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/jobs/"+jobs[0].ID+"/improvements/generate", bytes.NewReader(body))
+	request = mux.SetURLVars(request, map[string]string{"id": jobs[0].ID})
+	server.handleGenerateImprovement(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected generate improvement to succeed, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if gotJobID != jobs[0].ID || gotSource != "pr_comment_analysis_ready" {
+		t.Fatalf("generator called with (%q, %q), want (%q, %q)", gotJobID, gotSource, jobs[0].ID, "pr_comment_analysis_ready")
+	}
+}
+
+func TestHandleApproveImprovementInvokesConfiguredHook(t *testing.T) {
+	t.Parallel()
+
+	server, _, jobs := setupImprovementServer(t)
+	writeImprovementFixture(t, server, jobs[0], "draft_created", "", "design_rejected", []string{"design"}, "draft body", true)
+
+	var gotJobID string
+	var gotRequest ImprovementApprovalRequest
+	server.SetImprovementApprover(func(_ context.Context, jobID string, req ImprovementApprovalRequest) error {
+		gotJobID = jobID
+		gotRequest = req
+		return nil
+	})
+
+	body := []byte(`{"comment":"looks good","resultBody":"final body"}`)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/improvements/"+jobs[0].ID+"/approve", bytes.NewReader(body))
+	request = mux.SetURLVars(request, map[string]string{"id": jobs[0].ID})
+	server.handleApproveImprovement(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected approve improvement to succeed, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if gotJobID != jobs[0].ID {
+		t.Fatalf("approver jobID = %q, want %q", gotJobID, jobs[0].ID)
+	}
+	if gotRequest.Status != "approved" || gotRequest.Comment != "looks good" || gotRequest.ResultBody != "final body" {
+		t.Fatalf("unexpected approval request: %+v", gotRequest)
+	}
+}
+
+func TestHandleDesignRerunTriggersImprovementGenerationInBackground(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-rerun-design",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 201,
+		State:        domain.StateWaitingDesignApproval,
+		Title:        "design rerun",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "waiting_design_approval",
+		StateFrom: string(domain.StateDesignReady),
+		StateTo:   string(domain.StateWaitingDesignApproval),
+		Payload:   `{}`,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	triggered := make(chan string, 1)
+	server.SetImprovementGenerator(func(_ context.Context, jobID string, sourceEventType string) error {
+		triggered <- jobID + ":" + sourceEventType
+		return nil
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/reruns/design", bytes.NewBufferString(`{"comment":"設計意図を明確にする"}`))
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handleDesignRerun(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	select {
+	case got := <-triggered:
+		if got != job.ID+":design_rerun_requested" {
+			t.Fatalf("unexpected trigger: %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("expected background improvement generation to be triggered")
+	}
+}
+
+func TestHandleImplementationRerunTriggersImprovementGenerationInBackground(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	svc := config.NewService(root, files)
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	job := domain.Job{
+		ID:           "job-rerun-implementation",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 202,
+		State:        domain.StateWaitingFinalApproval,
+		Title:        "implementation rerun",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	if err := store.AppendEvent(context.Background(), domain.Event{
+		JobID:     job.ID,
+		EventType: "waiting_final_approval",
+		StateFrom: string(domain.StateImplementationReady),
+		StateTo:   string(domain.StateWaitingFinalApproval),
+		Payload:   `{}`,
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+
+	triggered := make(chan string, 1)
+	server.SetImprovementGenerator(func(_ context.Context, jobID string, sourceEventType string) error {
+		triggered <- jobID + ":" + sourceEventType
+		return nil
+	})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/jobs/"+job.ID+"/reruns/implementation", bytes.NewBufferString(`{"comment":"次回もこの観点を確認する"}`))
+	request = mux.SetURLVars(request, map[string]string{"id": job.ID})
+	server.handleImplementationRerun(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d body=%s", http.StatusOK, recorder.Code, recorder.Body.String())
+	}
+
+	select {
+	case got := <-triggered:
+		if got != job.ID+":implementation_rerun_requested" {
+			t.Fatalf("unexpected trigger: %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("expected background improvement generation to be triggered")
+	}
+}
+
+func setupImprovementServer(t *testing.T) (*Server, config.MonitoredRepository, []domain.Job) {
+	t.Helper()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	repoConfig := config.MonitoredRepository{
+		Repository:         "owner/repository",
+		Branch:             "main",
+		Workers:            1,
+		ImprovementEnabled: true,
+		ImprovementBranch:  "develop",
+		ImprovementDir:     ".improvements",
+		ImprovementWorkDir: ".improvement",
+	}
+	files.App.MonitoredRepositories = []config.MonitoredRepository{repoConfig}
+	svc := config.NewService(root, files)
+
+	store, err := sqlite.Open(filepath.Join(root, "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_ = store.Close()
+	})
+
+	server := &Server{config: svc, orchestrator: orchestrator.New(store, nil)}
+	jobs := []domain.Job{
+		{
+			ID:           "job-improvement-1",
+			Type:         domain.JobTypeIssue,
+			Repository:   repoConfig.Repository,
+			GitHubNumber: 41,
+			State:        domain.StateWaitingDesignApproval,
+			Title:        "Improve design",
+			CreatedAt:    time.Now().UTC(),
+			UpdatedAt:    time.Now().UTC(),
+		},
+		{
+			ID:           "job-improvement-2",
+			Type:         domain.JobTypeIssue,
+			Repository:   repoConfig.Repository,
+			GitHubNumber: 42,
+			State:        domain.StateWaitingFinalApproval,
+			Title:        "Improve implementation",
+			CreatedAt:    time.Now().UTC(),
+			UpdatedAt:    time.Now().UTC(),
+		},
+	}
+	for _, job := range jobs {
+		if err := store.UpsertJob(context.Background(), job); err != nil {
+			t.Fatalf("UpsertJob() error = %v", err)
+		}
+	}
+	return server, repoConfig, jobs
+}
+
+func writeImprovementFixture(t *testing.T, server *Server, job domain.Job, decision string, reason string, sourceEventType string, phases []string, draft string, includeDraft bool) {
+	t.Helper()
+
+	repoConfig, ok := server.resolveMonitoredRepository(job.Repository)
+	if !ok {
+		t.Fatalf("resolveMonitoredRepository(%q) failed", job.Repository)
+	}
+
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(server.config.Root(), server.config.App().ArtifactsDir, job.Repository)
+	artifactDir := artifacts.RepositoryWorkerImprovementArtifactDir(server.config.Root(), server.config.App().ArtifactsDir, job.Repository, job.GitHubNumber)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(artifactDir) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(artifacts.RepositoryWorkerImprovementWorkFile(workDir, repoConfig.ImprovementWorkDir, improvementContextFileName)), 0o755); err != nil {
+		t.Fatalf("MkdirAll(workImprovementDir) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(artifacts.RepositoryWorkerImprovementWorkFile(workDir, repoConfig.ImprovementWorkDir, filepath.Join(improvementDraftDirName, improvementDraftFileName))), 0o755); err != nil {
+		t.Fatalf("MkdirAll(workImprovementDraftDir) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(artifactDir, improvementDraftDirName), 0o755); err != nil {
+		t.Fatalf("MkdirAll(artifactDraftDir) error = %v", err)
+	}
+
+	contextRaw := []byte(fmt.Sprintf("{\"phases\":[%s],\"source\":{\"eventType\":%q}}\n", quotedCSV(phases), sourceEventType))
+	if err := os.WriteFile(artifacts.RepositoryWorkerImprovementWorkFile(workDir, repoConfig.ImprovementWorkDir, improvementContextFileName), contextRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile(context.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, improvementContextFileName), contextRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile(artifact context.json) error = %v", err)
+	}
+	if includeDraft {
+		if err := os.WriteFile(artifacts.RepositoryWorkerImprovementWorkFile(workDir, repoConfig.ImprovementWorkDir, filepath.Join(improvementDraftDirName, improvementDraftFileName)), []byte(draft), 0o644); err != nil {
+			t.Fatalf("WriteFile(draft.md) error = %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(artifactDir, improvementDraftDirName, improvementDraftFileName), []byte(draft), 0o644); err != nil {
+			t.Fatalf("WriteFile(artifact draft.md) error = %v", err)
+		}
+	}
+	decisionRaw := []byte(fmt.Sprintf("{\"decision\":%q,\"reason\":%q,\"updatedAt\":\"2026-06-08T00:00:00Z\",\"sourceEvent\":%q}\n", decision, reason, sourceEventType))
+	if err := os.WriteFile(filepath.Join(artifactDir, improvementDecisionFileName), decisionRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile(decision.json) error = %v", err)
+	}
+}
+
+func writeImprovementGeneratingFixture(t *testing.T, server *Server, job domain.Job, sourceEventType string, phases []string) {
+	t.Helper()
+
+	repoConfig, ok := server.resolveMonitoredRepository(job.Repository)
+	if !ok {
+		t.Fatalf("resolveMonitoredRepository(%q) failed", job.Repository)
+	}
+
+	workDir := artifacts.RepositoryWorkerWorkDir(server.config.Root(), server.config.App().ArtifactsDir, job.Repository, repoConfig.WorkDir)
+	artifactDir := artifacts.RepositoryWorkerImprovementArtifactDir(server.config.Root(), server.config.App().ArtifactsDir, job.Repository, job.GitHubNumber)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(artifactDir) error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(artifacts.RepositoryWorkerImprovementWorkFile(workDir, repoConfig.ImprovementWorkDir, improvementInputFileName)), 0o755); err != nil {
+		t.Fatalf("MkdirAll(workImprovementDir) error = %v", err)
+	}
+
+	contextRaw := []byte(fmt.Sprintf("{\"phases\":[%s],\"source\":{\"eventType\":%q}}\n", quotedCSV(phases), sourceEventType))
+	inputRaw := []byte("# 改善案入力\n\n- sourceEvent: " + sourceEventType + "\n")
+	if err := os.WriteFile(artifacts.RepositoryWorkerImprovementWorkFile(workDir, repoConfig.ImprovementWorkDir, improvementContextFileName), contextRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile(context.json) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, improvementContextFileName), contextRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile(artifact context.json) error = %v", err)
+	}
+	if err := os.WriteFile(artifacts.RepositoryWorkerImprovementWorkFile(workDir, repoConfig.ImprovementWorkDir, improvementInputFileName), inputRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile(input.md) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, improvementInputFileName), inputRaw, 0o644); err != nil {
+		t.Fatalf("WriteFile(artifact input.md) error = %v", err)
+	}
+}
+
+func quotedCSV(values []string) string {
+	quoted := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted = append(quoted, fmt.Sprintf("%q", value))
+	}
+	return strings.Join(quoted, ",")
 }

@@ -14,7 +14,7 @@ import (
 
 var skillSetNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
-var managedSkillNames = []string{"design", "implement", "implement_fix", "review", "review_fix"}
+var managedSkillNames = []string{"design", "implement", "implement_fix", "review", "review_fix", "improvement_consideration", "improvement_implementation"}
 
 type SkillFile struct {
 	Definition     Definition `json:"definition"`
@@ -166,6 +166,9 @@ func DeleteSkillSet(root string, name string) error {
 
 func loadSkillFile(root string, setName string, skillName string) (SkillFile, error) {
 	definition, skillDir, err := loadDefinitionFromSkillSet(root, setName, skillName)
+	if err != nil && setName != "default" {
+		definition, skillDir, err = loadDefinitionFromSkillSet(root, "default", skillName)
+	}
 	if err != nil && skillName == "implement_fix" {
 		definition, skillDir, err = loadDefinitionFromSkillSet(root, setName, "fix")
 	}

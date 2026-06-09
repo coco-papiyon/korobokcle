@@ -113,3 +113,56 @@ func TestProviderByNameReturnsClaude(t *testing.T) {
 		t.Fatalf("expected claude provider models, got %#v", spec.Models)
 	}
 }
+
+func TestServiceUpdateAppClonesImprovementSettings(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	svc := NewService(root, DefaultFiles())
+	app := DefaultFiles().App
+	app.MonitoredRepositories = []MonitoredRepository{{
+		Repository:         "owner/repo",
+		Branch:             "main",
+		WorkDir:            "artifacts/owner-repo/workspace",
+		Workers:            2,
+		ImprovementEnabled: true,
+		ImprovementBranch:  "develop-ai",
+		ImprovementDir:     ".improvements-custom",
+		ImprovementWorkDir: ".improvement-custom",
+	}}
+
+	if err := svc.UpdateApp(app); err != nil {
+		t.Fatalf("UpdateApp() error = %v", err)
+	}
+
+	app.MonitoredRepositories[0].ImprovementBranch = "changed"
+	app.MonitoredRepositories[0].ImprovementDir = "changed"
+	app.MonitoredRepositories[0].ImprovementWorkDir = "changed"
+
+	got := svc.App()
+	if len(got.MonitoredRepositories) != 1 {
+		t.Fatalf("expected one monitored repository, got %d", len(got.MonitoredRepositories))
+	}
+	repository := got.MonitoredRepositories[0]
+	if !repository.ImprovementEnabled {
+		t.Fatalf("expected improvement feature enabled in cached config")
+	}
+	if repository.ImprovementBranch != "develop-ai" || repository.ImprovementDir != ".improvements-custom" || repository.ImprovementWorkDir != ".improvement-custom" {
+		t.Fatalf("unexpected cached improvement settings: %#v", repository)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, "config", "app.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	for _, expected := range [][]byte{
+		[]byte("improvementEnabled: true"),
+		[]byte("improvementBranch: develop-ai"),
+		[]byte("improvementDir: .improvements-custom"),
+		[]byte("improvementWorkDir: .improvement-custom"),
+	} {
+		if !bytes.Contains(raw, expected) {
+			t.Fatalf("expected saved yaml to contain %q, got %s", expected, string(raw))
+		}
+	}
+}

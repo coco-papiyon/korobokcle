@@ -472,6 +472,10 @@
   box-shadow: var(--shadow-lg);
 }
 
+.improvement-modal-panel {
+  width: min(80rem, 100%);
+}
+
 .modal-panel__header {
   display: flex;
   justify-content: space-between;
@@ -494,6 +498,31 @@
 
 .modal-actions__right {
   margin-left: auto;
+}
+
+.improvement-editor {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 22rem;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+}
+
+.improvement-overview-panel {
+  padding-top: var(--space-4);
+}
+
+.improvement-overview__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.improvement-overview__header > h2 {
+  margin: 0;
 }
 
 .payload-cell {

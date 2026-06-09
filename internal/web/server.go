@@ -29,6 +29,8 @@ type Server struct {
 	commenter                   IssueCommentSubmitter
 	tools                       *toolRuntimeManager
 	prepareRepositoryWorkspaces func(context.Context, config.App) error
+	improvementGenerator        func(context.Context, string, string) error
+	improvementApprover         func(context.Context, string, ImprovementApprovalRequest) error
 }
 
 type IssueBodyFetcher interface {
@@ -109,6 +111,7 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator, issueBodyFetcher 
 	api.HandleFunc("/jobs/{id}/issue-body", s.handleJobIssueBody).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}/pr-comments", s.handlePRComments).Methods(http.MethodGet)
 	api.HandleFunc("/jobs/{id}/pr-comments/analyze", s.handleAnalyzePRComment).Methods(http.MethodPost)
+	api.HandleFunc("/jobs/{id}/improvements/generate", s.handleGenerateImprovement).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/delete", s.handleDeleteJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/restore", s.handleRestoreJob).Methods(http.MethodPost)
 	api.HandleFunc("/jobs/{id}/purge", s.handlePurgeJob).Methods(http.MethodPost)
@@ -132,6 +135,12 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator, issueBodyFetcher 
 	api.HandleFunc("/test-profiles", s.handleSaveTestProfiles).Methods(http.MethodPut)
 	api.HandleFunc("/tool-commands", s.handleToolCommands).Methods(http.MethodGet)
 	api.HandleFunc("/tool-commands", s.handleSaveToolCommands).Methods(http.MethodPut)
+	api.HandleFunc("/improvements", s.handleImprovements).Methods(http.MethodGet)
+	api.HandleFunc("/improvements/{id}", s.handleImprovementDetail).Methods(http.MethodGet)
+	api.HandleFunc("/improvements/{id}/draft", s.handleSaveImprovementDraft).Methods(http.MethodPut)
+	api.HandleFunc("/improvements/{id}/approve", s.handleApproveImprovement).Methods(http.MethodPost)
+	api.HandleFunc("/improvements/{id}/reject", s.handleRejectImprovement).Methods(http.MethodPost)
+	api.HandleFunc("/improvements/{id}/regenerate", s.handleRegenerateImprovement).Methods(http.MethodPost)
 	api.HandleFunc("/skillsets", s.handleSkillSets).Methods(http.MethodGet)
 	api.HandleFunc("/skillsets", s.handleCreateSkillSet).Methods(http.MethodPost)
 	api.HandleFunc("/skillsets/{name}", s.handleSkillSet).Methods(http.MethodGet)
@@ -162,6 +171,14 @@ func (s *Server) SetPRCommentSubmitter(fn func(context.Context, PRCommentSubmitR
 
 func (s *Server) SetPRCommentAnalyzer(fn func(context.Context, string, PRCommentData) error) {
 	s.prCommentAnalyzer = fn
+}
+
+func (s *Server) SetImprovementGenerator(fn func(context.Context, string, string) error) {
+	s.improvementGenerator = fn
+}
+
+func (s *Server) SetImprovementApprover(fn func(context.Context, string, ImprovementApprovalRequest) error) {
+	s.improvementApprover = fn
 }
 
 func resolveStaticDir() (string, error) {

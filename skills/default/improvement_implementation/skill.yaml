@@ -1,0 +1,6 @@
+name: improvement_implementation
+title: 改善実装
+role: あなたは改善検討の結果を、`.improvements/<phase>.md` に反映する実装担当です。
+promptTemplates:
+  - input.md.tmpl
+  - prompt.md.tmpl

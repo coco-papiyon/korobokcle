@@ -15,6 +15,7 @@
 | データディレクトリ | `data/` | DB や内部データの保存先 | `tool root` | `config/app.yaml` の `dataDir` |
 | 成果物ディレクトリ | `artifacts/` | ジョブやワーカーの成果物保存先 | `tool root` | `config/app.yaml` の `artifactsDir` |
 | 作業ディレクトリ | `**成果物ディレクトリ**/workers/**リポジトリ**/work` | repository worker の checkout 元。ソースコードのみを置く場所 | 成果物ディレクトリ | `config/app.yaml` の各 `monitoredRepositories[].workDir` |
+| 改善ブランチ作業ディレクトリ | `**作業ディレクトリ**` | 改善指示用ブランチを checkout する作業場所。通常の source clone とは分離して扱う | 作業ディレクトリ | repository ごとの改善設定で相対パスを変更 |
 | 結果格納ディレクトリ | `**成果物ディレクトリ**/workers/**リポジトリ**/jobs/issue_**番号**` | repository worker の設計・実装・PR などの出力先 | 成果物ディレクトリ |  |
 | ワーカー作業ディレクトリ | `**成果物ディレクトリ**/workers/**リポジトリ**/workers/worker-**ワーカーID**` | repository worker が実際に作業する clone | 成果物ディレクトリ |  |
 | ワーカーソースディレクトリ | `**成果物ディレクトリ**/workers/**リポジトリ**/workers/worker-**ワーカーID**/source` | repository worker が実際に作業する clone | 成果物ディレクトリ |  |
@@ -31,6 +32,10 @@
 | SQLite DB | `データディレクトリ` | `korobokcle.db` | 永続データ保存先 | `tool root` |
 | AI成果物 | `結果格納ディレクトリ/{design,implementation,fix,review}/` | `*.md` | 各フェーズの要約、設計書、修正内容などの本文成果物 | 結果格納ディレクトリ |
 | AI成果物(作業用) | `作業ディレクトリ/{design,implementation,fix,review}/` | `**issue番号**_**issueタイトル**.md` | 各フェーズの要約、設計書、修正内容などの本文成果物 | 作業ディレクトリ |
+| 改善案入力 | `作業ディレクトリ/.improvement/` | `input.md`, `context.json` | 改善案生成時の入力と関連 metadata | 作業ディレクトリ |
+| 改善案下書き | `作業ディレクトリ/.improvement/` | `draft.md`, `notes.md` | 承認前の改善案編集用ファイル | 作業ディレクトリ |
+| 承認済み改善指示 | `作業ディレクトリ/.improvements/` | `*.md` | front matter 付き Markdown の正本 | 作業ディレクトリ |
+| 改善監査成果物 | `結果格納ディレクトリ/improvement/` | `input.md`, `draft.md`, `result.md`, `approval.json`, `decision.json`, `*.log` | 改善案生成と承認の監査記録 | 結果格納ディレクトリ |
 | AIログ | `結果格納ディレクトリ/{design,implementation,fix,review}/` | `*.log` | 各フェーズの標準出力・標準エラー | 結果格納ディレクトリ |
 | テストレポート | `結果格納ディレクトリ/{implementation,fix}/` | `test-report.json` | 実装・修正フェーズのテスト結果 | 結果格納ディレクトリ |
 | PR 生成結果 | `結果格納ディレクトリ/pr/` | `result.json` | PR URL、PR 番号、ブランチ名などの保存 | 結果格納ディレクトリ |
@@ -42,11 +47,15 @@
 
 - `dataDir` と `artifactsDir` は、相対パスなら `tool root` 基準、絶対パスならそのまま使います。
 - `sqlitePath` も相対パスなら `tool root` 基準、絶対パスならそのまま使います。
-- `作業ディレクトリ` は `artifactsDir` 配下の `artifacts/workers/<repo>/work` です。
+- `作業ディレクトリ` は `artifactsDir` 配下の `artifacts/<repo>/workspace` です。
+- 改善機能を有効にした repository では、`作業ディレクトリ` 配下に承認前の `.improvement/` と承認済みの `.improvements/` を作ります。
+- 改善指示を保持する Git ブランチは repository ごとに 1 本とし、既定名は `improvement` です。
+- `.improvements/` は改善指示の正本で、provider へ渡す前の中立な保存形式です。
+- `.improvement/` は承認前の編集領域で、恒久指示の正本ではありません。
 - worker 設定画面の `workDir` を指定すると、各リポジトリごとに指定したディレクトリを基準に `worker-<id>` が自動付与されます。
 - `workspaceDir` は作業ディレクトリ内で削除対象にするディレクトリ名です。既定値は `.workspace` ですが、ジョブごとの成果物は置きません。
 - `frontend/dist/` は常に実行ファイル配置ディレクトリ直下を参照します。`KOROBOKCLE_TOOL_ROOT` では変わりません。
 - `frontend/dist/index.html` が無い場合、Web UI は SPA を返せず `503` になります。
 - 作業ディレクトリにはリポジトリのソースを clone します。clone 済みの場合は再 clone しません。
-- ワーカー作業ディレクトリは `artifactsDir` 配下の `artifacts/workers/<repo>/worker-<id>` です。worker はこのディレクトリを使ってソースコードを修正します。
+- ワーカー作業ディレクトリは `artifactsDir` 配下の `artifacts/<repo>/workers/worker-<id>` です。worker はこのディレクトリを使ってソースコードを修正します。
 - 作業ディレクトリには成果物を置きません。成果物は `結果格納ディレクトリ` 配下に出力します。

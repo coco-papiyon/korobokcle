@@ -145,10 +145,12 @@ func buildDesignContext(cfg *config.Service, workDir string, job domain.Job, eve
 		}
 	}
 
-	if existingDesign, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerDesign, job, ctxData.ArtifactDir, "result.md", "design.md"); err == nil {
-		ctxData.ExistingDesign = string(existingDesign)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return skill.DesignContext{}, err
+	if strings.TrimSpace(ctxData.RerunComment) != "" {
+		if existingDesign, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerDesign, job, ctxData.ArtifactDir, "result.md", "design.md"); err == nil {
+			ctxData.ExistingDesign = string(existingDesign)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return skill.DesignContext{}, err
+		}
 	}
 
 	snapshot, err := issuebody.Resolve(events)
