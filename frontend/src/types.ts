@@ -42,6 +42,33 @@ export type JobDetail = {
   logs?: JobLog[]
 }
 
+export type ImprovementSummary = {
+  jobId: string
+  repository: string
+  issueNumber: number
+  title: string
+  status: string
+  decision: string
+  reason?: string
+  updatedAt?: string
+  sourceEventType?: string
+  phases?: string[]
+  hasDraft: boolean
+  improvementReady: boolean
+  deletedAt?: string
+}
+
+export type ImprovementDetail = {
+  summary: ImprovementSummary
+  input?: Artifact
+  context?: Artifact
+  draft?: Artifact
+  notes?: Artifact
+  result?: Artifact
+  decision?: Artifact
+  approval?: Artifact
+}
+
 export type PRCommentsResponse = {
   pullNumber: number
   comments: ReviewComment[]
@@ -149,6 +176,10 @@ export type MonitoredRepository = {
   branch: string
   workDir: string
   workers: number
+  improvementEnabled: boolean
+  improvementBranch: string
+  improvementDir: string
+  improvementWorkDir: string
   workerDir?: string
   workerDirs: string[]
 }

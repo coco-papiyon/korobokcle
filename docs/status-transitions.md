@@ -171,5 +171,8 @@
   例外として、`failed` でも直近イベントが `test_failed` の場合のみ許可されます。
 - PR コメント分析は `pr_comment_analysis_requested` で `design_running` に入り、`pr_comment_analysis_ready` で `waiting_design_approval` に戻ります。
 - `waiting_design_approval` は通常の設計承認だけでなく、PR コメント分析結果の承認にも使います。
+- 改善機能を導入する場合も、初期実装では専用ジョブ状態を追加せず、改善案生成と承認待ちは既存の `waiting_design_approval` を流用します。
+- 改善案の承認結果は job の主状態ではなく、`improvement/approval.json` と `improvement/decision.json` に保持します。
+- `no_improvement_needed` は job state ではなく、改善案生成フロー内の判定結果として扱います。
 - `pr_feedback` ジョブは `pull_request_review_matched` で開始し、レビューコメント反映のため `implementation_running` から始まります。
 - 本書は現在のコード上の実装整理であり、状態遷移の妥当性そのものを保証する仕様書ではありません。

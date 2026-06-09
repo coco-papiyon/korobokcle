@@ -167,14 +167,6 @@ func buildImplementationContext(cfg *config.Service, workDir string, job domain.
 		ArtifactDir:       runSpec.ArtifactDir,
 	}
 
-	implementationArtifact, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerImplementation, job, artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation), "result.md", "implement.md", "summary.md", "stdout.log")
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return skill.ImplementationContext{}, err
-	}
-	if err == nil {
-		ctxData.ImplementationArtifact = string(implementationArtifact)
-	}
-
 	ctxData.DesignApprovalComment, err = loadDesignApprovalComment(events)
 	if err != nil {
 		return skill.ImplementationContext{}, err
@@ -185,8 +177,17 @@ func buildImplementationContext(cfg *config.Service, workDir string, job domain.
 		return skill.ImplementationContext{}, err
 	}
 	ctxData.RerunComment = rerunComment
-	ctxData.PreviousFailure = previousFailure
-	ctxData.PreviousTestReport = previousTestReport
+	if strings.TrimSpace(ctxData.RerunComment) != "" {
+		implementationArtifact, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerImplementation, job, artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation), "result.md", "implement.md", "summary.md", "stdout.log")
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return skill.ImplementationContext{}, err
+		}
+		if err == nil {
+			ctxData.ImplementationArtifact = string(implementationArtifact)
+		}
+		ctxData.PreviousFailure = previousFailure
+		ctxData.PreviousTestReport = previousTestReport
+	}
 
 	snapshot, err := issuebody.Resolve(events)
 	if err != nil {

@@ -60,7 +60,7 @@ func TestBuildDesignContextIncludesRerunComment(t *testing.T) {
 	files.App.ArtifactsDir = "artifacts"
 	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
 	svc := config.NewService(root, files)
-	designDir := filepath.Join(root, "artifacts", "workers", "coco-papiyon-korobokcle", "jobs", "issue_42", "design")
+	designDir := filepath.Join(root, "artifacts", "coco-papiyon-korobokcle", "jobs", "issue_42", "design")
 	if err := os.MkdirAll(designDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -198,5 +198,47 @@ func TestDesignPromptOmitsExistingDesignSectionWhenEmpty(t *testing.T) {
 	}
 	if strings.Contains(prompt, "## Existing Design") {
 		t.Fatalf("expected existing design section to be omitted, got %q", prompt)
+	}
+}
+
+func TestBuildDesignContextSkipsExistingDesignWhenRerunCommentMissing(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.ArtifactsDir = "artifacts"
+	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
+	svc := config.NewService(root, files)
+	designDir := filepath.Join(root, "artifacts", "coco-papiyon-korobokcle", "jobs", "issue_42", "design")
+	if err := os.MkdirAll(designDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(designDir, "result.md"), []byte("# existing design\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	job := domain.Job{
+		ID:           "job-2",
+		Repository:   "coco-papiyon/korobokcle",
+		GitHubNumber: 42,
+		Title:        "Issue",
+		WatchRuleID:  "rule-1",
+	}
+
+	got, err := buildDesignContext(svc, root, job, []domain.Event{
+		{
+			EventType: "issue_matched",
+			Payload:   `{"body":"issue body","author":"alice","labels":["bug"],"assignees":["bob"]}`,
+			CreatedAt: time.Now(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildDesignContext() error = %v", err)
+	}
+	if got.RerunComment != "" {
+		t.Fatalf("expected empty rerun comment, got %q", got.RerunComment)
+	}
+	if got.ExistingDesign != "" {
+		t.Fatalf("expected no existing design to be passed, got %q", got.ExistingDesign)
 	}
 }

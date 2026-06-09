@@ -230,3 +230,112 @@ func TestRunDesignOverwritesExistingResultFileWithLatestOutput(t *testing.T) {
 		t.Fatalf("expected latest result file to be written, got %q", string(raw))
 	}
 }
+
+func TestRunDesignInjectsManagedInstructionsForCodex(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "skills", "default", "design")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
+		t.Fatalf("WriteFile(prompt) error = %v", err)
+	}
+
+	scriptPath := writeProviderScript(t, root, "echo-stdin", "@echo off\r\nset /p INPUT=\r\necho %INPUT%\r\n", "#!/usr/bin/env sh\ncat\n")
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `[]`)
+
+	runner := NewRunner(root, root, "", nil)
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-managed", artifacts.WorkerDesign)
+	_, err := runner.RunDesign(context.Background(), "design", DesignContext{
+		Title:       "Managed instructions",
+		ArtifactDir: artifactDir,
+		ManagedInstructions: []ManagedInstruction{{
+			ID:         "ui-layout-policy",
+			Title:      "UI layout policy",
+			Scope:      "repository",
+			Phases:     []string{"design"},
+			Status:     "active",
+			UpdatedAt:  "2026-06-07T00:00:00Z",
+			SourcePath: ".improvements/ui-layout-policy.md",
+			Body:       "- Keep action buttons on the left.",
+		}},
+	}, ExecutionConfig{Provider: "codex"})
+	if err != nil {
+		t.Fatalf("RunDesign() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(artifactDir, "stdout.log"))
+	if err != nil {
+		t.Fatalf("ReadFile(stdout.log) error = %v", err)
+	}
+	output := string(raw)
+	if !strings.Contains(output, "Managed Improvement Instructions") {
+		t.Fatalf("expected injected managed instructions, got %q", output)
+	}
+	if !strings.Contains(output, ".improvements/ui-layout-policy.md") {
+		t.Fatalf("expected source path in injected prompt, got %q", output)
+	}
+}
+
+func TestRunDesignWritesAgentsFileForCopilot(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "skills", "default", "design")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "skill.yaml"), []byte("name: design\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(skill.yaml) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "prompt.md.tmpl"), []byte("Title: {{ .Title }}"), 0o644); err != nil {
+		t.Fatalf("WriteFile(prompt) error = %v", err)
+	}
+
+	scriptPath := writeProviderScript(t, root, "echo-args", "@echo off\r\n>\"%1\" echo %2\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$2\" > \"$1\"\ncat \"$1\"\n")
+	t.Setenv("KOROBOKCLE_COPILOT_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_COPILOT_ARGS_JSON", `["{{output_path}}","{{prompt}}"]`)
+
+	runner := NewRunner(root, root, "", nil)
+	artifactDir := artifacts.WorkerDir(root, "artifacts", "job-copilot", artifacts.WorkerDesign)
+	_, err := runner.RunDesign(context.Background(), "design", DesignContext{
+		Title:       "Managed instructions",
+		ArtifactDir: artifactDir,
+		ManagedInstructions: []ManagedInstruction{{
+			ID:         "review-checklist",
+			Title:      "Review checklist",
+			Scope:      "repository",
+			Phases:     []string{"design"},
+			Status:     "active",
+			UpdatedAt:  "2026-06-07T00:00:00Z",
+			SourcePath: ".improvements/review-checklist.md",
+			Body:       "- Keep the explanation short.",
+		}},
+	}, ExecutionConfig{Provider: "copilot"})
+	if err != nil {
+		t.Fatalf("RunDesign() error = %v", err)
+	}
+
+	rawOutput, err := os.ReadFile(filepath.Join(artifactDir, "stdout.log"))
+	if err != nil {
+		t.Fatalf("ReadFile(stdout.log) error = %v", err)
+	}
+	if strings.TrimSpace(string(rawOutput)) == "" {
+		t.Fatalf("expected provider stdout to be written")
+	}
+
+	agentsPath := filepath.Join(root, "AGENTS.md")
+	raw, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatalf("ReadFile(AGENTS.md) error = %v", err)
+	}
+	content := string(raw)
+	if !strings.Contains(content, "Managed Improvement Instructions") {
+		t.Fatalf("expected AGENTS.md to include managed instructions, got %q", content)
+	}
+	if !strings.Contains(content, "review-checklist") {
+		t.Fatalf("expected AGENTS.md to include instruction id, got %q", content)
+	}
+}

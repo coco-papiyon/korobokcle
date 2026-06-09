@@ -85,6 +85,37 @@ func TestCreateAndDeleteSkillSet(t *testing.T) {
 	}
 }
 
+func TestLoadSkillSetFallsBackToDefaultForMissingManagedSkill(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	for _, skillName := range managedSkillNames {
+		writeSkillFixture(t, filepath.Join(root, "skills", "default", skillName), skillName+" input", skillName+" prompt")
+	}
+
+	created, err := CreateSkillSet(root, "team-a", "default")
+	if err != nil {
+		t.Fatalf("CreateSkillSet() error = %v", err)
+	}
+	if err := os.RemoveAll(filepath.Join(root, "skills", "team-a", "improvement_implementation")); err != nil {
+		t.Fatalf("RemoveAll(improvement_implementation) error = %v", err)
+	}
+
+	loaded, err := LoadSkillSet(root, "team-a")
+	if err != nil {
+		t.Fatalf("LoadSkillSet() error = %v", err)
+	}
+	if loaded.Skills["improvement_implementation"].PromptTemplate != "improvement_implementation prompt" {
+		t.Fatalf("expected fallback prompt from default skill set, got %q", loaded.Skills["improvement_implementation"].PromptTemplate)
+	}
+	if loaded.Skills["improvement_consideration"].PromptTemplate != "improvement_consideration prompt" {
+		t.Fatalf("expected improvement consideration prompt from default skill set, got %q", loaded.Skills["improvement_consideration"].PromptTemplate)
+	}
+	if created.Skills["improvement_consideration"].PromptTemplate != "improvement_consideration prompt" {
+		t.Fatalf("expected created improvement consideration prompt, got %q", created.Skills["improvement_consideration"].PromptTemplate)
+	}
+}
+
 func writeSkillFixture(t *testing.T, dir string, input string, prompt string) {
 	t.Helper()
 

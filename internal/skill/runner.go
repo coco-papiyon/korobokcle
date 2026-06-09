@@ -62,6 +62,10 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 	if err != nil {
 		return AIResult{}, err
 	}
+	prompt, err = r.applyManagedInstructions(prompt, execution.Provider, r.executionWorkDir(definition, execution, contextData.ArtifactDir), contextData.ArtifactDir, skillName, contextData.ManagedInstructions)
+	if err != nil {
+		return AIResult{}, err
+	}
 
 	promptPath := filepath.Join(contextData.ArtifactDir, "prompt.md")
 	if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {
@@ -126,6 +130,10 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 	if err != nil {
 		return AIResult{}, err
 	}
+	prompt, err = r.applyManagedInstructions(prompt, execution.Provider, r.executionWorkDir(definition, execution, contextData.ArtifactDir), contextData.ArtifactDir, skillName, contextData.ManagedInstructions)
+	if err != nil {
+		return AIResult{}, err
+	}
 
 	promptPath := filepath.Join(contextData.ArtifactDir, "prompt.md")
 	if err := os.WriteFile(promptPath, []byte(prompt), 0o644); err != nil {
@@ -187,6 +195,10 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 	}
 
 	prompt, err := RenderSkillPrompt(r.toolRoot, skillName, contextData)
+	if err != nil {
+		return AIResult{}, err
+	}
+	prompt, err = r.applyManagedInstructions(prompt, execution.Provider, r.executionWorkDir(definition, execution, contextData.ArtifactDir), contextData.ArtifactDir, skillName, contextData.ManagedInstructions)
 	if err != nil {
 		return AIResult{}, err
 	}
@@ -265,6 +277,85 @@ func (r *Runner) executionWorkDir(definition Definition, execution ExecutionConf
 		return r.repoRoot
 	}
 	return artifactDir
+}
+
+func (r *Runner) applyManagedInstructions(prompt string, provider string, workDir string, artifactDir string, skillName string, instructions []ManagedInstruction) (string, error) {
+	block := renderManagedInstructionsBlock(provider, skillName, instructions)
+	if strings.TrimSpace(block) == "" {
+		return prompt, nil
+	}
+
+	if strings.EqualFold(strings.TrimSpace(provider), "copilot") {
+		if err := r.writeCopilotManagedInstructions(workDir, block); err != nil {
+			return "", err
+		}
+		return prompt + "\n\n" + "## Managed improvements\n\n" + "The repository instructions are available in `AGENTS.md` at the repository root.\n", nil
+	}
+
+	return prompt + "\n\n" + block, nil
+}
+
+func (r *Runner) writeCopilotManagedInstructions(workDir string, block string) error {
+	agentsPath := filepath.Join(workDir, "AGENTS.md")
+	existing, err := os.ReadFile(agentsPath)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	content := strings.TrimSpace(string(existing))
+	if content == "" {
+		content = "# Managed Improvement Instructions\n\n" + block + "\n"
+	} else {
+		content = replaceManagedInstructionSection(content, block)
+	}
+
+	return os.WriteFile(agentsPath, []byte(content+"\n"), 0o644)
+}
+
+func renderManagedInstructionsBlock(provider string, skillName string, instructions []ManagedInstruction) string {
+	trimmedProvider := strings.TrimSpace(provider)
+	trimmedSkill := strings.TrimSpace(skillName)
+	if len(instructions) == 0 {
+		return ""
+	}
+
+	var builder strings.Builder
+	builder.WriteString("# Managed Improvement Instructions\n\n")
+	builder.WriteString("This run applies repository improvement instructions for provider `")
+	builder.WriteString(trimmedProvider)
+	builder.WriteString("` and skill `")
+	builder.WriteString(trimmedSkill)
+	builder.WriteString("`.\n\n")
+	builder.WriteString("## Phase scope\n\n")
+	builder.WriteString("- Active instructions are filtered by the current phase before this block is built.\n")
+	builder.WriteString("- Lower index means higher priority within this run.\n\n")
+	builder.WriteString("## Instructions\n\n")
+	for index, instruction := range instructions {
+		builder.WriteString(fmt.Sprintf("### %d. %s\n\n", index+1, strings.TrimSpace(instruction.Title)))
+		builder.WriteString(fmt.Sprintf("- `id`: %s\n", strings.TrimSpace(instruction.ID)))
+		builder.WriteString(fmt.Sprintf("- `scope`: %s\n", strings.TrimSpace(instruction.Scope)))
+		builder.WriteString(fmt.Sprintf("- `phases`: %s\n", strings.Join(instruction.Phases, ", ")))
+		builder.WriteString(fmt.Sprintf("- `status`: %s\n", strings.TrimSpace(instruction.Status)))
+		builder.WriteString(fmt.Sprintf("- `updatedAt`: %s\n", strings.TrimSpace(instruction.UpdatedAt)))
+		builder.WriteString(fmt.Sprintf("- `source`: %s\n", strings.TrimSpace(instruction.SourcePath)))
+		builder.WriteString("\n")
+		builder.WriteString(strings.TrimSpace(instruction.Body))
+		builder.WriteString("\n\n")
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func replaceManagedInstructionSection(existing string, block string) string {
+	const marker = "<!-- korobokcle-managed-instructions -->"
+	if strings.Contains(existing, marker) {
+		start := strings.Index(existing, marker)
+		end := strings.Index(existing[start+len(marker):], marker)
+		if end >= 0 {
+			end += start + len(marker)
+			return strings.TrimSpace(existing[:start]) + "\n\n" + marker + "\n" + block + "\n" + marker + "\n\n" + strings.TrimSpace(existing[end+len(marker):])
+		}
+	}
+	return strings.TrimSpace(existing) + "\n\n" + marker + "\n" + block + "\n" + marker
 }
 
 func persistSkillOutput(path string, output string) error {

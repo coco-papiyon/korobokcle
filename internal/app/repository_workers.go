@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log"
@@ -44,6 +45,16 @@ func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchest
 		}
 		return
 	}
+	improvementWorkDir := ""
+	if repository.ImprovementEnabled {
+		improvementWorkDir, err = prepareRepositoryImprovementWorkspace(ctx, cfg, repository.Repository)
+		if err != nil {
+			if logger != nil {
+				logger.Printf("repository improvement workdir preparation failed repository=%s worker=%d error=%v", repository.Repository, workerIndex, err)
+			}
+			return
+		}
+	}
 
 	repoDir, err := cloneRepositoryWorkspace(ctx, cfg, repository.Repository, workerIndex, workDir)
 	if err != nil {
@@ -63,6 +74,15 @@ func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchest
 	defer cleanup()
 
 	workerLogger.Printf("worker started repository=%s worker=%d", repository.Repository, workerIndex)
+	if repository.ImprovementEnabled {
+		workerLogger.Printf("repository improvement workspace enabled repository=%s worker=%d branch=%s work_dir=%s", repository.Repository, workerIndex, config.ResolveImprovementBranch(repository), improvementWorkDir)
+		if err := syncRepositoryImprovementWorkspace(ctx, cfg, repository, improvementWorkDir, workerLogger); err != nil {
+			workerLogger.Printf("repository improvement workspace sync failed repository=%s worker=%d error=%v", repository.Repository, workerIndex, err)
+			return
+		}
+	} else {
+		workerLogger.Printf("repository improvement workspace disabled repository=%s worker=%d", repository.Repository, workerIndex)
+	}
 	workerLogger.Printf("repository source checkout ready repository=%s worker=%d work_dir=%s source_dir=%s", repository.Repository, workerIndex, workDir, repoDir)
 
 	runner := skill.NewRunner(repoDir, cfg.Root(), "", cfg.App().CopilotAllowTools).WithLogger(workerLogger)
@@ -76,7 +96,7 @@ func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchest
 
 	for {
 		workerLogger.Printf("worker polling started repository=%s worker=%d", repository.Repository, workerIndex)
-		if err := runRepositoryWorkerCycle(ctx, cfg, orch, runner, testRunner, pusher, creator, commentSubmitter, commentFetcher, workDir, repoDir, repository, workerIndex, workerLogger); err != nil && ctx.Err() == nil {
+		if err := runRepositoryWorkerCycle(ctx, cfg, orch, runner, testRunner, pusher, creator, commentSubmitter, commentFetcher, workDir, improvementWorkDir, repoDir, repository, workerIndex, workerLogger); err != nil && ctx.Err() == nil {
 			workerLogger.Printf("repository worker cycle failed repository=%s worker=%d error=%v", repository.Repository, workerIndex, err)
 		} else {
 			workerLogger.Printf("worker polling finished repository=%s worker=%d", repository.Repository, workerIndex)
@@ -91,7 +111,7 @@ func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchest
 	}
 }
 
-func runRepositoryWorkerCycle(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, testRunner *executor.TestRunner, pusher BranchPusher, creator PRCreator, commentSubmitter PRCommentSubmitter, commentFetcher PRCommentFetcher, workDir string, repoDir string, repository config.MonitoredRepository, workerIndex int, logger *log.Logger) error {
+func runRepositoryWorkerCycle(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, testRunner *executor.TestRunner, pusher BranchPusher, creator PRCreator, commentSubmitter PRCommentSubmitter, commentFetcher PRCommentFetcher, workDir string, improvementWorkDir string, repoDir string, repository config.MonitoredRepository, workerIndex int, logger *log.Logger) error {
 	jobs, err := orch.ListJobs(ctx)
 	if err != nil {
 		return err
@@ -117,7 +137,7 @@ func runRepositoryWorkerCycle(ctx context.Context, cfg *config.Service, orch *or
 			if logger != nil {
 				logger.Printf("job processing started repository=%s worker=%d job_id=%s phase=design", repository.Repository, workerIndex, job.ID)
 			}
-			if err := processDesignJob(ctx, cfg, orch, runner, job, workDir, repoDir, logger); err != nil {
+			if err := processDesignJob(ctx, cfg, orch, runner, job, workDir, improvementWorkDir, repoDir, logger); err != nil {
 				if logger != nil {
 					logger.Printf("job processing failed repository=%s worker=%d job_id=%s phase=design error=%v", repository.Repository, workerIndex, job.ID, err)
 				}
@@ -133,7 +153,7 @@ func runRepositoryWorkerCycle(ctx context.Context, cfg *config.Service, orch *or
 			if logger != nil {
 				logger.Printf("job processing started repository=%s worker=%d job_id=%s phase=implementation", repository.Repository, workerIndex, job.ID)
 			}
-			if err := processImplementationJob(ctx, cfg, orch, runner, testRunner, job, workDir, repoDir, logger); err != nil {
+			if err := processImplementationJob(ctx, cfg, orch, runner, testRunner, job, workDir, improvementWorkDir, repoDir, logger); err != nil {
 				if logger != nil {
 					logger.Printf("job processing failed repository=%s worker=%d job_id=%s phase=implementation error=%v", repository.Repository, workerIndex, job.ID, err)
 				}
@@ -149,7 +169,7 @@ func runRepositoryWorkerCycle(ctx context.Context, cfg *config.Service, orch *or
 			if logger != nil {
 				logger.Printf("job processing started repository=%s worker=%d job_id=%s phase=review", repository.Repository, workerIndex, job.ID)
 			}
-			if err := processReviewJob(ctx, cfg, orch, runner, job, workDir, repoDir, logger); err != nil {
+			if err := processReviewJob(ctx, cfg, orch, runner, job, workDir, improvementWorkDir, repoDir, logger); err != nil {
 				if logger != nil {
 					logger.Printf("job processing failed repository=%s worker=%d job_id=%s phase=review error=%v", repository.Repository, workerIndex, job.ID, err)
 				}
@@ -220,7 +240,7 @@ func workerProcessesJobState(job domain.Job) bool {
 	}
 }
 
-func processDesignJob(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, job domain.Job, workDir string, repoDir string, logger *log.Logger) error {
+func processDesignJob(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, job domain.Job, workDir string, improvementWorkDir string, repoDir string, logger *log.Logger) error {
 	if logger != nil {
 		logger.Printf("design job loading context job_id=%s repo_dir=%s", job.ID, repoDir)
 	}
@@ -246,8 +266,13 @@ func processDesignJob(ctx context.Context, cfg *config.Service, orch *orchestrat
 		}
 		return err
 	}
+	if repositoryConfig, ok := resolveMonitoredRepository(cfg, job.Repository); ok {
+		if err := syncRepositoryImprovementWorkspace(ctx, cfg, repositoryConfig, improvementWorkDir, logger); err != nil {
+			return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
+		}
+	}
 
-	contextData, err := buildRepositoryDesignContext(cfg, workDir, jobDetail, events)
+	contextData, err := buildRepositoryDesignContext(cfg, workDir, improvementWorkDir, jobDetail, events)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
 	}
@@ -279,7 +304,7 @@ func processDesignJob(ctx context.Context, cfg *config.Service, orch *orchestrat
 	})
 }
 
-func processImplementationJob(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, testRunner *executor.TestRunner, job domain.Job, workDir string, repoDir string, logger *log.Logger) error {
+func processImplementationJob(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, testRunner *executor.TestRunner, job domain.Job, workDir string, improvementWorkDir string, repoDir string, logger *log.Logger) error {
 	if logger != nil {
 		logger.Printf("implementation job loading context job_id=%s repo_dir=%s", job.ID, repoDir)
 	}
@@ -295,8 +320,13 @@ func processImplementationJob(ctx context.Context, cfg *config.Service, orch *or
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 	}
+	if repositoryConfig, ok := resolveMonitoredRepository(cfg, job.Repository); ok {
+		if err := syncRepositoryImprovementWorkspace(ctx, cfg, repositoryConfig, improvementWorkDir, logger); err != nil {
+			return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
+		}
+	}
 
-	contextData, err := buildRepositoryImplementationContext(cfg, workDir, jobDetail, events, runSpec)
+	contextData, err := buildRepositoryImplementationContext(cfg, workDir, improvementWorkDir, jobDetail, events, runSpec)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 	}
@@ -359,7 +389,7 @@ func processImplementationJob(ctx context.Context, cfg *config.Service, orch *or
 	})
 }
 
-func processReviewJob(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, job domain.Job, workDir string, repoDir string, logger *log.Logger) error {
+func processReviewJob(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, runner *skill.Runner, job domain.Job, workDir string, improvementWorkDir string, repoDir string, logger *log.Logger) error {
 	if logger != nil {
 		logger.Printf("review job loading context job_id=%s repo_dir=%s", job.ID, repoDir)
 	}
@@ -385,8 +415,13 @@ func processReviewJob(ctx context.Context, cfg *config.Service, orch *orchestrat
 		}
 		return err
 	}
+	if repositoryConfig, ok := resolveMonitoredRepository(cfg, job.Repository); ok {
+		if err := syncRepositoryImprovementWorkspace(ctx, cfg, repositoryConfig, improvementWorkDir, logger); err != nil {
+			return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
+		}
+	}
 
-	contextData, err := buildRepositoryReviewContext(cfg, workDir, jobDetail, events)
+	contextData, err := buildRepositoryReviewContext(cfg, workDir, improvementWorkDir, jobDetail, events)
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
 	}
@@ -516,6 +551,11 @@ func prepareRepositoryWorkspaces(ctx context.Context, cfg *config.Service) error
 		if _, err := prepareRepositoryWorkspace(ctx, cfg, repository.Repository, repository.WorkDir); err != nil {
 			return err
 		}
+		if repository.ImprovementEnabled {
+			if _, err := prepareRepositoryImprovementWorkspace(ctx, cfg, repository.Repository); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -535,13 +575,8 @@ func prepareRepositoryWorkspace(ctx context.Context, cfg *config.Service, reposi
 }
 
 func cloneRepositoryWorkspace(ctx context.Context, cfg *config.Service, repository string, workerIndex int, workDir ...string) (string, error) {
-	sharedWorkDir := ""
-	if len(workDir) > 0 && strings.TrimSpace(workDir[0]) != "" {
-		sharedWorkDir = workDir[0]
-	} else {
-		var err error
-		sharedWorkDir, err = prepareRepositoryWorkspace(ctx, cfg, repository, resolveRepositoryConfiguredWorkDirSetting(cfg, repository))
-		if err != nil {
+	if len(workDir) == 0 || strings.TrimSpace(workDir[0]) == "" {
+		if _, err := prepareRepositoryWorkspace(ctx, cfg, repository, resolveRepositoryConfiguredWorkDirSetting(cfg, repository)); err != nil {
 			return "", err
 		}
 	}
@@ -549,13 +584,27 @@ func cloneRepositoryWorkspace(ctx context.Context, cfg *config.Service, reposito
 	if err := os.MkdirAll(filepath.Dir(sourceDir), 0o755); err != nil {
 		return "", err
 	}
-	if err := ensureRepositoryWorkerClone(ctx, sourceDir, sharedWorkDir, cfg.App().WorkspaceDir); err != nil {
+	if err := ensureRepositoryWorkerClone(ctx, sourceDir, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
 		return "", err
 	}
 	if err := ensureRepositoryWorkerRemote(ctx, sourceDir, repositoryCloneSource(repository)); err != nil {
 		return "", err
 	}
 	return sourceDir, nil
+}
+
+func prepareRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service, repository string) (string, error) {
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, repository)
+	if err := os.MkdirAll(filepath.Dir(improvementDir), 0o755); err != nil {
+		return "", err
+	}
+	if err := ensureRepositoryWorkerClone(ctx, improvementDir, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
+		return "", err
+	}
+	if err := ensureRepositoryWorkerRemote(ctx, improvementDir, repositoryCloneSource(repository)); err != nil {
+		return "", err
+	}
+	return improvementDir, nil
 }
 
 func resolveRepositoryConfiguredWorkDirSetting(cfg *config.Service, repository string) string {
@@ -661,6 +710,81 @@ func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domai
 		}
 	}
 	return nil
+}
+
+func syncRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service, repository config.MonitoredRepository, improvementDir string, logger *log.Logger) error {
+	if !repository.ImprovementEnabled {
+		return nil
+	}
+
+	if cfg == nil {
+		return fmt.Errorf("repository improvement workspace sync requires config")
+	}
+	if _, err := os.Stat(filepath.Join(improvementDir, ".git")); errors.Is(err, os.ErrNotExist) {
+		preparedDir, err := prepareRepositoryImprovementWorkspace(ctx, cfg, repository.Repository)
+		if err != nil {
+			return err
+		}
+		improvementDir = preparedDir
+	}
+
+	improvementBranch := config.ResolveImprovementBranch(repository)
+	improvementWorkDir := artifacts.RepositoryWorkerImprovementWorkDir(improvementDir, repository.ImprovementWorkDir)
+	if err := os.MkdirAll(improvementWorkDir, 0o755); err != nil {
+		return err
+	}
+
+	if logger != nil {
+		logger.Printf("syncing repository improvement checkout repository=%s work_dir=%s branch=%s", repository.Repository, improvementDir, improvementBranch)
+	}
+
+	if _, err := runGitCommand(ctx, improvementDir, "git", "fetch", "--prune", "origin"); err != nil {
+		return err
+	}
+
+	if gitRemoteBranchExists(ctx, improvementDir, improvementBranch) {
+		commands := [][]string{
+			{"git", "checkout", "-f", "-B", improvementBranch, "origin/" + improvementBranch},
+			{"git", "reset", "--hard", "origin/" + improvementBranch},
+		}
+		for _, command := range commands {
+			if _, err := runGitCommand(ctx, improvementDir, command...); err != nil {
+				return err
+			}
+		}
+	} else {
+		baseBranch, err := resolveRepositoryBaseBranch(ctx, improvementDir, strings.TrimSpace(repository.Branch))
+		if err != nil {
+			return err
+		}
+		if _, err := runGitCommand(ctx, improvementDir, "git", "checkout", "-f", "-B", improvementBranch, "origin/"+baseBranch); err != nil {
+			return err
+		}
+	}
+
+	cleanArgs := []string{"git", "clean", "-fd"}
+	if relativeWorkDir, ok := repositoryImprovementWorkDirPattern(improvementDir, improvementWorkDir); ok {
+		cleanArgs = append(cleanArgs, "-e", relativeWorkDir)
+	}
+	if _, err := runGitCommand(ctx, improvementDir, cleanArgs...); err != nil {
+		return err
+	}
+	return nil
+}
+
+func repositoryImprovementWorkDirPattern(workDir string, improvementWorkDir string) (string, bool) {
+	relative, err := filepath.Rel(workDir, improvementWorkDir)
+	if err != nil {
+		return "", false
+	}
+	relative = filepath.ToSlash(strings.TrimSpace(relative))
+	if relative == "" || relative == "." || strings.HasPrefix(relative, "../") {
+		return "", false
+	}
+	if !strings.HasSuffix(relative, "/") {
+		relative += "/"
+	}
+	return relative, true
 }
 
 func resolveRepositoryBaseBranch(ctx context.Context, repoDir string, configuredBranch string) (string, error) {

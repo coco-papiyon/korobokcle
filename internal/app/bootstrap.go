@@ -114,6 +114,17 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 		}()
 		return nil
 	})
+	server.SetImprovementGenerator(func(ctx context.Context, jobID string, sourceEventType string) error {
+		_, err := generateImprovementDraft(ctx, configService, orch, jobID, sourceEventType, infoLogger)
+		return err
+	})
+	server.SetImprovementApprover(func(ctx context.Context, jobID string, req web.ImprovementApprovalRequest) error {
+		return applyImprovementApproval(ctx, configService, orch, jobID, improvementApprovalRequest{
+			Status:     req.Status,
+			Comment:    req.Comment,
+			ResultBody: req.ResultBody,
+		}, infoLogger)
+	})
 	server.SetRepositoryWorkspacePreparer(func(ctx context.Context, appConfig config.App) error {
 		snapshot := configService.App()
 		snapshot.MonitoredRepositories = append([]config.MonitoredRepository(nil), appConfig.MonitoredRepositories...)

@@ -13,6 +13,7 @@ import {
   fetchPRComments,
   fetchToolCommands,
   fetchWatchRules,
+  generateImprovement,
   purgeJob,
   restoreJob,
   refreshIssueBody,
@@ -142,6 +143,8 @@ const prCommentAnalysisActionError = ref<string | null>(null)
 const toolCommandState = ref<'idle' | 'saving' | 'error'>('idle')
 const toolCommandAction = ref<'start' | 'stop' | null>(null)
 const toolCommandError = ref<string | null>(null)
+const improvementState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const improvementError = ref<string | null>(null)
 const issueBodyRefreshState = ref<'idle' | 'loading' | 'error'>('idle')
 const issueBodyRefreshError = ref<string | null>(null)
 const selectedToolCommandName = ref('')
@@ -198,6 +201,25 @@ const flowRerunEvent = computed<JobEvent | null>(() => {
 })
 
 const hasPRCommentAnalysis = computed(() => (data.value?.prCommentAnalysisArtifact?.content ?? '').trim().length > 0)
+const currentRepositoryConfig = computed(() => {
+  const repository = data.value?.job.repository
+  if (!repository) {
+    return null
+  }
+  return appConfig.value?.monitoredRepositories.find((entry) => entry.repository === repository) ?? null
+})
+const improvementEnabledForJob = computed(() => Boolean(currentRepositoryConfig.value?.improvementEnabled))
+const availableImprovementSource = computed(() => {
+  if (hasPRCommentAnalysis.value) {
+    return 'pr_comment_analysis_ready'
+  }
+  const eventType = latestEvent.value?.eventType ?? ''
+  if (eventType === 'design_rejected' || eventType === 'final_rejected') {
+    return eventType
+  }
+  return ''
+})
+const canGenerateImprovement = computed(() => improvementEnabledForJob.value && !isDeletedJob.value && availableImprovementSource.value.length > 0)
 const canReviewDesign = computed(() => data.value?.job.state === 'waiting_design_approval' && !hasPRCommentAnalysis.value)
 const canReviewPRCommentAnalysis = computed(() => data.value?.job.state === 'waiting_design_approval' && hasPRCommentAnalysis.value)
 const isDeletedJob = computed(() => !!data.value?.job.deletedAt)
@@ -827,6 +849,21 @@ async function stopRunningToolCommand() {
   }
 }
 
+async function startImprovementGeneration() {
+  if (!canGenerateImprovement.value) {
+    return
+  }
+  improvementState.value = 'saving'
+  improvementError.value = null
+  try {
+    await generateImprovement(jobID.value, availableImprovementSource.value)
+    improvementState.value = 'saved'
+  } catch (err) {
+    improvementState.value = 'error'
+    improvementError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
+  }
+}
+
 async function openPopup(setOpen: (value: boolean) => void) {
   popupLoadingState.value = 'loading'
   popupLoadingError.value = null
@@ -1150,6 +1187,35 @@ function openPRCreateModal() {
             <button class="log-entry-button" type="button" @click="prCommentAnalysisModalOpen = true">分析結果を開く</button>
             <p class="text-muted">取得した PR コメントに対する修正案の検討結果です。</p>
           </div>
+        </PanelCard>
+
+        <PanelCard
+          v-if="improvementEnabledForJob"
+          title="改善機能"
+          description="恒久的な改善指示の生成と確認を行います。"
+        >
+          <div class="artifact-headline">
+            <div class="button-row">
+              <button
+                class="button button-secondary"
+                type="button"
+                :disabled="!canGenerateImprovement || improvementState === 'saving'"
+                @click="startImprovementGeneration"
+              >
+                {{ improvementState === 'saving' ? '改善案を生成中...' : '改善案を生成' }}
+              </button>
+              <RouterLink class="button button-secondary" to="/improvements">改善一覧を開く</RouterLink>
+            </div>
+            <p class="text-muted">
+              {{
+                canGenerateImprovement
+                  ? `source: ${availableImprovementSource}`
+                  : '改善案の生成に使える source event がまだありません。'
+              }}
+            </p>
+          </div>
+          <p v-if="improvementState === 'saved'" class="notice notice-success">改善案を生成しました。改善一覧から確認できます。</p>
+          <p v-if="improvementState === 'error'" class="notice notice-danger">{{ improvementError }}</p>
         </PanelCard>
 
         <PanelCard

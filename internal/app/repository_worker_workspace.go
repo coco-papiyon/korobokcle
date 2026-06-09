@@ -28,7 +28,7 @@ func readRepositoryWorkerArtifactFile(cfg *config.Service, repository string, is
 	return readFirstArtifactFile(dir, names...)
 }
 
-func buildRepositoryDesignContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event) (skill.DesignContext, error) {
+func buildRepositoryDesignContext(cfg *config.Service, workDir string, improvementWorkDir string, job domain.Job, events []domain.Event) (skill.DesignContext, error) {
 	ctxData := skill.DesignContext{
 		JobID:       job.ID,
 		Repository:  job.Repository,
@@ -67,6 +67,12 @@ func buildRepositoryDesignContext(cfg *config.Service, workDir string, job domai
 	ctxData.Labels = snapshot.Labels
 	ctxData.Assignees = snapshot.Assignees
 
+	if instructions, err := loadRepositoryImprovementInstructions(cfg, improvementWorkDir, job.Repository, "design"); err != nil {
+		return skill.DesignContext{}, err
+	} else {
+		ctxData.ManagedInstructions = instructions
+	}
+
 	return ctxData, nil
 }
 
@@ -94,9 +100,9 @@ func resolveRepositoryImplementationRunSpec(cfg *config.Service, workDir string,
 	}, nil
 }
 
-func buildRepositoryImplementationContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
+func buildRepositoryImplementationContext(cfg *config.Service, workDir string, improvementWorkDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
 	if job.Type == domain.JobTypePRFeedback {
-		return buildRepositoryPRFeedbackImplementationContext(cfg, workDir, job, events, runSpec)
+		return buildRepositoryPRFeedbackImplementationContext(cfg, workDir, improvementWorkDir, job, events, runSpec)
 	}
 
 	designArtifactDir := repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
@@ -117,14 +123,6 @@ func buildRepositoryImplementationContext(cfg *config.Service, workDir string, j
 		ArtifactDir:       runSpec.ArtifactDir,
 	}
 
-	implementationArtifact, err := readRepositoryWorkerArtifactFile(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation, "result.md", "implement.md", "summary.md", "stdout.log")
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return skill.ImplementationContext{}, err
-	}
-	if err == nil {
-		ctxData.ImplementationArtifact = string(implementationArtifact)
-	}
-
 	ctxData.DesignApprovalComment, err = loadDesignApprovalComment(events)
 	if err != nil {
 		return skill.ImplementationContext{}, err
@@ -135,8 +133,17 @@ func buildRepositoryImplementationContext(cfg *config.Service, workDir string, j
 		return skill.ImplementationContext{}, err
 	}
 	ctxData.RerunComment = rerunComment
-	ctxData.PreviousFailure = previousFailure
-	ctxData.PreviousTestReport = previousTestReport
+	if strings.TrimSpace(ctxData.RerunComment) != "" {
+		implementationArtifact, err := readRepositoryWorkerArtifactFile(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation, "result.md", "implement.md", "summary.md", "stdout.log")
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return skill.ImplementationContext{}, err
+		}
+		if err == nil {
+			ctxData.ImplementationArtifact = string(implementationArtifact)
+		}
+		ctxData.PreviousFailure = previousFailure
+		ctxData.PreviousTestReport = previousTestReport
+	}
 
 	snapshot, err := issuebody.Resolve(events)
 	if err != nil {
@@ -147,10 +154,16 @@ func buildRepositoryImplementationContext(cfg *config.Service, workDir string, j
 	ctxData.Labels = snapshot.Labels
 	ctxData.Assignees = snapshot.Assignees
 
+	if instructions, err := loadRepositoryImprovementInstructions(cfg, improvementWorkDir, job.Repository, runSpec.SkillName); err != nil {
+		return skill.ImplementationContext{}, err
+	} else {
+		ctxData.ManagedInstructions = instructions
+	}
+
 	return ctxData, nil
 }
 
-func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
+func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workDir string, improvementWorkDir string, job domain.Job, events []domain.Event, runSpec implementationRunSpec) (skill.ImplementationContext, error) {
 	ctxData := skill.ImplementationContext{
 		JobID:       job.ID,
 		Repository:  job.Repository,
@@ -211,10 +224,16 @@ func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workDir
 		break
 	}
 
+	if instructions, err := loadRepositoryImprovementInstructions(cfg, workDir, job.Repository, runSpec.SkillName); err != nil {
+		return skill.ImplementationContext{}, err
+	} else {
+		ctxData.ManagedInstructions = instructions
+	}
+
 	return ctxData, nil
 }
 
-func buildRepositoryReviewContext(cfg *config.Service, workDir string, job domain.Job, events []domain.Event) (skill.ReviewContext, error) {
+func buildRepositoryReviewContext(cfg *config.Service, workDir string, improvementWorkDir string, job domain.Job, events []domain.Event) (skill.ReviewContext, error) {
 	ctxData := skill.ReviewContext{
 		JobID:       job.ID,
 		Repository:  job.Repository,
@@ -247,6 +266,12 @@ func buildRepositoryReviewContext(cfg *config.Service, workDir string, job domai
 		ctxData.SourceURL = payload.URL
 		ctxData.RepositoryHint = job.Repository
 		break
+	}
+
+	if instructions, err := loadRepositoryImprovementInstructions(cfg, improvementWorkDir, job.Repository, "review"); err != nil {
+		return skill.ReviewContext{}, err
+	} else {
+		ctxData.ManagedInstructions = instructions
 	}
 
 	return ctxData, nil

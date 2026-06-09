@@ -146,6 +146,65 @@ func TestBuildImplementationContextIncludesPreviousFailureAndTestReport(t *testi
 	}
 }
 
+func TestBuildImplementationContextSkipsRerunArtifactsWhenCommentMissing(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.ArtifactsDir = "artifacts"
+	files.WatchRules.Rules = []config.WatchRule{{ID: "rule-1", SkillSet: "default"}}
+	svc := config.NewService(root, files)
+
+	job := domain.Job{
+		ID:           "job-2",
+		Repository:   "coco-papiyon/korobokcle",
+		GitHubNumber: 2,
+		State:        domain.StateImplementationRunning,
+		Title:        "Issue",
+		WatchRuleID:  "rule-1",
+	}
+
+	designDir := artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerDesign)
+	if err := os.MkdirAll(designDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(designDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(designDir, "result.md"), []byte("design content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+	implementationDir := artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(implementationDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(implementationDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(implementationDir, "result.md"), []byte("implementation content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(implementation result.md) error = %v", err)
+	}
+
+	runSpec := implementationRunSpec{
+		SkillName:   "implement",
+		ArtifactDir: artifacts.RepositoryWorkerJobPhaseDir(root, "artifacts", job.Repository, job.GitHubNumber, artifacts.WorkerImplementation),
+	}
+
+	got, err := buildImplementationContext(svc, root, job, []domain.Event{
+		{
+			EventType: "issue_matched",
+			Payload:   `{"body":"issue body","author":"alice","labels":["bug"],"assignees":["bob"]}`,
+			CreatedAt: time.Now(),
+		},
+	}, runSpec)
+	if err != nil {
+		t.Fatalf("buildImplementationContext() error = %v", err)
+	}
+	if got.RerunComment != "" {
+		t.Fatalf("expected empty rerun comment, got %q", got.RerunComment)
+	}
+	if got.ImplementationArtifact != "" {
+		t.Fatalf("expected implementation artifact to be omitted, got %q", got.ImplementationArtifact)
+	}
+	if got.PreviousFailure != "" || got.PreviousTestReport != "" {
+		t.Fatalf("expected retry context to be omitted, got %#v", got)
+	}
+}
+
 func TestImplementationPromptIncludesExistingImplementationAndPreviousTestReport(t *testing.T) {
 	t.Parallel()
 

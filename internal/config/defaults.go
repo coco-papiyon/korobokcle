@@ -1,10 +1,16 @@
 package config
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 const (
 	DefaultPollInterval          = 2 * time.Minute
 	DefaultScreenRefreshInterval = 5 * time.Second
+	DefaultImprovementBranch     = "improvement"
+	DefaultImprovementDir        = ".improvements"
+	DefaultImprovementWorkDir    = ".improvement"
 )
 
 var DefaultCopilotAllowTools = []string{}
@@ -18,14 +24,22 @@ func DefaultFiles() Files {
 			DataDir:               "data",
 			ArtifactsDir:          "artifacts",
 			WorkspaceDir:          ".workspace",
-			MonitoredRepositories: []MonitoredRepository{{Repository: "owner/repository", Branch: "", Workers: 1}},
-			Provider:              "mock",
-			Model:                 "",
-			CopilotAllowTools:     append([]string(nil), DefaultCopilotAllowTools...),
-			PRTitleTemplate:       "[#{{issue_number}}]{{issue_title}}",
-			BranchTemplate:        "issue_{{issue_number}}",
-			SQLitePath:            "data/korobokcle.db",
-			ShutdownTimeout:       10 * time.Second,
+			MonitoredRepositories: []MonitoredRepository{{
+				Repository:         "owner/repository",
+				Branch:             "",
+				Workers:            1,
+				ImprovementEnabled: false,
+				ImprovementBranch:  "",
+				ImprovementDir:     "",
+				ImprovementWorkDir: "",
+			}},
+			Provider:          "mock",
+			Model:             "",
+			CopilotAllowTools: append([]string(nil), DefaultCopilotAllowTools...),
+			PRTitleTemplate:   "[#{{issue_number}}]{{issue_title}}",
+			BranchTemplate:    "issue_{{issue_number}}",
+			SQLitePath:        "data/korobokcle.db",
+			ShutdownTimeout:   10 * time.Second,
 		},
 		WatchRules: WatchRulesFile{
 			Rules: []WatchRule{
@@ -86,4 +100,32 @@ func DefaultFiles() Files {
 			Commands: []ToolCommand{},
 		},
 	}
+}
+
+func ResolveImprovementBranch(repository MonitoredRepository) string {
+	branch := repository.ImprovementBranch
+	if trimmed := trimConfigValue(branch); trimmed != "" {
+		return trimmed
+	}
+	return DefaultImprovementBranch
+}
+
+func ResolveImprovementDir(repository MonitoredRepository) string {
+	dir := repository.ImprovementDir
+	if trimmed := trimConfigValue(dir); trimmed != "" {
+		return trimmed
+	}
+	return DefaultImprovementDir
+}
+
+func ResolveImprovementWorkDir(repository MonitoredRepository) string {
+	dir := repository.ImprovementWorkDir
+	if trimmed := trimConfigValue(dir); trimmed != "" {
+		return trimmed
+	}
+	return DefaultImprovementWorkDir
+}
+
+func trimConfigValue(value string) string {
+	return strings.TrimSpace(value)
 }

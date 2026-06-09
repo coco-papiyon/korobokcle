@@ -1,0 +1,13 @@
+## 実装対象
+
+- targetPath: {{ .TargetPath }}
+- documentId: {{ .DocumentID }}
+- title: {{ .Title }}
+- repository: {{ .Repository }}
+- issueNumber: {{ .IssueNumber }}
+- phases: {{ range $index, $phase := .Phases }}{{ if $index }}, {{ end }}{{ $phase }}{{ end }}
+- sourceEvent: {{ .Source.EventType }}
+
+## 承認済み改善案
+
+{{ .ApprovedBody }}

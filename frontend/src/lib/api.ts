@@ -1,4 +1,4 @@
-import type { AppConfig, IssueBodyResponse, Job, JobDetail, NotificationConfig, PRCommentsResponse, ReviewComment, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
+import type { AppConfig, ImprovementDetail, ImprovementSummary, IssueBodyResponse, Job, JobDetail, NotificationConfig, PRCommentsResponse, ReviewComment, SkillSet, SkillSetSummary, TestProfile, ToolCommand, WatchRule } from '@/types'
 import { requestFailedMessage } from '@/lib/ui-text'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -39,6 +39,49 @@ export function analyzePRComment(jobId: string, comment: ReviewComment): Promise
   return request<JobDetail>(`/api/jobs/${jobId}/pr-comments/analyze`, {
     method: 'POST',
     body: JSON.stringify({ comment }),
+  })
+}
+
+export function fetchImprovements(): Promise<ImprovementSummary[]> {
+  return request<ImprovementSummary[]>('/api/improvements')
+}
+
+export function fetchImprovementDetail(jobId: string): Promise<ImprovementDetail> {
+  return request<ImprovementDetail>(`/api/improvements/${jobId}`)
+}
+
+export function saveImprovementDraft(jobId: string, draft: string, notes: string): Promise<ImprovementDetail> {
+  return request<ImprovementDetail>(`/api/improvements/${jobId}/draft`, {
+    method: 'PUT',
+    body: JSON.stringify({ draft, notes }),
+  })
+}
+
+export function approveImprovement(jobId: string, comment: string, resultBody: string): Promise<ImprovementDetail> {
+  return request<ImprovementDetail>(`/api/improvements/${jobId}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ comment, resultBody }),
+  })
+}
+
+export function rejectImprovement(jobId: string, comment: string, resultBody: string): Promise<ImprovementDetail> {
+  return request<ImprovementDetail>(`/api/improvements/${jobId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ comment, resultBody }),
+  })
+}
+
+export function regenerateImprovement(jobId: string, sourceEventType = ''): Promise<ImprovementDetail> {
+  return request<ImprovementDetail>(`/api/improvements/${jobId}/regenerate`, {
+    method: 'POST',
+    body: JSON.stringify({ sourceEventType }),
+  })
+}
+
+export function generateImprovement(jobId: string, sourceEventType = ''): Promise<ImprovementDetail> {
+  return request<ImprovementDetail>(`/api/jobs/${jobId}/improvements/generate`, {
+    method: 'POST',
+    body: JSON.stringify({ sourceEventType }),
   })
 }
 
