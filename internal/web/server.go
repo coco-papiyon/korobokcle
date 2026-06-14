@@ -31,6 +31,7 @@ type Server struct {
 	prepareRepositoryWorkspaces func(context.Context, config.App) error
 	improvementGenerator        func(context.Context, string, string) error
 	improvementApprover         func(context.Context, string, ImprovementApprovalRequest) error
+	improvementPusher           func(context.Context, string) error
 }
 
 type IssueBodyFetcher interface {
@@ -141,6 +142,8 @@ func New(cfg *config.Service, orch *orchestrator.Orchestrator, issueBodyFetcher 
 	api.HandleFunc("/improvements/{id}/approve", s.handleApproveImprovement).Methods(http.MethodPost)
 	api.HandleFunc("/improvements/{id}/reject", s.handleRejectImprovement).Methods(http.MethodPost)
 	api.HandleFunc("/improvements/{id}/regenerate", s.handleRegenerateImprovement).Methods(http.MethodPost)
+	api.HandleFunc("/improvements/{id}/workspace", s.handleSaveImprovementWorkspace).Methods(http.MethodPut)
+	api.HandleFunc("/improvements/{id}/push", s.handlePushImprovement).Methods(http.MethodPost)
 	api.HandleFunc("/skillsets", s.handleSkillSets).Methods(http.MethodGet)
 	api.HandleFunc("/skillsets", s.handleCreateSkillSet).Methods(http.MethodPost)
 	api.HandleFunc("/skillsets/{name}", s.handleSkillSet).Methods(http.MethodGet)
@@ -179,6 +182,10 @@ func (s *Server) SetImprovementGenerator(fn func(context.Context, string, string
 
 func (s *Server) SetImprovementApprover(fn func(context.Context, string, ImprovementApprovalRequest) error) {
 	s.improvementApprover = fn
+}
+
+func (s *Server) SetImprovementPusher(fn func(context.Context, string) error) {
+	s.improvementPusher = fn
 }
 
 func resolveStaticDir() (string, error) {

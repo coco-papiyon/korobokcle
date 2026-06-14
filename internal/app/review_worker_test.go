@@ -99,3 +99,17 @@ func TestRunPendingReviewsCompletesJob(t *testing.T) {
 func nowUTC() time.Time {
 	return time.Now().UTC().Truncate(time.Second)
 }
+
+func TestResolveReviewSkillNameFallsBackWhenWatchRuleMissing(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{})
+
+	got, err := resolveReviewSkillName(cfg, "missing-rule")
+	if err != nil {
+		t.Fatalf("resolveReviewSkillName() error = %v", err)
+	}
+	if got != "review" {
+		t.Fatalf("expected review, got %q", got)
+	}
+}

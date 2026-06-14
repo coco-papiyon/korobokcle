@@ -155,7 +155,6 @@ func cloneMonitoredRepositories(values []MonitoredRepository) []MonitoredReposit
 			ImprovementEnabled: repository.ImprovementEnabled,
 			ImprovementBranch:  repository.ImprovementBranch,
 			ImprovementDir:     repository.ImprovementDir,
-			ImprovementWorkDir: repository.ImprovementWorkDir,
 		})
 	}
 	return cloned

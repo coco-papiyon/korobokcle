@@ -149,7 +149,8 @@ func buildPRCommentAnalysisContext(cfg *config.Service, workDir string, job doma
 		URL:    selectedComment.URL,
 	}}
 
-	improvementWorkDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository)
+	repoConfig, _ := resolveMonitoredRepository(cfg, job.Repository)
+	improvementWorkDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repoConfig))
 	if instructions, err := loadRepositoryImprovementInstructions(cfg, improvementWorkDir, job.Repository, reviewFixSkillName); err != nil {
 		return skill.ImplementationContext{}, err
 	} else {

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -183,6 +185,45 @@ func TestClientFetchIssueBodyReturnsErrorForNonSuccessStatus(t *testing.T) {
 
 	if _, err := client.FetchIssueBody(context.Background(), "owner/repo", 42); err == nil {
 		t.Fatalf("expected FetchIssueBody() to fail")
+	}
+}
+
+func TestClientSkipsDummyRepositoryOperations(t *testing.T) {
+	t.Parallel()
+
+	client := NewClient(stubTokenProvider{}, nil)
+	client.baseURL = "https://example.invalid"
+
+	items, err := client.ListIssues(context.Background(), config.WatchRule{}, "coco-papiyon/dummy", time.Time{})
+	if err != nil {
+		t.Fatalf("ListIssues() error = %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 items, got %d", len(items))
+	}
+
+	body, err := client.FetchIssueBody(context.Background(), "coco-papiyon/dummy", 42)
+	if err != nil {
+		t.Fatalf("FetchIssueBody() error = %v", err)
+	}
+	if body != "" {
+		t.Fatalf("expected empty body, got %q", body)
+	}
+
+	root := t.TempDir()
+	artifactDir := filepath.Join(root, "artifacts")
+	comments, err := client.FetchPullRequestComments(context.Background(), "coco-papiyon/dummy", 7, artifactDir)
+	if err != nil {
+		t.Fatalf("FetchPullRequestComments() error = %v", err)
+	}
+	if comments.PullNumber != 7 {
+		t.Fatalf("pull number = %d, want 7", comments.PullNumber)
+	}
+	if len(comments.Comments) != 0 {
+		t.Fatalf("expected 0 comments, got %d", len(comments.Comments))
+	}
+	if _, err := os.Stat(filepath.Join(artifactDir, "gh-pr-comments.json")); err != nil {
+		t.Fatalf("expected comments artifact: %v", err)
 	}
 }
 

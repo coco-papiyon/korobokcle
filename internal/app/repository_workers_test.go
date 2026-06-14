@@ -64,7 +64,7 @@ func TestCloneRepositoryWorkspaceClonesLocalRepository(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(workerDir, "README.md")); err != nil {
 		t.Fatalf("expected cloned file: %v", err)
 	}
-	if workerDir != artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, source, 0) {
+	if workerDir != artifacts.RepositoryWorkerBranchWorkDir(root, cfg.App().ArtifactsDir, source, "main") {
 		t.Fatalf("unexpected worker dir: %s", workerDir)
 	}
 	if _, err := os.Stat(filepath.Join(workerDir, ".workspace")); !os.IsNotExist(err) {
@@ -110,7 +110,7 @@ func TestCloneRepositoryWorkspaceReplacesExistingNonGitDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cloneRepositoryWorkspace() error = %v", err)
 	}
-	if workerDir != artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, source, 0) {
+	if workerDir != artifacts.RepositoryWorkerBranchWorkDir(root, cfg.App().ArtifactsDir, source, "main") {
 		t.Fatalf("unexpected worker dir: %s", workerDir)
 	}
 	if _, err := os.Stat(filepath.Join(workerDir, ".workspace")); !os.IsNotExist(err) {
@@ -144,7 +144,7 @@ func TestCloneRepositoryWorkspaceRemovesStaleWorkspaceDirectory(t *testing.T) {
 	}
 
 	cfg := config.NewService(root, config.DefaultFiles())
-	workerDir := artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, source, 0)
+	workerDir := artifacts.RepositoryWorkerBranchWorkDir(root, cfg.App().ArtifactsDir, source, "main")
 	legacyWorkspaceDir := filepath.Join(workerDir, ".workspace", "issue_42", "design")
 	if err := os.MkdirAll(legacyWorkspaceDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(workspace) error = %v", err)
@@ -214,17 +214,17 @@ func TestCloneRepositoryWorkspaceUsesRepositoryRemoteInsteadOfSharedImprovementC
 	if err != nil {
 		t.Fatalf("prepareRepositoryWorkspace() error = %v", err)
 	}
-	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, source)
-	if _, err := prepareRepositoryImprovementWorkspace(context.Background(), cfg, source); err != nil {
-		t.Fatalf("prepareRepositoryImprovementWorkspace() error = %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(improvementDir, ".improvement", "draft"), 0o755); err != nil {
-		t.Fatalf("MkdirAll(.improvement/draft) error = %v", err)
-	}
 	repositoryConfig := config.MonitoredRepository{
 		Repository:         source,
 		ImprovementEnabled: true,
 		ImprovementBranch:  "develop",
+	}
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, source, config.ResolveImprovementBranch(repositoryConfig))
+	if _, err := prepareRepositoryImprovementWorkspace(context.Background(), cfg, repositoryConfig); err != nil {
+		t.Fatalf("prepareRepositoryImprovementWorkspace() error = %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(improvementDir, ".improvement", "draft"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.improvement/draft) error = %v", err)
 	}
 	if err := syncRepositoryImprovementWorkspace(context.Background(), cfg, repositoryConfig, improvementDir, log.New(io.Discard, "", 0)); err != nil {
 		t.Fatalf("syncRepositoryImprovementWorkspace() error = %v", err)
@@ -259,7 +259,7 @@ func TestBuildRepositoryDesignContextIgnoresLegacyArtifactDirectory(t *testing.T
 	files := config.DefaultFiles()
 	svc := config.NewService(root, files)
 
-	workerDir := artifacts.RepositoryWorkerSourceDir(root, svc.App().ArtifactsDir, "owner/repository", 0)
+	workerDir := artifacts.RepositoryWorkerBranchWorkDir(root, svc.App().ArtifactsDir, "owner/repository", "main")
 	legacyDesignDir := filepath.Join(workerDir, ".workspace", "design", "job-42")
 	if err := os.MkdirAll(legacyDesignDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(legacyDesignDir) error = %v", err)
@@ -699,13 +699,13 @@ func TestSyncRepositoryImprovementWorkspaceChecksOutImprovementBranchAndPreserve
 	if err := runGit(t, source, "checkout", "-b", "develop"); err != nil {
 		t.Fatalf("git checkout develop error = %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(source, ".improvements"), 0o755); err != nil {
-		t.Fatalf("MkdirAll(.improvements) error = %v", err)
+	if err := os.MkdirAll(filepath.Join(source, ".improvement"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.improvement) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(source, ".improvements", "policy.md"), []byte("---\nid: policy\ntitle: Policy\nscope: repository\nphases:\n  - design\nstatus: active\nupdatedAt: 2026-06-08T00:00:00Z\nsource:\n  repository: owner/repository\n\n---\n\nAlways keep tests green.\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(source, ".improvement", "policy.md"), []byte("---\nid: policy\ntitle: Policy\nscope: repository\nphases:\n  - design\nstatus: active\nupdatedAt: 2026-06-08T00:00:00Z\nsource:\n  repository: owner/repository\n\n---\n\nAlways keep tests green.\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(policy.md) error = %v", err)
 	}
-	if err := runGit(t, source, "add", ".improvements/policy.md"); err != nil {
+	if err := runGit(t, source, "add", ".improvement/policy.md"); err != nil {
 		t.Fatalf("git add policy error = %v", err)
 	}
 	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "develop"); err != nil {
@@ -720,24 +720,23 @@ func TestSyncRepositoryImprovementWorkspaceChecksOutImprovementBranchAndPreserve
 	if err != nil {
 		t.Fatalf("prepareRepositoryWorkspace() error = %v", err)
 	}
-	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, source)
-	if _, err := prepareRepositoryImprovementWorkspace(context.Background(), cfg, source); err != nil {
+	repositoryConfig := config.MonitoredRepository{
+		Repository:         source,
+		ImprovementEnabled: true,
+		ImprovementBranch:  "develop",
+		ImprovementDir:     ".improvement",
+	}
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, source, config.ResolveImprovementBranch(repositoryConfig))
+	if _, err := prepareRepositoryImprovementWorkspace(context.Background(), cfg, repositoryConfig); err != nil {
 		t.Fatalf("prepareRepositoryImprovementWorkspace() error = %v", err)
 	}
 	if err := os.MkdirAll(filepath.Join(improvementDir, ".improvement", "draft"), 0o755); err != nil {
 		t.Fatalf("MkdirAll(.improvement/draft) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(improvementDir, ".improvement", "draft", "draft.md"), []byte("keep me\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile(draft.md) error = %v", err)
+	if err := os.WriteFile(filepath.Join(improvementDir, ".improvement", "draft", "source-repo_keep-me-safe.md"), []byte("keep me\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(draft) error = %v", err)
 	}
 
-	repositoryConfig := config.MonitoredRepository{
-		Repository:         source,
-		ImprovementEnabled: true,
-		ImprovementBranch:  "develop",
-		ImprovementDir:     ".improvements",
-		ImprovementWorkDir: ".improvement",
-	}
 	if err := syncRepositoryImprovementWorkspace(context.Background(), cfg, repositoryConfig, improvementDir, log.New(io.Discard, "", 0)); err != nil {
 		t.Fatalf("syncRepositoryImprovementWorkspace() error = %v", err)
 	}
@@ -750,7 +749,7 @@ func TestSyncRepositoryImprovementWorkspaceChecksOutImprovementBranchAndPreserve
 		t.Fatalf("expected develop branch, got %q", currentBranch)
 	}
 
-	policyRaw, err := os.ReadFile(filepath.Join(improvementDir, ".improvements", "policy.md"))
+	policyRaw, err := os.ReadFile(filepath.Join(improvementDir, ".improvement", "policy.md"))
 	if err != nil {
 		t.Fatalf("ReadFile(policy.md) error = %v", err)
 	}
@@ -758,9 +757,9 @@ func TestSyncRepositoryImprovementWorkspaceChecksOutImprovementBranchAndPreserve
 		t.Fatalf("expected improvement policy from develop branch, got %q", string(policyRaw))
 	}
 
-	draftRaw, err := os.ReadFile(filepath.Join(improvementDir, ".improvement", "draft", "draft.md"))
+	draftRaw, err := os.ReadFile(filepath.Join(improvementDir, ".improvement", "draft", "source-repo_keep-me-safe.md"))
 	if err != nil {
-		t.Fatalf("ReadFile(draft.md) error = %v", err)
+		t.Fatalf("ReadFile(draft) error = %v", err)
 	}
 	if string(draftRaw) != "keep me\n" {
 		t.Fatalf("expected draft dir to be preserved, got %q", string(draftRaw))
@@ -797,7 +796,7 @@ func TestSyncRepositoryImprovementWorkspaceNoopWhenDisabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareRepositoryWorkspace() error = %v", err)
 	}
-	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, source)
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, source, "")
 	if err := os.MkdirAll(improvementDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(improvementDir) error = %v", err)
 	}
@@ -825,17 +824,17 @@ func TestBuildRepositoryDesignContextLoadsInstructionsFromImprovementWorkspace(t
 			Repository:         "owner/repository",
 			Workers:            1,
 			ImprovementEnabled: true,
-			ImprovementDir:     ".improvements",
+			ImprovementDir:     ".improvement",
 		},
 	}
 	svc := config.NewService(root, files)
 
-	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, svc.App().ArtifactsDir, "owner/repository")
-	if err := os.MkdirAll(filepath.Join(workDir, ".improvements"), 0o755); err != nil {
-		t.Fatalf("MkdirAll(.improvements) error = %v", err)
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, svc.App().ArtifactsDir, "owner/repository", "")
+	if err := os.MkdirAll(filepath.Join(workDir, ".improvement"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.improvement) error = %v", err)
 	}
 	raw := []byte("---\nid: policy\ntitle: Policy\nscope: repository\nphases:\n  - design\nstatus: active\nupdatedAt: 2026-06-08T00:00:00Z\nsource:\n  repository: owner/repository\n\n---\n\nAlways include rollback steps.\n")
-	if err := os.WriteFile(filepath.Join(workDir, ".improvements", "policy.md"), raw, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workDir, ".improvement", "policy.md"), raw, 0o644); err != nil {
 		t.Fatalf("WriteFile(policy.md) error = %v", err)
 	}
 
@@ -873,8 +872,8 @@ func TestRepositoryWorkerSourceAndLogPaths(t *testing.T) {
 	t.Parallel()
 
 	startedAt := time.Date(2026, 5, 19, 14, 52, 0, 0, time.Local)
-	sourceDir := artifacts.RepositoryWorkerSourceDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2)
-	wantSourceDir := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "workers", "worker-2", "source")
+	sourceDir := artifacts.RepositoryWorkerBranchWorkDir("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", "main")
+	wantSourceDir := filepath.Join("C:\\repo", "source", "coco-papiyon-korobokcle-main")
 	if sourceDir != wantSourceDir {
 		t.Fatalf("expected source dir %q, got %q", wantSourceDir, sourceDir)
 	}
@@ -933,12 +932,12 @@ func TestRepositoryWorkerSourceDirUsesConfiguredWorkerDir(t *testing.T) {
 	cfg := config.NewService(root, files)
 
 	got0 := repositoryWorkerSourceDir(cfg, "owner/repository", 0)
-	want0 := filepath.Join(root, "artifacts", "owner-repository", "workers", "worker-0", "source")
+	want0 := filepath.Join(root, "source", "owner-repository-main")
 	if got0 != want0 {
 		t.Fatalf("expected worker dir %q, got %q", want0, got0)
 	}
 	got1 := repositoryWorkerSourceDir(cfg, "owner/repository", 1)
-	want1 := filepath.Join(root, "artifacts", "owner-repository", "workers", "worker-1", "source")
+	want1 := filepath.Join(root, "source", "owner-repository-main")
 	if got1 != want1 {
 		t.Fatalf("expected worker dir %q, got %q", want1, got1)
 	}
@@ -993,7 +992,7 @@ func TestJobAssignedToWorkerUsesCanonicalRepositoryID(t *testing.T) {
 	}
 }
 
-func TestJobsForRepositoryWorkerBlocksOtherJobsDuringReservedStates(t *testing.T) {
+func TestJobsForRepositoryWorkerKeepsDetectedJobsWhenReservedJobsAreNotRunnable(t *testing.T) {
 	t.Parallel()
 
 	jobs := []domain.Job{
@@ -1012,11 +1011,14 @@ func TestJobsForRepositoryWorkerBlocksOtherJobsDuringReservedStates(t *testing.T
 	}
 
 	selected := jobsForRepositoryWorker(jobs, "https://github.com/owner/repository", 0, 1)
-	if len(selected) != 1 {
-		t.Fatalf("expected exactly one selected job, got %d", len(selected))
+	if len(selected) != 2 {
+		t.Fatalf("expected both jobs to stay visible, got %d", len(selected))
 	}
 	if selected[0].ID != "issue-owner-repository-2" {
-		t.Fatalf("expected reserved job to block the worker, got %q", selected[0].ID)
+		t.Fatalf("expected reserved job first, got %q", selected[0].ID)
+	}
+	if selected[1].ID != "issue-owner-repository-1" {
+		t.Fatalf("expected detected job second, got %q", selected[1].ID)
 	}
 }
 
@@ -1089,8 +1091,8 @@ func TestProcessPRJobForPRFeedbackPushesAndCommentsWithoutCreatingPR(t *testing.
 		t.Fatalf("UpsertJob() error = %v", err)
 	}
 
-	workerDir := artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, job.Repository, 0)
-	artifactDir := artifacts.RepositoryWorkerJobPhaseDir(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
+	workerDir := artifacts.RepositoryWorkerBranchWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "main")
+	artifactDir := artifacts.RepositoryWorkerJobPhaseDir(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerFix)
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -1104,6 +1106,9 @@ func TestProcessPRJobForPRFeedbackPushesAndCommentsWithoutCreatingPR(t *testing.
 	commenter := &recordingPRCommentSubmitter{}
 
 	workDir := artifacts.RepositoryWorkerWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "")
+	if _, err := buildRepositoryPRFeedbackPushRequest(ctx, cfg, job, workDir); err != nil {
+		t.Fatalf("buildRepositoryPRFeedbackPushRequest() error = %v", err)
+	}
 	if err := processPRJob(ctx, cfg, orch, pusher, creator, commenter, MockPRCommentFetcher{}, job, workDir, workerDir, log.New(io.Discard, "", 0)); err != nil {
 		t.Fatalf("processPRJob() error = %v", err)
 	}
@@ -1177,12 +1182,12 @@ func TestProcessPRJobForIssueFetchesPRCommentsAfterCreate(t *testing.T) {
 		t.Fatalf("UpsertJob() error = %v", err)
 	}
 
-	workerDir := artifacts.RepositoryWorkerSourceDir(root, cfg.App().ArtifactsDir, job.Repository, 0)
-	artifactDir := artifacts.RepositoryWorkerJobPhaseDir(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
-	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+	workerDir := artifacts.RepositoryWorkerBranchWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "main")
+	summaryDir := artifacts.RepositoryWorkerJobPhaseDir(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(summaryDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(artifactDir, "result.md"), []byte("summary"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(summaryDir, "result.md"), []byte("summary"), 0o644); err != nil {
 		t.Fatalf("WriteFile(result.md) error = %v", err)
 	}
 
@@ -1206,6 +1211,9 @@ func TestProcessPRJobForIssueFetchesPRCommentsAfterCreate(t *testing.T) {
 	}
 	if err := runGit(t, workDir, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "init"); err != nil {
 		t.Fatalf("git commit error = %v", err)
+	}
+	if _, err := buildRepositoryPRCreateRequest(ctx, cfg, job, workDir); err != nil {
+		t.Fatalf("buildRepositoryPRCreateRequest() error = %v", err)
 	}
 	if err := processPRJob(ctx, cfg, orch, pusher, creator, commentSubmitter, commentFetcher, job, workDir, workerDir, log.New(io.Discard, "", 0)); err != nil {
 		t.Fatalf("processPRJob() error = %v", err)
@@ -1242,6 +1250,325 @@ func TestProcessPRJobForIssueFetchesPRCommentsAfterCreate(t *testing.T) {
 	}
 	if got := payload["pullNumber"]; got != float64(1) {
 		t.Fatalf("expected pullNumber 1, got %#v", got)
+	}
+}
+
+func TestProcessPRJobSkipsExternalOperationsForDummyRepository(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := config.NewService(root, config.DefaultFiles())
+	ctx := context.Background()
+
+	store, err := sqlite.Open(filepath.Join(root, "test.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	orch := orchestrator.New(store, notification.NewNopNotifier())
+	job := domain.Job{
+		ID:           "job-pr-create-dummy",
+		Type:         domain.JobTypeIssue,
+		Repository:   "coco-papiyon/dummy",
+		GitHubNumber: 42,
+		State:        domain.StatePRCreating,
+		Title:        "Implement feature",
+		BranchName:   "feature/pr-42",
+		WatchRuleID:  "rule",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(ctx, job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	workerDir := artifacts.RepositoryWorkerBranchWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "main")
+	summaryDir := artifacts.RepositoryWorkerJobPhaseDir(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(summaryDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(summaryDir, "result.md"), []byte("summary"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+	artifactDir := artifacts.RepositoryWorkerJobPhaseDir(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerPR)
+
+	pusher := &recordingBranchPusher{}
+	creator := &recordingPRCreator{}
+	commentSubmitter := &recordingPRCommentSubmitter{}
+	commentFetcher := &recordingPRCommentFetcher{}
+
+	workDir := artifacts.RepositoryWorkerWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(workDir) error = %v", err)
+	}
+	if err := runGit(t, workDir, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("dummy pr create test"), 0o644); err != nil {
+		t.Fatalf("WriteFile(README.md) error = %v", err)
+	}
+	if err := runGit(t, workDir, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, workDir, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "init"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+	if _, err := buildRepositoryPRCreateRequest(ctx, cfg, job, workDir); err != nil {
+		t.Fatalf("buildRepositoryPRCreateRequest() error = %v", err)
+	}
+	if err := processPRJob(ctx, cfg, orch, pusher, creator, commentSubmitter, commentFetcher, job, workDir, workerDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("processPRJob() error = %v", err)
+	}
+
+	if pusher.called {
+		t.Fatalf("expected branch push to be skipped")
+	}
+	if creator.called {
+		t.Fatalf("expected PR creator to be skipped")
+	}
+	if commentSubmitter.called {
+		t.Fatalf("expected comment submitter to be skipped")
+	}
+	if commentFetcher.called {
+		t.Fatalf("expected comment fetcher to be skipped")
+	}
+
+	resultRaw, err := os.ReadFile(filepath.Join(artifactDir, "result.json"))
+	if err != nil {
+		t.Fatalf("ReadFile(result.json) error = %v", err)
+	}
+	var resultPayload map[string]any
+	if err := json.Unmarshal(resultRaw, &resultPayload); err != nil {
+		t.Fatalf("Unmarshal(result.json) error = %v", err)
+	}
+	if got := resultPayload["pushed"]; got != false {
+		t.Fatalf("expected pushed=false, got %#v", got)
+	}
+
+	updatedJob, err := store.GetJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("GetJob() error = %v", err)
+	}
+	if updatedJob.State != domain.StateCompleted {
+		t.Fatalf("job state = %s, want %s", updatedJob.State, domain.StateCompleted)
+	}
+}
+
+func TestProcessPRJobForIssueBootstrapsPRReviewJobOnlyForMockProvider(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.Provider = "mock"
+	files.WatchRules.Rules = []config.WatchRule{{
+		ID:           "pr-review",
+		Name:         "PR Review",
+		Repositories: []string{"owner/repository"},
+		Target:       string(domain.TargetPullRequest),
+		Enabled:      true,
+	}}
+	cfg := config.NewService(root, files)
+	ctx := context.Background()
+
+	store, err := sqlite.Open(filepath.Join(root, "test.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	orch := orchestrator.New(store, notification.NewNopNotifier())
+	job := domain.Job{
+		ID:           "job-pr-create",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		State:        domain.StatePRCreating,
+		Title:        "Implement feature",
+		BranchName:   "feature/pr-42",
+		WatchRuleID:  "rule",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(ctx, job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	workerDir := artifacts.RepositoryWorkerBranchWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "main")
+	artifactDir := artifacts.RepositoryWorkerJobPhaseDir(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "result.md"), []byte("summary"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	pusher := &recordingBranchPusher{}
+	creator := &recordingPRCreator{}
+	commentSubmitter := &recordingPRCommentSubmitter{}
+	commentFetcher := &recordingPRCommentFetcher{}
+
+	workDir := artifacts.RepositoryWorkerWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(workDir) error = %v", err)
+	}
+	if err := runGit(t, workDir, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("pr create test"), 0o644); err != nil {
+		t.Fatalf("WriteFile(README.md) error = %v", err)
+	}
+	if err := runGit(t, workDir, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, workDir, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "init"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+	if _, err := buildRepositoryPRCreateRequest(ctx, cfg, job, workDir); err != nil {
+		t.Fatalf("buildRepositoryPRCreateRequest() error = %v", err)
+	}
+	if err := processPRJob(ctx, cfg, orch, pusher, creator, commentSubmitter, commentFetcher, job, workDir, workerDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("processPRJob() error = %v", err)
+	}
+
+	jobs, err := orch.ListJobs(ctx)
+	if err != nil {
+		t.Fatalf("ListJobs() error = %v", err)
+	}
+	if got := countJobsOfType(jobs, domain.JobTypePRReview); got != 1 {
+		t.Fatalf("review job count = %d, want 1", got)
+	}
+}
+
+func TestProcessPRJobForIssueDoesNotBootstrapPRReviewJobForNonMockProvider(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	files := config.DefaultFiles()
+	files.App.Provider = "codex"
+	files.WatchRules.Rules = []config.WatchRule{{
+		ID:           "pr-review",
+		Name:         "PR Review",
+		Repositories: []string{"owner/repository"},
+		Target:       string(domain.TargetPullRequest),
+		Enabled:      true,
+	}}
+	cfg := config.NewService(root, files)
+	ctx := context.Background()
+
+	store, err := sqlite.Open(filepath.Join(root, "test.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	orch := orchestrator.New(store, notification.NewNopNotifier())
+	job := domain.Job{
+		ID:           "job-pr-create",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		State:        domain.StatePRCreating,
+		Title:        "Implement feature",
+		BranchName:   "feature/pr-42",
+		WatchRuleID:  "rule",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(ctx, job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	workerDir := artifacts.RepositoryWorkerBranchWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "main")
+	artifactDir := artifacts.RepositoryWorkerJobPhaseDir(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, "result.md"), []byte("summary"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	pusher := &recordingBranchPusher{}
+	creator := &recordingPRCreator{}
+	commentSubmitter := &recordingPRCommentSubmitter{}
+	commentFetcher := &recordingPRCommentFetcher{}
+
+	workDir := artifacts.RepositoryWorkerWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(workDir) error = %v", err)
+	}
+	if err := runGit(t, workDir, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("pr create test"), 0o644); err != nil {
+		t.Fatalf("WriteFile(README.md) error = %v", err)
+	}
+	if err := runGit(t, workDir, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, workDir, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "init"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+	if err := processPRJob(ctx, cfg, orch, pusher, creator, commentSubmitter, commentFetcher, job, workDir, workerDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("processPRJob() error = %v", err)
+	}
+
+	jobs, err := orch.ListJobs(ctx)
+	if err != nil {
+		t.Fatalf("ListJobs() error = %v", err)
+	}
+	if got := countJobsOfType(jobs, domain.JobTypePRReview); got != 0 {
+		t.Fatalf("review job count = %d, want 0", got)
+	}
+}
+
+func TestRepositoryCloneSourceUsesFixtureLocalSourceWhenAvailable(t *testing.T) {
+	root := t.TempDir()
+	sourceDir := filepath.Join(root, "source", "owner-repository")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(sourceDir) error = %v", err)
+	}
+	t.Setenv("KOROBOKCLE_TOOL_ROOT", root)
+
+	got := repositoryCloneSource("owner/repository")
+	if !filepath.IsAbs(got) {
+		t.Fatalf("repositoryCloneSource() = %q, want absolute path", got)
+	}
+	if got != sourceDir {
+		t.Fatalf("repositoryCloneSource() = %q, want %q", got, sourceDir)
+	}
+}
+
+func TestRepositoryWorkersFromJobsSkipsEmptyRepositories(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	store, err := sqlite.Open(filepath.Join(root, "test.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC()
+	jobs := []domain.Job{
+		{ID: "job-1", Type: domain.JobTypeIssue, Repository: "owner/repository", GitHubNumber: 1, State: domain.StateDetected, CreatedAt: now, UpdatedAt: now},
+		{ID: "job-2", Type: domain.JobTypeIssue, Repository: "", GitHubNumber: 2, State: domain.StateDetected, CreatedAt: now, UpdatedAt: now},
+	}
+	for _, job := range jobs {
+		if err := store.UpsertJob(context.Background(), job); err != nil {
+			t.Fatalf("UpsertJob() error = %v", err)
+		}
+	}
+
+	repositories := repositoryWorkersFromJobs(context.Background(), orchestrator.New(store, notification.NewNopNotifier()))
+	if len(repositories) != 1 {
+		t.Fatalf("repository count = %d, want 1", len(repositories))
+	}
+	if repositories[0].Repository != "owner/repository" {
+		t.Fatalf("repository = %q, want owner/repository", repositories[0].Repository)
+	}
+	if repositories[0].Workers != 1 {
+		t.Fatalf("workers = %d, want 1", repositories[0].Workers)
 	}
 }
 
@@ -1296,4 +1623,14 @@ func runGit(t *testing.T, dir string, args ...string) error {
 		t.Fatalf("git %v failed: %v: %s", args, err, string(out))
 	}
 	return nil
+}
+
+func countJobsOfType(jobs []domain.Job, jobType domain.JobType) int {
+	count := 0
+	for _, job := range jobs {
+		if job.Type == jobType {
+			count++
+		}
+	}
+	return count
 }

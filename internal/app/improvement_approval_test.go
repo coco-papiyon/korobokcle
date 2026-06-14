@@ -17,7 +17,7 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/storage/sqlite"
 )
 
-func TestApplyImprovementApprovalApprovesAndPushesBranch(t *testing.T) {
+func TestApplyImprovementApprovalPreparesBranchAndPushesLater(t *testing.T) {
 	t.Parallel()
 
 	if _, err := exec.LookPath("git"); err != nil {
@@ -79,8 +79,7 @@ func TestApplyImprovementApprovalApprovesAndPushesBranch(t *testing.T) {
 				Workers:            1,
 				ImprovementEnabled: true,
 				ImprovementBranch:  "develop",
-				ImprovementDir:     ".improvements",
-				ImprovementWorkDir: ".improvement",
+				ImprovementDir:     ".improvement",
 			}},
 		},
 	})
@@ -99,11 +98,11 @@ func TestApplyImprovementApprovalApprovesAndPushesBranch(t *testing.T) {
 		t.Fatalf("UpsertJob() error = %v", err)
 	}
 
-	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository)
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository, "develop")
 	if err := runGit(t, root, "clone", remote, workDir); err != nil {
 		t.Fatalf("git clone improvement workspace error = %v", err)
 	}
-	workFiles := repositoryImprovementWorkFiles(workDir, ".improvement")
+	workFiles := repositoryImprovementWorkFiles(workDir, ".improvement", job.ID, job.Title)
 	artifactFiles := repositoryImprovementArtifactFiles(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber)
 
 	contextData := improvementContextData{
@@ -121,7 +120,7 @@ func TestApplyImprovementApprovalApprovesAndPushesBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalIndent(context) error = %v", err)
 	}
-	if err := writeImprovementFile(workFiles.ContextPath, contextRaw); err != nil {
+	if err := writeImprovementFile(artifactFiles.ContextPath, contextRaw); err != nil {
 		t.Fatalf("write context error = %v", err)
 	}
 	draft := "# 改善方針案\n\n## タイトル\n\n設計書の API 境界方針\n\n## 汎化した方針案\n\n- API 境界を先に明示する。\n"
@@ -148,25 +147,33 @@ func TestApplyImprovementApprovalApprovesAndPushesBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(design.md) error = %v", err)
 	}
-	if !strings.Contains(string(phaseRaw), "title: 設計書の API 境界方針") {
-		t.Fatalf("expected phase markdown title, got %s", string(phaseRaw))
+	if !strings.Contains(string(phaseRaw), "# 改善実装結果") {
+		t.Fatalf("expected implementation summary, got %s", string(phaseRaw))
+	}
+	if !strings.Contains(string(phaseRaw), "src/example.go") {
+		t.Fatalf("expected modified source summary, got %s", string(phaseRaw))
+	}
+	if _, err := os.Stat(filepath.Join(workDir, ".improvement", "設計書の-api-境界方針.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy improvement markdown to be removed, got err=%v", err)
+	}
+	if out, err := exec.Command("git", "ls-remote", "--exit-code", "--heads", remote, "develop").CombinedOutput(); err == nil {
+		t.Fatalf("expected remote branch to be absent before push, output=%s", string(out))
 	}
 
-	raw, err := os.ReadFile(filepath.Join(workDir, ".improvements", "設計書の-api-境界方針.md"))
-	if err != nil {
-		t.Fatalf("ReadFile(improvement markdown) error = %v", err)
+	editedPhase := strings.TrimSpace(string(phaseRaw)) + "\n\n<!-- reviewed before push -->\n"
+	if err := os.WriteFile(filepath.Join(workDir, ".improvement", "design.md"), []byte(editedPhase), 0o644); err != nil {
+		t.Fatalf("WriteFile(edited design.md) error = %v", err)
 	}
-	if !strings.Contains(string(raw), "title: 設計書の API 境界方針") {
-		t.Fatalf("expected saved markdown title, got %s", string(raw))
+
+	if err := pushImprovementBranch(context.Background(), workDir, "develop", artifactFiles.Dir); err != nil {
+		t.Fatalf("pushImprovementBranch() error = %v", err)
 	}
-	if !strings.Contains(string(raw), "- API 境界を先に明示する。") {
-		t.Fatalf("expected saved markdown body, got %s", string(raw))
-	}
+
 	promptRaw, err := os.ReadFile(artifactFiles.ImplementationPromptPath)
 	if err != nil {
 		t.Fatalf("ReadFile(implementation-prompt.md) error = %v", err)
 	}
-	if !strings.Contains(string(promptRaw), ".improvements/設計書の-api-境界方針.md") {
+	if !strings.Contains(string(promptRaw), ".improvement/design.md") {
 		t.Fatalf("expected implementation prompt to mention target path, got %s", string(promptRaw))
 	}
 
@@ -177,12 +184,18 @@ func TestApplyImprovementApprovalApprovesAndPushesBranch(t *testing.T) {
 	if err := runGit(t, verifyDir, "checkout", "develop"); err != nil {
 		t.Fatalf("git checkout develop error = %v", err)
 	}
-	verifiedRaw, err := os.ReadFile(filepath.Join(verifyDir, ".improvements", "設計書の-api-境界方針.md"))
+	verifiedPhaseRaw, err := os.ReadFile(filepath.Join(verifyDir, ".improvement", "design.md"))
 	if err != nil {
-		t.Fatalf("ReadFile(verified improvement markdown) error = %v", err)
+		t.Fatalf("ReadFile(verified design.md) error = %v", err)
 	}
-	if !strings.Contains(string(verifiedRaw), "jobId: job-approve") {
-		t.Fatalf("expected pushed markdown front matter, got %s", string(verifiedRaw))
+	if !strings.Contains(string(verifiedPhaseRaw), "# 改善実装結果") {
+		t.Fatalf("expected pushed implementation summary, got %s", string(verifiedPhaseRaw))
+	}
+	if !strings.Contains(string(verifiedPhaseRaw), "reviewed before push") {
+		t.Fatalf("expected pushed edited content, got %s", string(verifiedPhaseRaw))
+	}
+	if _, err := os.Stat(filepath.Join(verifyDir, ".improvement", "設計書の-api-境界方針.md")); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy improvement markdown to be removed from branch, got err=%v", err)
 	}
 }
 
@@ -222,10 +235,11 @@ func TestApplyImprovementApprovalRejectsWithoutGitUpdate(t *testing.T) {
 		t.Fatalf("UpsertJob() error = %v", err)
 	}
 
-	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository)
-	workFiles := repositoryImprovementWorkFiles(workDir, "")
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository, "")
+	workFiles := repositoryImprovementWorkFiles(workDir, "", job.ID, job.Title)
 	contextRaw := []byte(`{"jobId":"job-reject","repository":"owner/repository","issueNumber":43,"title":"改善却下","source":{"eventType":"final_rejected","comment":"not now"},"phases":["implementation"]}`)
-	if err := writeImprovementFile(workFiles.ContextPath, contextRaw); err != nil {
+	artifactFiles := repositoryImprovementArtifactFiles(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber)
+	if err := writeImprovementFile(artifactFiles.ContextPath, contextRaw); err != nil {
 		t.Fatalf("write context error = %v", err)
 	}
 	if err := writeImprovementFile(workFiles.DraftPath, []byte("draft body")); err != nil {
@@ -239,7 +253,6 @@ func TestApplyImprovementApprovalRejectsWithoutGitUpdate(t *testing.T) {
 		t.Fatalf("applyImprovementApproval() error = %v", err)
 	}
 
-	artifactFiles := repositoryImprovementArtifactFiles(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber)
 	approvalRaw, err := os.ReadFile(artifactFiles.ApprovalPath)
 	if err != nil {
 		t.Fatalf("ReadFile(approval.json) error = %v", err)
@@ -247,7 +260,8 @@ func TestApplyImprovementApprovalRejectsWithoutGitUpdate(t *testing.T) {
 	if !strings.Contains(string(approvalRaw), improvementApprovalRejected) {
 		t.Fatalf("expected rejected approval, got %s", string(approvalRaw))
 	}
-	if _, err := os.Stat(filepath.Join(workDir, ".improvements")); !os.IsNotExist(err) {
-		t.Fatalf("expected no improvements dir update on rejection, err=%v", err)
+	rejectedPhasePath := artifacts.RepositoryWorkerImprovementPhaseFile(workDir, cfg.App().MonitoredRepositories[0].ImprovementDir, "implementation")
+	if _, err := os.Stat(rejectedPhasePath); !os.IsNotExist(err) {
+		t.Fatalf("expected no phase file update on rejection, err=%v", err)
 	}
 }

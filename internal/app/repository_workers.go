@@ -23,7 +23,11 @@ import (
 )
 
 func startRepositoryWorkers(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
-	for _, repository := range cfg.App().MonitoredRepositories {
+	repositories := append([]config.MonitoredRepository(nil), cfg.App().MonitoredRepositories...)
+	if len(repositories) == 0 {
+		repositories = repositoryWorkersFromJobs(ctx, orch)
+	}
+	for _, repository := range repositories {
 		repoName := strings.TrimSpace(repository.Repository)
 		if repoName == "" || repository.Workers < 1 {
 			continue
@@ -37,6 +41,31 @@ func startRepositoryWorkers(ctx context.Context, cfg *config.Service, orch *orch
 	return nil
 }
 
+func repositoryWorkersFromJobs(ctx context.Context, orch *orchestrator.Orchestrator) []config.MonitoredRepository {
+	jobs, err := orch.ListJobs(ctx)
+	if err != nil {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	repositories := make([]config.MonitoredRepository, 0, len(jobs))
+	for _, job := range jobs {
+		repository := strings.TrimSpace(job.Repository)
+		if repository == "" {
+			continue
+		}
+		if _, ok := seen[repository]; ok {
+			continue
+		}
+		seen[repository] = struct{}{}
+		repositories = append(repositories, config.MonitoredRepository{
+			Repository: repository,
+			Workers:    1,
+		})
+	}
+	return repositories
+}
+
 func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger, repository config.MonitoredRepository, workerIndex int) {
 	workDir, err := prepareRepositoryWorkspace(ctx, cfg, repository.Repository, repository.WorkDir)
 	if err != nil {
@@ -47,7 +76,7 @@ func runRepositoryWorker(ctx context.Context, cfg *config.Service, orch *orchest
 	}
 	improvementWorkDir := ""
 	if repository.ImprovementEnabled {
-		improvementWorkDir, err = prepareRepositoryImprovementWorkspace(ctx, cfg, repository.Repository)
+		improvementWorkDir, err = prepareRepositoryImprovementWorkspace(ctx, cfg, repository)
 		if err != nil {
 			if logger != nil {
 				logger.Printf("repository improvement workdir preparation failed repository=%s worker=%d error=%v", repository.Repository, workerIndex, err)
@@ -123,7 +152,7 @@ func runRepositoryWorkerCycle(ctx context.Context, cfg *config.Service, orch *or
 			if logger != nil {
 				logger.Printf("worker reserved repository=%s worker=%d job_id=%s state=%s", repository.Repository, workerIndex, job.ID, job.State)
 			}
-			return nil
+			continue
 		}
 		if logger != nil {
 			logger.Printf("job accepted repository=%s worker=%d job_id=%s state=%s type=%s", repository.Repository, workerIndex, job.ID, job.State, job.Type)
@@ -210,11 +239,6 @@ func jobsForRepositoryWorker(jobs []domain.Job, repository string, workerIndex i
 			continue
 		}
 		selected = append(selected, job)
-	}
-	for _, job := range selected {
-		if workerReservedByJob(job) {
-			return []domain.Job{job}
-		}
 	}
 	return selected
 }
@@ -466,6 +490,27 @@ func processPRJob(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 	}
 	req.WorkDir = repoDir
+	dummyRepository := domain.IsDummyRepository(job.Repository)
+	if dummyRepository {
+		if logger != nil {
+			logger.Printf("pr job skipped external pr operations job_id=%s reason=dummy_repository", job.ID)
+		}
+		result := PRCreateResult{}
+		if err := writePRCreateArtifact(req.ArtifactDir, result, req, false); err != nil {
+			return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
+		}
+		transitionType := "pr_created"
+		nextState := domain.StateCompleted
+		if job.Type == domain.JobTypePRFeedback {
+			transitionType = "pr_updated"
+		}
+		return orch.UpdateJobState(ctx, job.ID, nextState, transitionType, map[string]any{
+			"url":        result.URL,
+			"pullNumber": result.PullNumber,
+			"title":      req.Title,
+			"head":       req.BranchName,
+		})
+	}
 
 	if logger != nil {
 		logger.Printf("pr job pushing branch job_id=%s branch=%s artifact_dir=%s", job.ID, req.BranchName, req.ArtifactDir)
@@ -487,7 +532,7 @@ func processPRJob(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 		}); err != nil {
 			return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_comment_failed", map[string]any{"error": err.Error()})
 		}
-		if err := writePRCreateArtifact(req.ArtifactDir, result, req); err != nil {
+		if err := writePRCreateArtifact(req.ArtifactDir, result, req, true); err != nil {
 			return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 		}
 		if logger != nil {
@@ -509,7 +554,7 @@ func processPRJob(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 	}
 
-	if err := writePRCreateArtifact(req.ArtifactDir, result, req); err != nil {
+	if err := writePRCreateArtifact(req.ArtifactDir, result, req, true); err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 	}
 	if logger != nil {
@@ -540,7 +585,77 @@ func processPRJob(ctx context.Context, cfg *config.Service, orch *orchestrator.O
 		}
 		return err
 	}
+
+	if providerSupportsMockPRReviewBootstrap(cfg.App().Provider) && job.Type == domain.JobTypeIssue && result.PullNumber > 0 {
+		if err := startPRReviewJobFromCreatedPR(ctx, cfg, orch, job, req, result); err != nil && logger != nil {
+			logger.Printf("start pr review failed job_id=%s pull_number=%d error=%v", job.ID, result.PullNumber, err)
+		}
+	}
 	return nil
+}
+
+func startPRReviewJobFromCreatedPR(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, sourceJob domain.Job, req PRCreateRequest, result PRCreateResult) error {
+	rule, ok := resolveRepositoryPRReviewRule(cfg, sourceJob.Repository)
+	if !ok {
+		return nil
+	}
+
+	event := domain.DomainEvent{
+		Type:     domain.DomainEventPRMatched,
+		RuleID:   rule.ID,
+		RuleName: rule.Name,
+		Item: domain.RepositoryItem{
+			Repository:   sourceJob.Repository,
+			Number:       result.PullNumber,
+			Title:        req.Title,
+			Body:         req.Body,
+			URL:          result.URL,
+			UpdatedAt:    time.Now().UTC(),
+			Target:       domain.TargetPullRequest,
+			BranchName:   req.BranchName,
+			BaseBranch:   req.BaseBranch,
+			Labels:       append([]string(nil), rule.Labels...),
+			Assignees:    []string{},
+			Reviewers:    []string{},
+			DefaultState: domain.StateCollectingContext,
+		},
+		MatchedAt: time.Now().UTC(),
+	}
+	return orch.ProcessMatch(ctx, cfg.App(), rule, event)
+}
+
+func resolveRepositoryPRReviewRule(cfg *config.Service, repository string) (config.WatchRule, bool) {
+	for _, rule := range cfg.WatchRules().Rules {
+		if !rule.Enabled {
+			continue
+		}
+		if strings.TrimSpace(rule.Target) != string(domain.TargetPullRequest) {
+			continue
+		}
+		if !repositoryListMatches(rule.Repositories, repository) {
+			continue
+		}
+		return rule, true
+	}
+	return config.WatchRule{
+		ID:           "default-pr-review",
+		Name:         "Default PR Review Rule",
+		Repositories: []string{repository},
+		Target:       string(domain.TargetPullRequest),
+		Labels:       []string{"ai:review"},
+		SkillSet:     "default",
+		TestProfile:  "go-default",
+		Enabled:      true,
+	}, true
+}
+
+func repositoryListMatches(values []string, repository string) bool {
+	for _, value := range values {
+		if repositoryMatches(repository, value) {
+			return true
+		}
+	}
+	return false
 }
 
 func prepareRepositoryWorkspaces(ctx context.Context, cfg *config.Service) error {
@@ -552,7 +667,7 @@ func prepareRepositoryWorkspaces(ctx context.Context, cfg *config.Service) error
 			return err
 		}
 		if repository.ImprovementEnabled {
-			if _, err := prepareRepositoryImprovementWorkspace(ctx, cfg, repository.Repository); err != nil {
+			if _, err := prepareRepositoryImprovementWorkspace(ctx, cfg, repository); err != nil {
 				return err
 			}
 		}
@@ -565,6 +680,20 @@ func prepareRepositoryWorkspace(ctx context.Context, cfg *config.Service, reposi
 	if err := os.MkdirAll(filepath.Dir(workDir), 0o755); err != nil {
 		return "", err
 	}
+	if domain.IsDummyRepository(repository) {
+		if err := os.MkdirAll(workDir, 0o755); err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(filepath.Join(workDir, ".git")); errors.Is(err, os.ErrNotExist) {
+			if err := initializeRepositoryWorkerGitDir(ctx, workDir); err != nil {
+				return "", err
+			}
+		}
+		if err := removeRepositoryWorkerWorkspace(workDir, cfg.App().WorkspaceDir); err != nil {
+			return "", err
+		}
+		return workDir, nil
+	}
 	if err := ensureRepositoryWorkerClone(ctx, workDir, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
 		return "", err
 	}
@@ -575,33 +704,51 @@ func prepareRepositoryWorkspace(ctx context.Context, cfg *config.Service, reposi
 }
 
 func cloneRepositoryWorkspace(ctx context.Context, cfg *config.Service, repository string, workerIndex int, workDir ...string) (string, error) {
-	if len(workDir) == 0 || strings.TrimSpace(workDir[0]) == "" {
-		if _, err := prepareRepositoryWorkspace(ctx, cfg, repository, resolveRepositoryConfiguredWorkDirSetting(cfg, repository)); err != nil {
+	baseDir := ""
+	if len(workDir) > 0 && strings.TrimSpace(workDir[0]) != "" {
+		baseDir = workDir[0]
+	} else {
+		preparedDir, err := prepareRepositoryWorkspace(ctx, cfg, repository, resolveRepositoryConfiguredWorkDirSetting(cfg, repository))
+		if err != nil {
 			return "", err
 		}
+		baseDir = preparedDir
 	}
-	sourceDir := artifacts.RepositoryWorkerSourceDir(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex)
-	if err := os.MkdirAll(filepath.Dir(sourceDir), 0o755); err != nil {
-		return "", err
+	if domain.IsDummyRepository(repository) {
+		return baseDir, nil
 	}
-	if err := ensureRepositoryWorkerClone(ctx, sourceDir, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
-		return "", err
+
+	branchName := strings.TrimSpace(resolveMonitoredRepositoryBranch(cfg, repository))
+	if branchName == "" {
+		branchName = "main"
 	}
-	if err := ensureRepositoryWorkerRemote(ctx, sourceDir, repositoryCloneSource(repository)); err != nil {
+	sourceDir := artifacts.RepositoryWorkerBranchDir(baseDir, branchName)
+	if err := ensureRepositoryWorkerWorktree(ctx, baseDir, sourceDir, branchName, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
 		return "", err
 	}
 	return sourceDir, nil
 }
 
-func prepareRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service, repository string) (string, error) {
-	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, repository)
+func prepareRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service, repository config.MonitoredRepository) (string, error) {
+	improvementBranch := config.ResolveImprovementBranch(repository)
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, repository.Repository, improvementBranch)
+	baseDir := artifacts.RepositoryWorkerWorkDir(cfg.Root(), cfg.App().ArtifactsDir, repository.Repository, repository.WorkDir)
 	if err := os.MkdirAll(filepath.Dir(improvementDir), 0o755); err != nil {
 		return "", err
 	}
-	if err := ensureRepositoryWorkerClone(ctx, improvementDir, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
+	if domain.IsDummyRepository(repository.Repository) {
+		if err := os.MkdirAll(improvementDir, 0o755); err != nil {
+			return "", err
+		}
+		return improvementDir, nil
+	}
+	if err := ensureRepositoryWorkerClone(ctx, baseDir, repositoryCloneSource(repository.Repository), cfg.App().WorkspaceDir); err != nil {
 		return "", err
 	}
-	if err := ensureRepositoryWorkerRemote(ctx, improvementDir, repositoryCloneSource(repository)); err != nil {
+	if err := ensureRepositoryWorkerRemote(ctx, baseDir, repositoryCloneSource(repository.Repository)); err != nil {
+		return "", err
+	}
+	if err := ensureRepositoryImprovementWorktree(ctx, baseDir, improvementDir, repository, improvementBranch); err != nil {
 		return "", err
 	}
 	return improvementDir, nil
@@ -621,6 +768,7 @@ func ensureRepositoryWorkerClone(ctx context.Context, targetDir string, source s
 	if info, err := os.Stat(filepath.Join(targetDir, ".git")); err == nil {
 		if info.IsDir() {
 			_ = removeRepositoryWorkerWorkspace(targetDir, workspaceDir)
+			_, _ = runGitCommand(ctx, targetDir, "git", "checkout", "--detach")
 			return nil
 		}
 		return fmt.Errorf("%s exists but is not a git repository", targetDir)
@@ -648,6 +796,64 @@ func ensureRepositoryWorkerClone(ctx context.Context, targetDir string, source s
 	if err := removeRepositoryWorkerWorkspace(targetDir, workspaceDir); err != nil {
 		return err
 	}
+	if _, err := runGitCommand(ctx, targetDir, "git", "checkout", "--detach"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureRepositoryWorkerWorktree(ctx context.Context, baseDir string, worktreeDir string, branch string, source string, workspaceDir string) error {
+	if info, err := os.Stat(filepath.Join(worktreeDir, ".git")); err == nil {
+		if info.IsDir() {
+			return removeRepositoryWorkerWorkspace(worktreeDir, workspaceDir)
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	if err := os.RemoveAll(worktreeDir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(worktreeDir), 0o755); err != nil {
+		return err
+	}
+	if _, err := runGitCommand(ctx, baseDir, "git", "fetch", "--prune", "origin"); err != nil {
+		return err
+	}
+
+	startPoint := branch
+	if !gitRemoteBranchExists(ctx, baseDir, branch) {
+		baseBranch, err := resolveRepositoryBaseBranch(ctx, baseDir, strings.TrimSpace(branch))
+		if err != nil {
+			return err
+		}
+		if !gitRemoteBranchExists(ctx, baseDir, baseBranch) {
+			for _, fallback := range []string{"main", "master", "develop"} {
+				if gitRemoteBranchExists(ctx, baseDir, fallback) {
+					baseBranch = fallback
+					break
+				}
+			}
+		}
+		if !gitRemoteBranchExists(ctx, baseDir, baseBranch) {
+			return fmt.Errorf("repository worktree base branch not found")
+		}
+		startPoint = baseBranch
+	}
+
+	args := []string{"git", "worktree", "add", "-B", branch, worktreeDir, "origin/" + startPoint}
+	if startPoint == branch {
+		args[len(args)-1] = "origin/" + branch
+	}
+	if _, err := runGitCommand(ctx, baseDir, args...); err != nil {
+		return err
+	}
+	if err := ensureRepositoryWorkerRemote(ctx, worktreeDir, source); err != nil {
+		return err
+	}
+	if err := removeRepositoryWorkerWorkspace(worktreeDir, workspaceDir); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -666,6 +872,12 @@ func removeRepositoryWorkerWorkspace(targetDir string, workspaceDir string) erro
 }
 
 func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domain.Job, repoDir string, logger *log.Logger) error {
+	if domain.IsDummyRepository(job.Repository) {
+		if logger != nil {
+			logger.Printf("syncing repository source checkout skipped job_id=%s repo_dir=%s reason=dummy_repository", job.ID, repoDir)
+		}
+		return nil
+	}
 	if job.Type == domain.JobTypePRFeedback {
 		branchName := strings.TrimSpace(job.BranchName)
 		if branchName == "" {
@@ -716,12 +928,18 @@ func syncRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service
 	if !repository.ImprovementEnabled {
 		return nil
 	}
+	if domain.IsDummyRepository(repository.Repository) {
+		if logger != nil {
+			logger.Printf("syncing repository improvement checkout skipped repository=%s work_dir=%s reason=dummy_repository", repository.Repository, improvementDir)
+		}
+		return nil
+	}
 
 	if cfg == nil {
 		return fmt.Errorf("repository improvement workspace sync requires config")
 	}
 	if _, err := os.Stat(filepath.Join(improvementDir, ".git")); errors.Is(err, os.ErrNotExist) {
-		preparedDir, err := prepareRepositoryImprovementWorkspace(ctx, cfg, repository.Repository)
+		preparedDir, err := prepareRepositoryImprovementWorkspace(ctx, cfg, repository)
 		if err != nil {
 			return err
 		}
@@ -729,7 +947,7 @@ func syncRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service
 	}
 
 	improvementBranch := config.ResolveImprovementBranch(repository)
-	improvementWorkDir := artifacts.RepositoryWorkerImprovementWorkDir(improvementDir, repository.ImprovementWorkDir)
+	improvementWorkDir := artifacts.RepositoryWorkerImprovementWorkDir(improvementDir, repository.ImprovementDir)
 	if err := os.MkdirAll(improvementWorkDir, 0o755); err != nil {
 		return err
 	}
@@ -757,6 +975,17 @@ func syncRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service
 		if err != nil {
 			return err
 		}
+		if !gitRemoteBranchExists(ctx, improvementDir, baseBranch) {
+			for _, fallback := range []string{"main", "master", "develop"} {
+				if gitRemoteBranchExists(ctx, improvementDir, fallback) {
+					baseBranch = fallback
+					break
+				}
+			}
+		}
+		if !gitRemoteBranchExists(ctx, improvementDir, baseBranch) {
+			return fmt.Errorf("repository improvement workspace base branch not found")
+		}
 		if _, err := runGitCommand(ctx, improvementDir, "git", "checkout", "-f", "-B", improvementBranch, "origin/"+baseBranch); err != nil {
 			return err
 		}
@@ -767,6 +996,21 @@ func syncRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service
 		cleanArgs = append(cleanArgs, "-e", relativeWorkDir)
 	}
 	if _, err := runGitCommand(ctx, improvementDir, cleanArgs...); err != nil {
+		return err
+	}
+	return nil
+}
+
+func ensureRepositoryImprovementWorktree(ctx context.Context, repoDir string, worktreeDir string, repository config.MonitoredRepository, branch string) error {
+	if info, err := os.Stat(filepath.Join(worktreeDir, ".git")); err == nil {
+		if !info.IsDir() {
+			return nil
+		}
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	if err := ensureRepositoryWorkerWorktree(ctx, repoDir, worktreeDir, branch, repositoryCloneSource(repository.Repository), ".improvement"); err != nil {
 		return err
 	}
 	return nil
@@ -848,11 +1092,15 @@ func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, reposi
 }
 
 func repositoryWorkerSourceDir(cfg *config.Service, repository string, workerIndex int) string {
-	return artifacts.RepositoryWorkerSourceDir(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex)
+	branch := resolveMonitoredRepositoryBranch(cfg, repository)
+	if strings.TrimSpace(branch) == "" {
+		branch = "main"
+	}
+	return artifacts.RepositoryWorkerBranchWorkDir(cfg.Root(), cfg.App().ArtifactsDir, repository, branch)
 }
 
 func initializeRepositoryWorkerGitDir(ctx context.Context, workerDir string) error {
-	if _, err := runGitCommand(ctx, workerDir, "git", "init"); err != nil {
+	if _, err := runGitCommand(ctx, workerDir, "git", "init", "--initial-branch=main"); err != nil {
 		return err
 	}
 	return nil
@@ -920,7 +1168,20 @@ func repositoryCloneSource(repository string) string {
 		return trimmed
 	}
 	if _, err := os.Stat(trimmed); err == nil {
+		if abs, err := filepath.Abs(trimmed); err == nil {
+			return abs
+		}
 		return trimmed
+	}
+	if toolRoot := strings.TrimSpace(os.Getenv("KOROBOKCLE_TOOL_ROOT")); toolRoot != "" {
+		if candidate := artifacts.RepositoryWorkerWorkDir(toolRoot, "artifacts", trimmed, ""); candidate != "" {
+			if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+				if abs, err := filepath.Abs(candidate); err == nil {
+					return abs
+				}
+				return candidate
+			}
+		}
 	}
 	return "https://github.com/" + trimmed + ".git"
 }

@@ -27,7 +27,6 @@ type MonitoredRepository struct {
 	ImprovementEnabled bool   `yaml:"improvementEnabled"`
 	ImprovementBranch  string `yaml:"improvementBranch"`
 	ImprovementDir     string `yaml:"improvementDir"`
-	ImprovementWorkDir string `yaml:"improvementWorkDir"`
 }
 
 type ProviderSpec struct {

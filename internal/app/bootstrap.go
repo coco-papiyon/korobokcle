@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/coco-papiyon/korobokcle/internal/artifacts"
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 	gh "github.com/coco-papiyon/korobokcle/internal/github"
@@ -124,6 +125,19 @@ func Run(ctx context.Context, repoRoot string, toolRoot string, options Options)
 			Comment:    req.Comment,
 			ResultBody: req.ResultBody,
 		}, infoLogger)
+	})
+	server.SetImprovementPusher(func(ctx context.Context, jobID string) error {
+		job, _, err := orch.JobDetail(ctx, jobID)
+		if err != nil {
+			return err
+		}
+		repoConfig, ok := resolveMonitoredRepository(configService, job.Repository)
+		if !ok || !repoConfig.ImprovementEnabled {
+			return fmt.Errorf("improvement feature is disabled for repository %q", job.Repository)
+		}
+		workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(configService.Root(), configService.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repoConfig))
+		artifactDir := artifacts.RepositoryWorkerImprovementArtifactDir(configService.Root(), configService.App().ArtifactsDir, job.Repository, job.GitHubNumber)
+		return pushImprovementBranch(ctx, workDir, config.ResolveImprovementBranch(repoConfig), artifactDir)
 	})
 	server.SetRepositoryWorkspacePreparer(func(ctx context.Context, appConfig config.App) error {
 		snapshot := configService.App()

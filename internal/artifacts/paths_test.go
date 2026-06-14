@@ -49,8 +49,9 @@ func TestRepositoryWorkerPathsUseJobDirs(t *testing.T) {
 		t.Fatalf("RepositoryWorkerJobPhaseDir() = %q, want %q", phaseDir, wantPhaseDir)
 	}
 
-	workArtifactDir := RepositoryWorkerWorkArtifactDir(filepath.Join(root, "artifacts", "coco-papiyon-korobokcle", "workspace"), "design")
-	wantWorkArtifactDir := filepath.Join(root, "artifacts", "coco-papiyon-korobokcle", "workspace", "design")
+	baseDir := filepath.Join(root, "source", "coco-papiyon-korobokcle")
+	workArtifactDir := RepositoryWorkerWorkArtifactDir(baseDir, "design")
+	wantWorkArtifactDir := filepath.Join(root, "source", "coco-papiyon-korobokcle", "design")
 	if workArtifactDir != wantWorkArtifactDir {
 		t.Fatalf("RepositoryWorkerWorkArtifactDir() = %q, want %q", workArtifactDir, wantWorkArtifactDir)
 	}
@@ -67,8 +68,8 @@ func TestRepositoryWorkerPathsUseJobDirs(t *testing.T) {
 		t.Fatalf("RepositoryWorkerWorkArtifactPath() = %q, want %q", workArtifactPath, wantWorkArtifactPath)
 	}
 
-	improvementWorkspaceDir := RepositoryWorkerImprovementWorkspaceDir(root, "artifacts", "https://github.com/coco-papiyon/korobokcle.git")
-	wantImprovementWorkspaceDir := filepath.Join(root, "artifacts", "coco-papiyon-korobokcle", "improvement")
+	improvementWorkspaceDir := RepositoryWorkerImprovementWorkspaceDir(root, "artifacts", "https://github.com/coco-papiyon/korobokcle.git", "improvement")
+	wantImprovementWorkspaceDir := filepath.Join(root, "source", "coco-papiyon-korobokcle-improvement")
 	if improvementWorkspaceDir != wantImprovementWorkspaceDir {
 		t.Fatalf("RepositoryWorkerImprovementWorkspaceDir() = %q, want %q", improvementWorkspaceDir, wantImprovementWorkspaceDir)
 	}
@@ -78,10 +79,10 @@ func TestRepositoryWorkerImprovementPathsUseDefaults(t *testing.T) {
 	t.Parallel()
 
 	root := filepath.Join("workspace", "tool")
-	workDir := filepath.Join(root, "artifacts", "coco-papiyon-korobokcle", "workspace")
+	workDir := filepath.Join(root, "source", "coco-papiyon-korobokcle")
 
 	improvementsDir := RepositoryWorkerImprovementsDir(workDir, "")
-	wantImprovementsDir := filepath.Join(workDir, ".improvements")
+	wantImprovementsDir := filepath.Join(workDir, ".improvement")
 	if improvementsDir != wantImprovementsDir {
 		t.Fatalf("RepositoryWorkerImprovementsDir() = %q, want %q", improvementsDir, wantImprovementsDir)
 	}
@@ -108,7 +109,7 @@ func TestRepositoryWorkerImprovementPathsUseDefaults(t *testing.T) {
 func TestRepositoryWorkerImprovementPathsUseConfiguredValues(t *testing.T) {
 	t.Parallel()
 
-	workDir := filepath.Join("workspace", "tool", "artifacts", "coco-papiyon-korobokcle", "workspace")
+	workDir := filepath.Join("workspace", "tool", "source", "coco-papiyon-korobokcle")
 
 	improvementsDir := RepositoryWorkerImprovementsDir(workDir, ".repo-improvements")
 	wantImprovementsDir := filepath.Join(workDir, ".repo-improvements")

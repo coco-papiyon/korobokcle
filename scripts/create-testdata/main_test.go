@@ -13,7 +13,7 @@ import (
 func TestBuildFixturesIncludeImprovementScenarios(t *testing.T) {
 	t.Parallel()
 
-	fixtures := buildFixtures("artifacts")
+	fixtures := buildFixtures("artifacts", "coco-papiyon/dummy")
 	byJobID := make(map[string]jobFixture, len(fixtures))
 	for _, fixture := range fixtures {
 		byJobID[fixture.job.ID] = fixture
@@ -24,14 +24,15 @@ func TestBuildFixturesIncludeImprovementScenarios(t *testing.T) {
 		t.Fatalf("fixture-pr-created not found")
 	}
 	assertArtifactExists(t, draftFixture.artifacts, artifacts.WorkerImprovement, "decision.json", `"decision":"draft_created"`)
-	assertWorkspaceFileExists(t, draftFixture.workspaceFiles, filepath.Join(".improvement", "draft", "draft.md"))
+	assertWorkspaceFileExists(t, draftFixture.workspaceFiles, filepath.Join(".improvement", "draft", artifacts.RepositoryWorkerImprovementDraftFileName("fixture-pr-created", "PR 作成済み")))
+	assertArtifactExists(t, draftFixture.artifacts, artifacts.WorkerImprovement, "context.json", `"eventType":"final_rejected"`)
 
 	approvedFixture, ok := byJobID["fixture-pr-comment-analysis-ready"]
 	if !ok {
 		t.Fatalf("fixture-pr-comment-analysis-ready not found")
 	}
 	assertArtifactExists(t, approvedFixture.artifacts, artifacts.WorkerImprovement, "approval.json", `"status":"approved"`)
-	assertWorkspaceFileExists(t, approvedFixture.workspaceFiles, filepath.Join(".improvements", "複雑な条件分岐は-helper-に抽出する.md"))
+	assertWorkspaceFileExists(t, approvedFixture.workspaceFiles, filepath.Join(".improvement", "design.md"))
 
 	noImprovementFixture, ok := byJobID["fixture-failed"]
 	if !ok {
@@ -45,10 +46,11 @@ func TestWriteRepositoryArtifactsWritesImprovementWorkspace(t *testing.T) {
 
 	root := t.TempDir()
 	repository := "owner/repository"
-	workDirSetting := "artifacts/owner-repository/workspace"
+	workDirSetting := "source/owner-repository"
+	draftFileName := artifacts.RepositoryWorkerImprovementDraftFileName("issue-42", "Issue")
 	workspaceFiles := []workspaceFile{
-		{path: filepath.Join(".improvement", "draft", "draft.md"), content: "draft content"},
-		{path: filepath.Join(".improvements", "rule.md"), content: "approved content"},
+		{path: filepath.Join(".improvement", "draft", draftFileName), content: "draft content"},
+		{path: filepath.Join(".improvement", "rule.md"), content: "approved content"},
 	}
 
 	if err := writeRepositoryArtifacts(root, "artifacts", workDirSetting, repository, 42, "Issue", nil, workspaceFiles); err != nil {
@@ -57,8 +59,8 @@ func TestWriteRepositoryArtifactsWritesImprovementWorkspace(t *testing.T) {
 
 	workDir := artifacts.RepositoryWorkerWorkDir(root, "artifacts", repository, workDirSetting)
 	for _, relativePath := range []string{
-		filepath.Join(".improvement", "draft", "draft.md"),
-		filepath.Join(".improvements", "rule.md"),
+		filepath.Join(".improvement", "draft", draftFileName),
+		filepath.Join(".improvement", "rule.md"),
 	} {
 		path := filepath.Join(workDir, relativePath)
 		if _, err := os.Stat(path); err != nil {
@@ -73,11 +75,10 @@ func TestDefaultFixtureConfigEnablesImprovementFeature(t *testing.T) {
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
 		{
-			Repository:         "coco-papiyon/korobokcle",
+			Repository:         "coco-papiyon/dummy",
 			ImprovementEnabled: true,
 			ImprovementBranch:  "improvement",
-			ImprovementDir:     ".improvements",
-			ImprovementWorkDir: ".improvement",
+			ImprovementDir:     ".improvement",
 		},
 	}
 
@@ -85,7 +86,7 @@ func TestDefaultFixtureConfigEnablesImprovementFeature(t *testing.T) {
 	if !repository.ImprovementEnabled {
 		t.Fatalf("expected improvement feature enabled")
 	}
-	if repository.ImprovementBranch != "improvement" || repository.ImprovementDir != ".improvements" || repository.ImprovementWorkDir != ".improvement" {
+	if repository.ImprovementBranch != "improvement" || repository.ImprovementDir != ".improvement" {
 		t.Fatalf("unexpected improvement config: %+v", repository)
 	}
 }

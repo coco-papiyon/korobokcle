@@ -263,7 +263,14 @@ func resolveImplementationRunSpec(cfg *config.Service, job domain.Job, events []
 func resolveImplementationSkillName(cfg *config.Service, job domain.Job, isFix bool) (string, error) {
 	rule, ok := cfg.WatchRuleByID(job.WatchRuleID)
 	if !ok {
-		return "", os.ErrNotExist
+		baseName := implementationSkillName
+		if isFix {
+			baseName = implementFixSkillName
+		}
+		if job.Type == domain.JobTypePRFeedback {
+			baseName = reviewFixSkillName
+		}
+		return baseName, nil
 	}
 
 	if job.Type == domain.JobTypePRFeedback {
@@ -474,7 +481,7 @@ func jobHasRunnableTestProfile(cfg *config.Service, job domain.Job) (bool, error
 func resolveJobTestProfile(cfg *config.Service, job domain.Job) (executor.TestProfile, bool, error) {
 	rule, ok := cfg.WatchRuleByID(job.WatchRuleID)
 	if !ok {
-		return executor.TestProfile{}, false, os.ErrNotExist
+		return executor.TestProfile{}, false, nil
 	}
 
 	profileName := strings.TrimSpace(rule.TestProfile)

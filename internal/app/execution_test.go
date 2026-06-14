@@ -33,6 +33,28 @@ func TestResolveExecutionConfigUsesAppSettingsByDefault(t *testing.T) {
 	}
 }
 
+func TestResolveExecutionConfigFallsBackWhenWatchRuleMissing(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{
+		App: config.App{
+			Provider: "codex",
+			Model:    "gpt-5.4",
+		},
+	})
+
+	got, err := resolveExecutionConfig(cfg, "missing-rule")
+	if err != nil {
+		t.Fatalf("resolveExecutionConfig() error = %v", err)
+	}
+	if got.Provider != "codex" {
+		t.Fatalf("expected provider codex, got %q", got.Provider)
+	}
+	if got.Model != "gpt-5.4" {
+		t.Fatalf("expected model gpt-5.4, got %q", got.Model)
+	}
+}
+
 func TestResolveExecutionConfigUsesWatchRuleOverrides(t *testing.T) {
 	t.Parallel()
 

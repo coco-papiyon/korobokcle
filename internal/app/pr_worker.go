@@ -373,6 +373,10 @@ func newPRCommentFetcher(provider string) PRCommentFetcher {
 	return GHPRCommentFetcher{}
 }
 
+func providerSupportsMockPRReviewBootstrap(provider string) bool {
+	return strings.EqualFold(strings.TrimSpace(provider), "mock")
+}
+
 func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, pusher BranchPusher, creator PRCreator, commentFetcher PRCommentFetcher, root string, logger *log.Logger) error {
 	jobs, err := orch.ListJobs(ctx)
 	if err != nil {
@@ -390,6 +394,27 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 			continue
 		}
 		req.WorkDir = root
+		dummyRepository := domain.IsDummyRepository(job.Repository)
+		if dummyRepository {
+			if logger != nil {
+				logger.Printf("pr creation skipped job_id=%s reason=dummy_repository", job.ID)
+			}
+			if err := writePRCreateArtifact(req.ArtifactDir, PRCreateResult{}, req, false); err != nil {
+				_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
+				continue
+			}
+			if err := orch.UpdateJobState(ctx, job.ID, domain.StateCompleted, "pr_created", map[string]any{
+				"url":        "",
+				"pullNumber": 0,
+				"title":      req.Title,
+				"head":       req.BranchName,
+			}); err != nil {
+				if logger != nil {
+					logger.Printf("pr_created state transition failed for %s: %v", job.ID, err)
+				}
+			}
+			continue
+		}
 
 		if err := pusher.Push(ctx, req); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_push_failed", map[string]any{"error": err.Error()})
@@ -402,7 +427,7 @@ func runPendingPRCreations(ctx context.Context, cfg *config.Service, orch *orche
 			continue
 		}
 
-		if err := writePRCreateArtifact(req.ArtifactDir, result, req); err != nil {
+		if err := writePRCreateArtifact(req.ArtifactDir, result, req, true); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "pr_create_failed", map[string]any{"error": err.Error()})
 			continue
 		}
@@ -596,7 +621,7 @@ func buildPRBody(job domain.Job, summary string, fixSummary string) string {
 	return body
 }
 
-func writePRCreateArtifact(artifactDir string, result PRCreateResult, req PRCreateRequest) error {
+func writePRCreateArtifact(artifactDir string, result PRCreateResult, req PRCreateRequest, pushed bool) error {
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		return err
 	}
@@ -607,7 +632,7 @@ func writePRCreateArtifact(artifactDir string, result PRCreateResult, req PRCrea
 		"repository": req.Repository,
 		"branchName": req.BranchName,
 		"title":      req.Title,
-		"pushed":     true,
+		"pushed":     pushed,
 	}, "", "  ")
 	if err != nil {
 		return err

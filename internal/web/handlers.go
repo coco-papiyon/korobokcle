@@ -163,7 +163,6 @@ type monitoredRepositoryResponse struct {
 	ImprovementEnabled bool   `json:"improvementEnabled"`
 	ImprovementBranch  string `json:"improvementBranch"`
 	ImprovementDir     string `json:"improvementDir"`
-	ImprovementWorkDir string `json:"improvementWorkDir"`
 }
 
 type appConfigResponse struct {
@@ -249,9 +248,18 @@ func (s *Server) handleDeleteJob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleJobIssueBody(w http.ResponseWriter, r *http.Request) {
 	jobID := mux.Vars(r)["id"]
-	job, _, err := s.orchestrator.JobDetail(r.Context(), jobID)
+	job, events, err := s.orchestrator.JobDetail(r.Context(), jobID)
 	if err != nil {
 		writeJSONError(w, http.StatusNotFound, err)
+		return
+	}
+	if domain.IsDummyRepository(job.Repository) {
+		snapshot, err := issuebody.Resolve(events)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, issueBodyResponse{IssueBody: snapshot.Body})
 		return
 	}
 	if s.issueBodyFetcher == nil {
@@ -1587,7 +1595,6 @@ func toMonitoredRepositoryResponses(values []config.MonitoredRepository) []monit
 			ImprovementEnabled: value.ImprovementEnabled,
 			ImprovementBranch:  strings.TrimSpace(value.ImprovementBranch),
 			ImprovementDir:     strings.TrimSpace(value.ImprovementDir),
-			ImprovementWorkDir: strings.TrimSpace(value.ImprovementWorkDir),
 		})
 	}
 	return out
@@ -1618,7 +1625,6 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 			ImprovementEnabled: value.ImprovementEnabled,
 			ImprovementBranch:  strings.TrimSpace(value.ImprovementBranch),
 			ImprovementDir:     strings.TrimSpace(value.ImprovementDir),
-			ImprovementWorkDir: strings.TrimSpace(value.ImprovementWorkDir),
 		})
 	}
 	return out, nil

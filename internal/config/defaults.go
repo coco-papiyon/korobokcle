@@ -9,8 +9,7 @@ const (
 	DefaultPollInterval          = 2 * time.Minute
 	DefaultScreenRefreshInterval = 5 * time.Second
 	DefaultImprovementBranch     = "improvement"
-	DefaultImprovementDir        = ".improvements"
-	DefaultImprovementWorkDir    = ".improvement"
+	DefaultImprovementDir        = ".improvement"
 )
 
 var DefaultCopilotAllowTools = []string{}
@@ -31,7 +30,6 @@ func DefaultFiles() Files {
 				ImprovementEnabled: false,
 				ImprovementBranch:  "",
 				ImprovementDir:     "",
-				ImprovementWorkDir: "",
 			}},
 			Provider:          "mock",
 			Model:             "",
@@ -116,14 +114,6 @@ func ResolveImprovementDir(repository MonitoredRepository) string {
 		return trimmed
 	}
 	return DefaultImprovementDir
-}
-
-func ResolveImprovementWorkDir(repository MonitoredRepository) string {
-	dir := repository.ImprovementWorkDir
-	if trimmed := trimConfigValue(dir); trimmed != "" {
-		return trimmed
-	}
-	return DefaultImprovementWorkDir
 }
 
 func trimConfigValue(value string) string {

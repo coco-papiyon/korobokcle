@@ -67,6 +67,7 @@ export type ImprovementDetail = {
   result?: Artifact
   decision?: Artifact
   approval?: Artifact
+  workspace?: Artifact[]
 }
 
 export type PRCommentsResponse = {
@@ -179,7 +180,6 @@ export type MonitoredRepository = {
   improvementEnabled: boolean
   improvementBranch: string
   improvementDir: string
-  improvementWorkDir: string
   workerDir?: string
   workerDirs: string[]
 }

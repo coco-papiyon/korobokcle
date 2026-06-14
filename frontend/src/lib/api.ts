@@ -78,6 +78,19 @@ export function regenerateImprovement(jobId: string, sourceEventType = ''): Prom
   })
 }
 
+export function saveImprovementWorkspace(jobId: string, files: { path: string; content: string }[]): Promise<ImprovementDetail> {
+  return request<ImprovementDetail>(`/api/improvements/${jobId}/workspace`, {
+    method: 'PUT',
+    body: JSON.stringify({ files }),
+  })
+}
+
+export function pushImprovement(jobId: string): Promise<ImprovementDetail> {
+  return request<ImprovementDetail>(`/api/improvements/${jobId}/push`, {
+    method: 'POST',
+  })
+}
+
 export function generateImprovement(jobId: string, sourceEventType = ''): Promise<ImprovementDetail> {
   return request<ImprovementDetail>(`/api/jobs/${jobId}/improvements/generate`, {
     method: 'POST',

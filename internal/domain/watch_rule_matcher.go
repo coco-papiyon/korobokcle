@@ -2,6 +2,7 @@ package domain
 
 import (
 	"net/url"
+	"path"
 	"regexp"
 	"strings"
 
@@ -185,4 +186,15 @@ func normalizeRepository(repository string) (string, bool) {
 		return "", false
 	}
 	return parts[0] + "/" + parts[1], true
+}
+
+func IsDummyRepository(repository string) bool {
+	trimmed := strings.TrimSpace(strings.TrimSuffix(repository, ".git"))
+	if trimmed == "" {
+		return false
+	}
+	if normalized, ok := normalizeRepository(trimmed); ok {
+		return strings.EqualFold(path.Base(normalized), "dummy")
+	}
+	return strings.EqualFold(path.Base(trimmed), "dummy")
 }

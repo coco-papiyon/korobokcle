@@ -48,27 +48,20 @@ func TestDefaultImprovementSettings(t *testing.T) {
 	if got := ResolveImprovementDir(repository); got != DefaultImprovementDir {
 		t.Fatalf("expected default improvement dir %q, got %q", DefaultImprovementDir, got)
 	}
-	if got := ResolveImprovementWorkDir(repository); got != DefaultImprovementWorkDir {
-		t.Fatalf("expected default improvement work dir %q, got %q", DefaultImprovementWorkDir, got)
-	}
 }
 
 func TestResolveImprovementSettingsUsesConfiguredValues(t *testing.T) {
 	t.Parallel()
 
 	repository := MonitoredRepository{
-		ImprovementBranch:  " custom-branch ",
-		ImprovementDir:     " .rules/improvements ",
-		ImprovementWorkDir: " .rules/draft ",
+		ImprovementBranch: " custom-branch ",
+		ImprovementDir:    " .rules/improvement ",
 	}
 	if got := ResolveImprovementBranch(repository); got != "custom-branch" {
 		t.Fatalf("expected trimmed improvement branch, got %q", got)
 	}
-	if got := ResolveImprovementDir(repository); got != ".rules/improvements" {
+	if got := ResolveImprovementDir(repository); got != ".rules/improvement" {
 		t.Fatalf("expected trimmed improvement dir, got %q", got)
-	}
-	if got := ResolveImprovementWorkDir(repository); got != ".rules/draft" {
-		t.Fatalf("expected trimmed improvement work dir, got %q", got)
 	}
 }
 

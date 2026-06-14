@@ -420,6 +420,20 @@ func TestResolveImplementationSkillNameDefault(t *testing.T) {
 	}
 }
 
+func TestResolveImplementationSkillNameFallsBackWhenWatchRuleMissing(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{})
+
+	got, err := resolveImplementationSkillName(cfg, domain.Job{WatchRuleID: "missing-rule", Type: domain.JobTypeIssue}, false)
+	if err != nil {
+		t.Fatalf("resolveImplementationSkillName() error = %v", err)
+	}
+	if got != "implement" {
+		t.Fatalf("expected implement, got %q", got)
+	}
+}
+
 func TestResolveImplementationSkillNameFromSkillSet(t *testing.T) {
 	t.Parallel()
 

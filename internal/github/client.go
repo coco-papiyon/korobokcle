@@ -54,10 +54,16 @@ func (c *Client) WithInfoLogger(info *log.Logger) *Client {
 }
 
 func (c *Client) ListIssues(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {
+	if domain.IsDummyRepository(repository) {
+		return []domain.RepositoryItem{}, nil
+	}
 	return c.listRepositoryItems(ctx, rule, repository, domain.TargetIssue, since)
 }
 
 func (c *Client) ListProjectIssues(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {
+	if domain.IsDummyRepository(repository) {
+		return []domain.RepositoryItem{}, nil
+	}
 	items, err := c.listRepositoryItems(ctx, rule, repository, domain.TargetIssue, since)
 	if err != nil {
 		return nil, err
@@ -85,10 +91,16 @@ func (c *Client) ListProjectIssues(ctx context.Context, rule config.WatchRule, r
 }
 
 func (c *Client) ListPullRequests(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {
+	if domain.IsDummyRepository(repository) {
+		return []domain.RepositoryItem{}, nil
+	}
 	return c.listRepositoryItems(ctx, rule, repository, domain.TargetPullRequest, since)
 }
 
 func (c *Client) FetchIssueBody(ctx context.Context, repository string, issueNumber int) (string, error) {
+	if domain.IsDummyRepository(repository) {
+		return "", nil
+	}
 	normalizedRepository, err := normalizeRepository(repository)
 	if err != nil {
 		return "", err
@@ -139,6 +151,23 @@ func (c *Client) FetchIssueBody(ctx context.Context, repository string, issueNum
 }
 
 func (c *Client) FetchPullRequestComments(ctx context.Context, repository string, pullNumber int, artifactDir string) (PRCommentsArtifact, error) {
+	if domain.IsDummyRepository(repository) {
+		if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+			return PRCommentsArtifact{}, err
+		}
+		artifact := PRCommentsArtifact{PullNumber: pullNumber, Comments: []PRComment{}}
+		rawArtifact, err := json.MarshalIndent(artifact, "", "  ")
+		if err != nil {
+			return PRCommentsArtifact{}, err
+		}
+		if err := os.WriteFile(filepath.Join(artifactDir, "gh-pr-comments.json"), rawArtifact, 0o644); err != nil {
+			return PRCommentsArtifact{}, err
+		}
+		if err := os.WriteFile(filepath.Join(artifactDir, "gh-pr-comments.log"), []byte("dummy repository: skipped pull request comment fetch"), 0o644); err != nil {
+			return PRCommentsArtifact{}, err
+		}
+		return artifact, nil
+	}
 	normalizedRepository, err := normalizeRepository(repository)
 	if err != nil {
 		return PRCommentsArtifact{}, err
@@ -218,6 +247,9 @@ func (c *Client) FetchPullRequestComments(ctx context.Context, repository string
 }
 
 func (c *Client) ListPullRequestReviews(ctx context.Context, rule config.WatchRule, repository string, since time.Time) ([]domain.RepositoryItem, error) {
+	if domain.IsDummyRepository(repository) {
+		return []domain.RepositoryItem{}, nil
+	}
 	normalizedRepository, err := normalizeRepository(repository)
 	if err != nil {
 		return nil, err

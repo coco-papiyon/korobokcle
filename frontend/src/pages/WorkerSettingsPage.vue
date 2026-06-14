@@ -23,7 +23,6 @@ watch(
       improvementEnabled: Boolean(entry.improvementEnabled),
       improvementBranch: entry.improvementBranch ?? '',
       improvementDir: entry.improvementDir ?? '',
-      improvementWorkDir: entry.improvementWorkDir ?? '',
       workerDirs: entry.workerDirs ?? [],
     }))
   },
@@ -41,7 +40,6 @@ function addMonitoredRepository() {
       improvementEnabled: false,
       improvementBranch: '',
       improvementDir: '',
-      improvementWorkDir: '',
       workerDirs: [],
     },
   ]
@@ -85,7 +83,6 @@ function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
       improvementEnabled: Boolean(entry.improvementEnabled),
       improvementBranch: entry.improvementBranch.trim(),
       improvementDir: entry.improvementDir.trim(),
-      improvementWorkDir: entry.improvementWorkDir.trim(),
     }))
     .filter((entry) => entry.repository.length > 0)
     .map((entry) => ({
@@ -96,7 +93,6 @@ function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
       improvementEnabled: entry.improvementEnabled,
       improvementBranch: entry.improvementBranch,
       improvementDir: entry.improvementDir,
-      improvementWorkDir: entry.improvementWorkDir,
     }))
     .filter((entry, index, items) => items.findIndex((candidate) => candidate.repository === entry.repository) === index)
 }
@@ -116,7 +112,6 @@ async function persistConfig() {
       improvementEnabled: Boolean(entry.improvementEnabled),
       improvementBranch: entry.improvementBranch ?? '',
       improvementDir: entry.improvementDir ?? '',
-      improvementWorkDir: entry.improvementWorkDir ?? '',
       workerDirs: entry.workerDirs ?? [],
     }))
     saveState.value = 'saved'
@@ -166,7 +161,7 @@ async function persistConfig() {
                   v-model="entry.workDir"
                   class="field__control"
                   type="text"
-                  :placeholder="`artifacts/${repositoryWorkDirComponent(entry.repository)}/workspace`"
+                  :placeholder="`source/${repositoryWorkDirComponent(entry.repository)}`"
                 />
               </label>
               <label class="field">
@@ -186,16 +181,12 @@ async function persistConfig() {
               </label>
               <label class="field field-full">
                 <span class="field__label">改善指示ディレクトリ</span>
-                <input v-model="entry.improvementDir" class="field__control" type="text" placeholder=".improvements" />
-              </label>
-              <label class="field field-full">
-                <span class="field__label">承認前作業ディレクトリ</span>
-                <input v-model="entry.improvementWorkDir" class="field__control" type="text" placeholder=".improvement" />
+                <input v-model="entry.improvementDir" class="field__control" type="text" placeholder=".improvement" />
               </label>
               <button class="button button-secondary" type="button" @click="removeMonitoredRepository(index)">削除</button>
             </div>
           </div>
-          <p class="text-muted">作業ディレクトリを空にすると既定の `artifacts/&lt;repo&gt;/workspace` を使います。`&lt;repo&gt;` は `owner-repository` のようなリポジトリ識別子です。ブランチを空にするとリモートの既定ブランチを使います。改善設定は空欄なら `improvement` / `.improvements` / `.improvement` にフォールバックします。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
+          <p class="text-muted">作業ディレクトリを空にすると既定の `source/&lt;repo&gt;` を使います。`&lt;repo&gt;` は `owner-repository` のようなリポジトリ識別子です。ブランチを空にするとリモートの既定ブランチを使います。実際の作業用 worktree は `source/&lt;repo&gt;-&lt;branch&gt;` になります。改善設定は空欄なら `improvement` / `.improvement` にフォールバックします。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
         </div>
 
         <div v-if="saveState === 'saved'" class="notice notice-success">ワーカー設定を更新しました。</div>

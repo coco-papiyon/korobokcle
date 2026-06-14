@@ -242,3 +242,17 @@ func TestBuildDesignContextSkipsExistingDesignWhenRerunCommentMissing(t *testing
 		t.Fatalf("expected no existing design to be passed, got %q", got.ExistingDesign)
 	}
 }
+
+func TestResolveDesignSkillNameFallsBackWhenWatchRuleMissing(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewService(t.TempDir(), config.Files{})
+
+	got, err := resolveDesignSkillName(cfg, "missing-rule")
+	if err != nil {
+		t.Fatalf("resolveDesignSkillName() error = %v", err)
+	}
+	if got != "design" {
+		t.Fatalf("expected design, got %q", got)
+	}
+}

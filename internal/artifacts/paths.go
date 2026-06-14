@@ -21,13 +21,19 @@ const (
 )
 
 const (
-	defaultImprovementsDirName         = ".improvements"
-	defaultImprovementWorkDirName      = ".improvement"
-	defaultImprovementWorkspaceDirName = "improvement"
+	defaultImprovementsDirName          = ".improvement"
+	defaultImprovementWorkDirName       = ".improvement"
+	defaultImprovementWorkspaceDirName  = "improvement"
+	defaultImprovementRepositoryDirName = ".improvement-repository"
+	defaultSourceDirName                = "source"
 )
 
 func repositoryArtifactsRoot(root string, artifactsDir string, repository string) string {
 	return filepath.Join(resolveAgainstRoot(root, artifactsDir), repositoryWorkerComponent(repository))
+}
+
+func repositorySourceRoot(root string) string {
+	return resolveAgainstRoot(root, defaultSourceDirName)
 }
 
 func JobDir(root string, artifactsDir string, jobID string) string {
@@ -49,7 +55,7 @@ func RepositoryWorkerDir(root string, artifactsDir string, repository string, wo
 func RepositoryWorkerWorkDir(root string, artifactsDir string, repository string, configuredWorkDir string) string {
 	trimmed := strings.TrimSpace(configuredWorkDir)
 	if trimmed == "" || trimmed == "." {
-		return filepath.Join(repositoryArtifactsRoot(root, artifactsDir, repository), "workspace")
+		return filepath.Join(repositorySourceRoot(root), repositoryWorkerComponent(repository))
 	}
 	if filepath.IsAbs(trimmed) {
 		return filepath.Clean(trimmed)
@@ -61,8 +67,22 @@ func RepositoryWorkerBaseDir(root string, artifactsDir string, repository string
 	return RepositoryWorkerWorkDir(root, artifactsDir, repository, "")
 }
 
+func RepositoryWorkerBranchDir(baseDir string, branch string) string {
+	trimmed := strings.TrimSpace(branch)
+	if trimmed == "" {
+		trimmed = "main"
+	}
+	base := filepath.Base(baseDir)
+	parent := filepath.Dir(baseDir)
+	return filepath.Join(parent, base+"-"+sanitizePathComponent(trimmed))
+}
+
+func RepositoryWorkerBranchWorkDir(root string, artifactsDir string, repository string, branch string) string {
+	return RepositoryWorkerBranchDir(RepositoryWorkerWorkDir(root, artifactsDir, repository, ""), branch)
+}
+
 func RepositoryWorkerSourceDir(root string, artifactsDir string, repository string, workerIndex int) string {
-	return filepath.Join(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), "source")
+	return RepositoryWorkerWorkDir(root, artifactsDir, repository, "")
 }
 
 func RepositoryWorkerJobDir(root string, artifactsDir string, repository string, issueNumber int) string {
@@ -93,12 +113,40 @@ func RepositoryWorkerImprovementsDir(workDir string, configuredDir string) strin
 	return resolveSubdirAgainstBase(workDir, configuredDir, defaultImprovementsDirName)
 }
 
-func RepositoryWorkerImprovementWorkspaceDir(root string, artifactsDir string, repository string) string {
-	return filepath.Join(repositoryArtifactsRoot(root, artifactsDir, repository), defaultImprovementWorkspaceDirName)
+func RepositoryWorkerImprovementRepositoryDir(root string, artifactsDir string, repository string) string {
+	return filepath.Join(repositoryArtifactsRoot(root, artifactsDir, repository), defaultImprovementRepositoryDirName)
+}
+
+func RepositoryWorkerImprovementWorkspaceDir(root string, artifactsDir string, repository string, branch string) string {
+	trimmed := strings.TrimSpace(branch)
+	if trimmed == "" {
+		trimmed = "improvement"
+	}
+	return RepositoryWorkerBranchWorkDir(root, artifactsDir, repository, trimmed)
 }
 
 func RepositoryWorkerImprovementWorkDir(workDir string, configuredDir string) string {
 	return resolveSubdirAgainstBase(workDir, configuredDir, defaultImprovementWorkDirName)
+}
+
+func RepositoryWorkerImprovementDraftFileName(identifier string, title string) string {
+	trimmedID := strings.TrimSpace(identifier)
+	if trimmedID == "" {
+		trimmedID = "improvement"
+	}
+	trimmedTitle := strings.TrimSpace(title)
+	if trimmedTitle == "" {
+		return trimmedID + ".md"
+	}
+	return trimmedID + "_" + sanitizePathComponent(trimmedTitle) + ".md"
+}
+
+func RepositoryWorkerImprovementDraftFilePath(workDir string, configuredDir string, identifier string, title string) string {
+	return filepath.Join(
+		RepositoryWorkerImprovementWorkDir(workDir, configuredDir),
+		"draft",
+		RepositoryWorkerImprovementDraftFileName(identifier, title),
+	)
 }
 
 func RepositoryWorkerImprovementWorkFile(workDir string, configuredDir string, name string) string {

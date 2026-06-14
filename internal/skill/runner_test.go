@@ -260,7 +260,7 @@ func TestRunDesignInjectsManagedInstructionsForCodex(t *testing.T) {
 			Phases:     []string{"design"},
 			Status:     "active",
 			UpdatedAt:  "2026-06-07T00:00:00Z",
-			SourcePath: ".improvements/ui-layout-policy.md",
+			SourcePath: ".improvement/ui-layout-policy.md",
 			Body:       "- Keep action buttons on the left.",
 		}},
 	}, ExecutionConfig{Provider: "codex"})
@@ -276,7 +276,7 @@ func TestRunDesignInjectsManagedInstructionsForCodex(t *testing.T) {
 	if !strings.Contains(output, "Managed Improvement Instructions") {
 		t.Fatalf("expected injected managed instructions, got %q", output)
 	}
-	if !strings.Contains(output, ".improvements/ui-layout-policy.md") {
+	if !strings.Contains(output, ".improvement/ui-layout-policy.md") {
 		t.Fatalf("expected source path in injected prompt, got %q", output)
 	}
 }
@@ -310,7 +310,7 @@ func TestRunDesignWritesAgentsFileForCopilot(t *testing.T) {
 			Phases:     []string{"design"},
 			Status:     "active",
 			UpdatedAt:  "2026-06-07T00:00:00Z",
-			SourcePath: ".improvements/review-checklist.md",
+			SourcePath: ".improvement/review-checklist.md",
 			Body:       "- Keep the explanation short.",
 		}},
 	}, ExecutionConfig{Provider: "copilot"})

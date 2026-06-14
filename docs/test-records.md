@@ -20,9 +20,9 @@
 ## 補足
 
 - `fixture-pr-created` は issue 起点で PR を作成した完了レコードです。
-- `fixture-pr-created` には改善案 `draft_created` の監査成果物と shared workdir の `.improvement/` が含まれます。
-- `fixture-pr-comment-analysis-ready` には改善案 `approved` と shared workdir の `.improvements/*.md` が含まれます。
-- `fixture-failed` には改善不要 `no_improvement_needed` の `improvement/decision.json` が含まれます。
+- `fixture-pr-created` には改善案 `draft_created` の `jobs/.../improvement/` 監査成果物と shared workdir の `.improvement/draft/*.md` が含まれます。
+- `fixture-pr-comment-analysis-ready` には改善案 `approved` の `jobs/.../improvement/` 監査成果物と shared workdir の `.improvement/*.md` / `.improvements/*.md` が含まれます。
+- `fixture-failed` には改善不要 `no_improvement_needed` の `jobs/.../improvement/decision.json` が含まれます。
 - `fixture-pr-feedback-completed` は PR フィードバックを反映した完了レコードです。
 - `fixture-deleted` は論理削除済みのレコードです。UI 上で削除済み一覧の確認に使えます。
 

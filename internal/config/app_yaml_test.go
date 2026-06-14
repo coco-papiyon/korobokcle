@@ -76,8 +76,7 @@ func TestAppMonitoredRepositoryBranchRoundTrip(t *testing.T) {
 			Workers:            2,
 			ImprovementEnabled: true,
 			ImprovementBranch:  "develop-ai",
-			ImprovementDir:     ".repo-improvements",
-			ImprovementWorkDir: ".repo-improvement-draft",
+			ImprovementDir:     ".repo-improvement",
 		},
 	}
 
@@ -91,8 +90,7 @@ func TestAppMonitoredRepositoryBranchRoundTrip(t *testing.T) {
 	for _, expected := range []string{
 		"improvementEnabled: true",
 		"improvementBranch: develop-ai",
-		"improvementDir: .repo-improvements",
-		"improvementWorkDir: .repo-improvement-draft",
+		"improvementDir: .repo-improvement",
 	} {
 		if !strings.Contains(string(raw), expected) {
 			t.Fatalf("expected %q in yaml, got %s", expected, string(raw))
@@ -115,10 +113,7 @@ func TestAppMonitoredRepositoryBranchRoundTrip(t *testing.T) {
 	if got := decoded.MonitoredRepositories[0].ImprovementBranch; got != "develop-ai" {
 		t.Fatalf("expected improvement branch develop-ai, got %q", got)
 	}
-	if got := decoded.MonitoredRepositories[0].ImprovementDir; got != ".repo-improvements" {
-		t.Fatalf("expected improvement dir .repo-improvements, got %q", got)
-	}
-	if got := decoded.MonitoredRepositories[0].ImprovementWorkDir; got != ".repo-improvement-draft" {
-		t.Fatalf("expected improvement work dir .repo-improvement-draft, got %q", got)
+	if got := decoded.MonitoredRepositories[0].ImprovementDir; got != ".repo-improvement" {
+		t.Fatalf("expected improvement dir .repo-improvement, got %q", got)
 	}
 }

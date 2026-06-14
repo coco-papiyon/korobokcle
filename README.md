@@ -201,14 +201,14 @@ Web UI の `Settings` 画面からも切り替え可能です。
 
 `config/watch-rules.yaml` の各ルールでも `provider` / `model` を指定でき、未指定時は `config/app.yaml` の設定を使います。
 watch rule 側の provider / model の候補も、コード内の provider catalog を元に表示されます。
-`config/app.yaml` の `workspaceDir` は repository worker が clone したソース直下に作る作業用ディレクトリ名です。既定値は `.workspace` で、ジョブごとの成果物は `worker-root/.workspace/issue_<issue番号>/...` に保存します。
-`worker settings` 画面の `workerDirs` を指定すると、ワーカーごとの source root を個別に変更できます。未指定時は `artifacts/<repo>/worker-<id>/` を使います。
+`config/app.yaml` の `workspaceDir` は repository worker が worktree 内に作る作業用ディレクトリ名です。既定値は `.workspace` で、ジョブごとの成果物は `source/<repo>-<branch>/.workspace/issue_<issue番号>/...` に保存します。
+`worker settings` 画面の `workDir` を指定すると、ワーカーごとの base clone を個別に変更できます。未指定時は `source/<repo>` を使います。実際の作業用 worktree は `source/<repo>-<branch>` です。
 
 `copilot` / `claude` / `codex` は外部 CLI を実行します。
 デフォルトでは `copilot -p ... -s --allow-all-tools --no-ask-user`、`claude`、`codex exec` を呼びますが、
 model を指定した場合は `--model` を付けて実行します。
 `codex` の prompt はデフォルトで標準入力から渡します。
-`copilot` は監視対象リポジトリのワーカー作業ディレクトリで実行し、`artifacts/.../prompt.md` を読んでその指示に従います。
+`copilot` は監視対象リポジトリのワーカー worktree で実行し、`artifacts/.../prompt.md` を読んでその指示に従います。
 設定・成果物・スキル定義はツール配置ディレクトリの `config/`、`artifacts/`、`skills/` を参照します。
 `copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定できます。必要ならここで制限できます。
 `claude` は `KOROBOKCLE_CLAUDE_BIN` / `KOROBOKCLE_CLAUDE_ARGS_JSON` で上書きできます。

@@ -6,18 +6,29 @@ import PanelCard from '@/components/PanelCard.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import {
   approveImprovement,
+  fetchAppConfig,
   fetchImprovementDetail,
   fetchImprovements,
   regenerateImprovement,
+  pushImprovement,
   rejectImprovement,
   saveImprovementDraft,
+  saveImprovementWorkspace,
 } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
-import type { ImprovementDetail, ImprovementSummary } from '@/types'
+import type { Artifact, ImprovementDetail, ImprovementSummary } from '@/types'
 import { computed, ref } from 'vue'
 
-const { data, isLoading, error, reload } = useAsyncData(fetchImprovements)
+const { data: appConfig } = useAsyncData(fetchAppConfig)
+const refreshIntervalMs = computed(() => {
+  const seconds = appConfig.value?.screenRefreshInterval ?? 0
+  return seconds > 0 ? seconds * 1000 : 0
+})
+
+const { data, isLoading, error, reload } = useAsyncData(fetchImprovements, {
+  pollIntervalMs: refreshIntervalMs,
+})
 const items = computed(() => data.value ?? [])
 
 const selectedJobId = ref('')
@@ -27,10 +38,20 @@ const detailError = ref<string | null>(null)
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const approvalState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const regenerateState = ref<'idle' | 'saving' | 'error'>('idle')
+const workspaceState = ref<'idle' | 'saving' | 'pushing' | 'error'>('idle')
 const actionError = ref<string | null>(null)
 const draftBody = ref('')
 const notesBody = ref('')
 const approvalComment = ref('')
+const workspaceFiles = ref<Artifact[]>([])
+
+function resetDetailActionState() {
+  saveState.value = 'idle'
+  approvalState.value = 'idle'
+  regenerateState.value = 'idle'
+  workspaceState.value = 'idle'
+  actionError.value = null
+}
 
 function improvementStatusLabel(status: string) {
   switch (status) {
@@ -118,21 +139,26 @@ const detailImprovementStatusClass = computed(() => {
   return improvementStatusClass(selectedDetail.value?.summary.status ?? '')
 })
 
+function setWorkspaceFiles(files?: Artifact[]) {
+  workspaceFiles.value = (files ?? []).map((file) => ({
+    path: file.path,
+    content: file.content,
+  }))
+}
+
 async function openDetail(jobId: string) {
   selectedJobId.value = jobId
   selectedDetail.value = null
   detailState.value = 'loading'
   detailError.value = null
-  saveState.value = 'idle'
-  approvalState.value = 'idle'
-  regenerateState.value = 'idle'
-  actionError.value = null
+  resetDetailActionState()
   approvalComment.value = ''
   try {
     const detail = await fetchImprovementDetail(jobId)
     selectedDetail.value = detail
     draftBody.value = detail.draft?.content ?? detail.result?.content ?? ''
     notesBody.value = detail.notes?.content ?? ''
+    setWorkspaceFiles(detail.workspace)
     detailState.value = 'idle'
   } catch (err) {
     detailState.value = 'error'
@@ -145,8 +171,11 @@ function closeDetail() {
   selectedDetail.value = null
   detailState.value = 'idle'
   detailError.value = null
-  actionError.value = null
+  draftBody.value = ''
+  notesBody.value = ''
   approvalComment.value = ''
+  workspaceFiles.value = []
+  resetDetailActionState()
 }
 
 async function saveDraft() {
@@ -158,6 +187,7 @@ async function saveDraft() {
   try {
     selectedDetail.value = await saveImprovementDraft(selectedJobId.value, draftBody.value, notesBody.value)
     saveState.value = 'saved'
+    closeDetail()
     await reload()
   } catch (err) {
     saveState.value = 'error'
@@ -176,6 +206,11 @@ async function submitApproval(status: 'approved' | 'rejected') {
       ? await approveImprovement(selectedJobId.value, approvalComment.value, draftBody.value)
       : await rejectImprovement(selectedJobId.value, approvalComment.value, draftBody.value)
     approvalState.value = 'saved'
+    if (status === 'approved') {
+      setWorkspaceFiles(selectedDetail.value.workspace)
+    } else {
+      closeDetail()
+    }
     await reload()
   } catch (err) {
     approvalState.value = 'error'
@@ -194,9 +229,40 @@ async function rerunGeneration() {
     draftBody.value = selectedDetail.value.draft?.content ?? ''
     notesBody.value = selectedDetail.value.notes?.content ?? ''
     regenerateState.value = 'idle'
+    closeDetail()
     await reload()
   } catch (err) {
     regenerateState.value = 'error'
+    actionError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
+  }
+}
+
+function hasEditableWorkspaceFiles() {
+  return workspaceFiles.value.length > 0
+}
+
+async function pushWorkspace() {
+  if (!selectedJobId.value || workspaceFiles.value.length === 0) {
+    return
+  }
+  workspaceState.value = 'saving'
+  actionError.value = null
+  try {
+    const saved = await saveImprovementWorkspace(
+      selectedJobId.value,
+      workspaceFiles.value.map((file) => ({ path: file.path, content: file.content })),
+    )
+    selectedDetail.value = saved
+    setWorkspaceFiles(saved.workspace)
+    workspaceState.value = 'pushing'
+    const pushed = await pushImprovement(selectedJobId.value)
+    selectedDetail.value = pushed
+    setWorkspaceFiles(pushed.workspace)
+    workspaceState.value = 'idle'
+    closeDetail()
+    await reload()
+  } catch (err) {
+    workspaceState.value = 'error'
     actionError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
@@ -208,7 +274,7 @@ async function rerunGeneration() {
     description="repository 単位の改善案と改善不要判定を一覧で確認し、そのまま編集と承認を行えます。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
-      <PanelCard title="改善一覧" description="`draft_created` / `approved` / `rejected` / `no_improvement_needed` をまとめて表示します。">
+      <PanelCard title="改善一覧" description="`generating` / `draft_created` / `approved` / `rejected` / `no_improvement_needed` をまとめて表示します。">
         <DataTable :columns="['Repository', 'Issue', 'ステータス', '判定', 'Phase', '更新日時', '概要']">
           <tr v-for="item in items" :key="item.jobId">
             <td>
@@ -266,14 +332,40 @@ async function rerunGeneration() {
               <textarea v-model="draftBody" class="field__control field__control--textarea improvement-editor" />
             </PanelCard>
 
-            <PanelCard v-if="selectedDetail.approval" title="approval.json">
-              <pre class="artifact-view">{{ selectedDetail.approval.content }}</pre>
-            </PanelCard>
-
             <div class="field">
               <label class="field__label" for="improvement-approval-comment">承認コメント</label>
               <textarea id="improvement-approval-comment" v-model="approvalComment" class="field__control field__control--textarea" />
             </div>
+
+            <PanelCard
+              v-if="selectedDetail.summary.decision === 'approved'"
+              title="承認後の修正"
+              description="`.improvement/*.md` を確認してから push します。AI の修正内容をそのまま push せず、必要ならこの画面で編集します。"
+            >
+              <div v-if="hasEditableWorkspaceFiles()" class="stack-md">
+                <section v-for="file in workspaceFiles" :key="file.path" class="stack-sm">
+                  <div class="improvement-overview__header">
+                    <h3>{{ file.path }}</h3>
+                  </div>
+                  <textarea
+                    v-model="file.content"
+                    class="field__control field__control--textarea improvement-editor"
+                    spellcheck="false"
+                  />
+                </section>
+                <div class="modal-actions">
+                  <button
+                    class="button button-primary"
+                    type="button"
+                    :disabled="workspaceState === 'saving' || workspaceState === 'pushing'"
+                    @click="pushWorkspace"
+                  >
+                    {{ workspaceState === 'saving' ? '保存中...' : workspaceState === 'pushing' ? 'push中...' : 'push' }}
+                  </button>
+                </div>
+              </div>
+              <p v-else class="text-muted">編集可能な `.md` ファイルはまだありません。</p>
+            </PanelCard>
 
             <p v-if="saveState === 'saved'" class="notice notice-success">改善案を保存しました。</p>
             <p v-if="approvalState === 'saved'" class="notice notice-success">改善案を更新しました。</p>

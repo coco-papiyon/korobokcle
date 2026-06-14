@@ -19,8 +19,8 @@
 
 改善機能の確認ポイント:
 
-- `artifacts/coco-papiyon-korobokcle/workspace/.improvement/`: 下書き中の改善案
-- `artifacts/coco-papiyon-korobokcle/workspace/.improvements/`: 承認済みの改善指示
+- `source/coco-papiyon-korobokcle-improvement/.improvement/`: 下書き中の改善案
+- `source/coco-papiyon-korobokcle-improvement/.improvement/`: 承認済みの改善指示
 - `artifacts/coco-papiyon-korobokcle/jobs/issue_<番号>/improvement/`: ジョブごとの監査スナップショット
 
 再生成:

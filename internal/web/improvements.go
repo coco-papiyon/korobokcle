@@ -24,8 +24,6 @@ import (
 const (
 	improvementInputFileName    = "input.md"
 	improvementContextFileName  = "context.json"
-	improvementDraftDirName     = "draft"
-	improvementDraftFileName    = "draft.md"
 	improvementNotesFileName    = "notes.md"
 	improvementResultFileName   = "result.md"
 	improvementApprovalFileName = "approval.json"
@@ -55,14 +53,15 @@ type improvementSummaryResponse struct {
 }
 
 type improvementDetailResponse struct {
-	Summary  improvementSummaryResponse `json:"summary"`
-	Input    *artifactResponse          `json:"input,omitempty"`
-	Context  *artifactResponse          `json:"context,omitempty"`
-	Draft    *artifactResponse          `json:"draft,omitempty"`
-	Notes    *artifactResponse          `json:"notes,omitempty"`
-	Result   *artifactResponse          `json:"result,omitempty"`
-	Decision *artifactResponse          `json:"decision,omitempty"`
-	Approval *artifactResponse          `json:"approval,omitempty"`
+	Summary   improvementSummaryResponse         `json:"summary"`
+	Input     *artifactResponse                  `json:"input,omitempty"`
+	Context   *artifactResponse                  `json:"context,omitempty"`
+	Draft     *artifactResponse                  `json:"draft,omitempty"`
+	Notes     *artifactResponse                  `json:"notes,omitempty"`
+	Result    *artifactResponse                  `json:"result,omitempty"`
+	Decision  *artifactResponse                  `json:"decision,omitempty"`
+	Approval  *artifactResponse                  `json:"approval,omitempty"`
+	Workspace []improvementWorkspaceFileResponse `json:"workspace,omitempty"`
 }
 
 type improvementSaveDraftRequest struct {
@@ -77,6 +76,20 @@ type improvementApprovalPayload struct {
 
 type improvementGenerateRequest struct {
 	SourceEventType string `json:"sourceEventType"`
+}
+
+type improvementWorkspaceFileResponse struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+type improvementWorkspaceUpdateRequest struct {
+	Files []improvementWorkspaceUpdateFile `json:"files"`
+}
+
+type improvementWorkspaceUpdateFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 type improvementDecisionRecord struct {
@@ -172,14 +185,6 @@ func (s *Server) handleSaveImprovementDraft(w http.ResponseWriter, r *http.Reque
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if err := writeImprovementTextFile(workFiles.NotesPath, payload.Notes); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err)
-		return
-	}
-	if err := writeImprovementTextFile(filepath.Join(artifactDir, improvementDraftDirName, improvementDraftFileName), payload.Draft); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err)
-		return
-	}
 	if err := writeImprovementTextFile(filepath.Join(artifactDir, improvementNotesFileName), payload.Notes); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err)
 		return
@@ -244,6 +249,50 @@ func (s *Server) handleRegenerateImprovement(w http.ResponseWriter, r *http.Requ
 	s.handleImprovementDetail(w, r)
 }
 
+func (s *Server) handleSaveImprovementWorkspace(w http.ResponseWriter, r *http.Request) {
+	jobID := mux.Vars(r)["id"]
+	job, _, err := s.orchestrator.JobDetail(r.Context(), jobID)
+	if err != nil {
+		writeJSONError(w, http.StatusNotFound, err)
+		return
+	}
+
+	if err := s.saveImprovementWorkspace(job, r); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errImprovementWorkspaceNotReady) {
+			status = http.StatusBadRequest
+		}
+		writeJSONError(w, status, err)
+		return
+	}
+
+	s.handleImprovementDetail(w, r)
+}
+
+func (s *Server) handlePushImprovement(w http.ResponseWriter, r *http.Request) {
+	if s.improvementPusher == nil {
+		writeJSONError(w, http.StatusInternalServerError, fmt.Errorf("improvement pusher is not configured"))
+		return
+	}
+
+	jobID := mux.Vars(r)["id"]
+	if _, _, err := s.orchestrator.JobDetail(r.Context(), jobID); err != nil {
+		writeJSONError(w, http.StatusNotFound, err)
+		return
+	}
+
+	if err := s.improvementPusher(r.Context(), jobID); err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errImprovementWorkspaceNotReady) {
+			status = http.StatusBadRequest
+		}
+		writeJSONError(w, status, err)
+		return
+	}
+
+	s.handleImprovementDetail(w, r)
+}
+
 func (s *Server) handleGenerateImprovement(w http.ResponseWriter, r *http.Request) {
 	jobID := mux.Vars(r)["id"]
 	job, _, err := s.orchestrator.JobDetail(r.Context(), jobID)
@@ -280,19 +329,9 @@ func (s *Server) resolveImprovementSourceEventType(job domain.Job, requested str
 		return requested, nil
 	}
 
-	repoConfig, ok := s.resolveMonitoredRepository(job.Repository)
-	if ok {
+	if _, ok := s.resolveMonitoredRepository(job.Repository); ok {
 		artifactDir := s.repositoryImprovementArtifactDir(job)
 		if raw, err := os.ReadFile(filepath.Join(artifactDir, improvementContextFileName)); err == nil {
-			var contextRecord improvementContextRecord
-			if json.Unmarshal(raw, &contextRecord) == nil {
-				if eventType := strings.TrimSpace(contextRecord.Source.EventType); eventType != "" {
-					return eventType, nil
-				}
-			}
-		}
-		workFiles := s.repositoryImprovementWorkFiles(job, repoConfig)
-		if raw, err := os.ReadFile(workFiles.ContextPath); err == nil {
 			var contextRecord improvementContextRecord
 			if json.Unmarshal(raw, &contextRecord) == nil {
 				if eventType := strings.TrimSpace(contextRecord.Source.EventType); eventType != "" {
@@ -323,31 +362,21 @@ func (s *Server) loadImprovementDetail(job domain.Job) (improvementDetailRespons
 
 	detail := improvementDetailResponse{Summary: summary}
 	artifactDir := s.repositoryImprovementArtifactDir(job)
+	repoConfig, ok := s.resolveMonitoredRepository(job.Repository)
+	if ok {
+		workFiles := s.repositoryImprovementWorkFiles(job, repoConfig)
+		if detail.Draft, err = loadArtifactIfExists(workFiles.DraftPath); err != nil {
+			return improvementDetailResponse{}, err
+		}
+	}
 	if detail.Input, err = loadArtifactIfExists(filepath.Join(artifactDir, improvementInputFileName)); err != nil {
 		return improvementDetailResponse{}, err
 	}
 	if detail.Context, err = loadArtifactIfExists(filepath.Join(artifactDir, improvementContextFileName)); err != nil {
 		return improvementDetailResponse{}, err
 	}
-	if detail.Draft, err = loadArtifactIfExists(filepath.Join(artifactDir, improvementDraftDirName, improvementDraftFileName)); err != nil {
-		return improvementDetailResponse{}, err
-	}
 	if detail.Notes, err = loadArtifactIfExists(filepath.Join(artifactDir, improvementNotesFileName)); err != nil {
 		return improvementDetailResponse{}, err
-	}
-	repoConfig, ok := s.resolveMonitoredRepository(job.Repository)
-	if ok {
-		workFiles := s.repositoryImprovementWorkFiles(job, repoConfig)
-		if detail.Draft == nil {
-			if detail.Draft, err = loadArtifactIfExists(workFiles.DraftPath); err != nil {
-				return improvementDetailResponse{}, err
-			}
-		}
-		if detail.Notes == nil {
-			if detail.Notes, err = loadArtifactIfExists(workFiles.NotesPath); err != nil {
-				return improvementDetailResponse{}, err
-			}
-		}
 	}
 	if detail.Result, err = loadArtifactIfExists(filepath.Join(artifactDir, improvementResultFileName)); err != nil {
 		return improvementDetailResponse{}, err
@@ -358,8 +387,112 @@ func (s *Server) loadImprovementDetail(job domain.Job) (improvementDetailRespons
 	if detail.Approval, err = loadArtifactIfExists(filepath.Join(artifactDir, improvementApprovalFileName)); err != nil {
 		return improvementDetailResponse{}, err
 	}
+	if detail.Workspace, err = s.loadImprovementWorkspaceFiles(job); err != nil {
+		return improvementDetailResponse{}, err
+	}
 
 	return detail, nil
+}
+
+var errImprovementWorkspaceNotReady = fmt.Errorf("improvement workspace is not ready")
+
+func (s *Server) loadImprovementWorkspaceFiles(job domain.Job) ([]improvementWorkspaceFileResponse, error) {
+	repoConfig, ok := s.resolveMonitoredRepository(job.Repository)
+	if !ok || !repoConfig.ImprovementEnabled {
+		return nil, nil
+	}
+	if !s.improvementReadyForWorkspace(job) {
+		return nil, nil
+	}
+
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(s.config.Root(), s.config.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repoConfig))
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkDir(workDir, repoConfig.ImprovementDir)
+	entries, err := filepath.Glob(filepath.Join(improvementDir, "*.md"))
+	if err != nil {
+		return nil, err
+	}
+
+	files := make([]improvementWorkspaceFileResponse, 0, len(entries))
+	for _, entry := range entries {
+		content, err := os.ReadFile(entry)
+		if err != nil {
+			return nil, err
+		}
+		relPath, err := filepath.Rel(workDir, entry)
+		if err != nil {
+			relPath = entry
+		}
+		files = append(files, improvementWorkspaceFileResponse{
+			Path:    filepath.ToSlash(relPath),
+			Content: string(content),
+		})
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
+	return files, nil
+}
+
+func (s *Server) saveImprovementWorkspace(job domain.Job, r *http.Request) error {
+	repoConfig, ok := s.resolveMonitoredRepository(job.Repository)
+	if !ok || !repoConfig.ImprovementEnabled {
+		return errImprovementWorkspaceNotReady
+	}
+	if !s.improvementReadyForWorkspace(job) {
+		return errImprovementWorkspaceNotReady
+	}
+
+	var payload improvementWorkspaceUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		return fmt.Errorf("decode improvement workspace: %w", err)
+	}
+
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(s.config.Root(), s.config.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repoConfig))
+	improvementDir := artifacts.RepositoryWorkerImprovementWorkDir(workDir, repoConfig.ImprovementDir)
+	for _, file := range payload.Files {
+		trimmedPath := strings.TrimSpace(file.Path)
+		if trimmedPath == "" {
+			return fmt.Errorf("workspace file path is empty")
+		}
+		fullPath, err := improvementWorkspaceFilePath(improvementDir, workDir, trimmedPath)
+		if err != nil {
+			return err
+		}
+		if err := writeImprovementTextFile(fullPath, file.Content); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Server) improvementReadyForWorkspace(job domain.Job) bool {
+	summary, err := s.loadImprovementSummary(job)
+	if err != nil {
+		return false
+	}
+	return summary.Decision == "approved"
+}
+
+func improvementWorkspaceFilePath(improvementDir string, workDir string, relativePath string) (string, error) {
+	cleaned := filepath.Clean(filepath.FromSlash(strings.TrimSpace(relativePath)))
+	if cleaned == "." || cleaned == string(filepath.Separator) {
+		return "", fmt.Errorf("workspace file path is invalid")
+	}
+	fullPath := filepath.Join(workDir, cleaned)
+	rel, err := filepath.Rel(improvementDir, fullPath)
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(rel, "..") || filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("workspace file path must stay within %s", filepath.ToSlash(improvementDir))
+	}
+	if !strings.HasSuffix(strings.ToLower(cleaned), ".md") {
+		return "", fmt.Errorf("workspace file path must be a markdown file")
+	}
+	if !strings.HasPrefix(filepath.ToSlash(cleaned), filepath.ToSlash(filepath.Base(improvementDir))) && !strings.HasPrefix(filepath.ToSlash(cleaned), ".improvement/") {
+		return "", fmt.Errorf("workspace file path must be within the improvement directory")
+	}
+	return fullPath, nil
 }
 
 func (s *Server) loadImprovementSummary(job domain.Job) (improvementSummaryResponse, error) {
@@ -373,15 +506,8 @@ func (s *Server) loadImprovementSummary(job domain.Job) (improvementSummaryRespo
 		summary.DeletedAt = job.DeletedAt.Format(timeFormat)
 	}
 
-	repoConfig, ok := s.resolveMonitoredRepository(job.Repository)
+	_, ok := s.resolveMonitoredRepository(job.Repository)
 	artifactDir := s.repositoryImprovementArtifactDir(job)
-	artifactDraftExists, err := webFileExists(filepath.Join(artifactDir, improvementDraftDirName, improvementDraftFileName))
-	if err != nil {
-		return improvementSummaryResponse{}, err
-	}
-	if artifactDraftExists {
-		summary.HasDraft = true
-	}
 	artifactInputExists, err := webFileExists(filepath.Join(artifactDir, improvementInputFileName))
 	if err != nil {
 		return improvementSummaryResponse{}, err
@@ -391,7 +517,6 @@ func (s *Server) loadImprovementSummary(job domain.Job) (improvementSummaryRespo
 		return improvementSummaryResponse{}, err
 	}
 	if ok {
-		workFiles := s.repositoryImprovementWorkFiles(job, repoConfig)
 		if raw, err := os.ReadFile(filepath.Join(artifactDir, improvementContextFileName)); err == nil {
 			var record improvementContextRecord
 			if json.Unmarshal(raw, &record) == nil {
@@ -400,17 +525,6 @@ func (s *Server) loadImprovementSummary(job domain.Job) (improvementSummaryRespo
 			}
 		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return improvementSummaryResponse{}, err
-		}
-		if len(summary.Phases) == 0 {
-			if raw, err := os.ReadFile(workFiles.ContextPath); err == nil {
-				var record improvementContextRecord
-				if json.Unmarshal(raw, &record) == nil {
-					summary.Phases = append([]string(nil), record.Phases...)
-					summary.SourceEventType = strings.TrimSpace(record.Source.EventType)
-				}
-			} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return improvementSummaryResponse{}, err
-			}
 		}
 	}
 
@@ -435,15 +549,34 @@ func (s *Server) loadImprovementSummary(job domain.Job) (improvementSummaryRespo
 	if err := json.Unmarshal(raw, &decision); err != nil {
 		return improvementSummaryResponse{}, err
 	}
-	summary.Status = strings.TrimSpace(decision.Decision)
 	summary.Decision = strings.TrimSpace(decision.Decision)
 	summary.Reason = strings.TrimSpace(decision.Reason)
 	summary.UpdatedAt = strings.TrimSpace(decision.UpdatedAt)
 	if summary.SourceEventType == "" {
 		summary.SourceEventType = strings.TrimSpace(decision.SourceEvent)
 	}
+
+	status := summary.Decision
+	if status == "draft_created" && isImprovementRerunSourceEvent(summary.SourceEventType) {
+		status = "generating"
+	}
+	summary.Status = status
+
+	switch summary.Decision {
+	case "draft_created", "approved", "rejected":
+		summary.HasDraft = true
+	}
 	summary.ImprovementReady = true
 	return summary, nil
+}
+
+func isImprovementRerunSourceEvent(sourceEventType string) bool {
+	switch strings.TrimSpace(sourceEventType) {
+	case "design_rerun_requested", "implementation_rerun_requested", "pr_rerun_requested", "review_rerun_requested":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) repositoryImprovementArtifactDir(job domain.Job) string {
@@ -451,23 +584,14 @@ func (s *Server) repositoryImprovementArtifactDir(job domain.Job) string {
 }
 
 func (s *Server) repositoryImprovementWorkFiles(job domain.Job, repoConfig config.MonitoredRepository) improvementWorkFiles {
-	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(s.config.Root(), s.config.App().ArtifactsDir, job.Repository)
-	improvementWorkDir := artifacts.RepositoryWorkerImprovementWorkDir(workDir, repoConfig.ImprovementWorkDir)
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(s.config.Root(), s.config.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repoConfig))
 	return improvementWorkFiles{
-		InputPath:    filepath.Join(improvementWorkDir, improvementInputFileName),
-		ContextPath:  filepath.Join(improvementWorkDir, improvementContextFileName),
-		DraftPath:    filepath.Join(improvementWorkDir, improvementDraftDirName, improvementDraftFileName),
-		NotesPath:    filepath.Join(improvementWorkDir, improvementNotesFileName),
-		DecisionPath: filepath.Join(improvementWorkDir, improvementDecisionFileName),
+		DraftPath: artifacts.RepositoryWorkerImprovementDraftFilePath(workDir, repoConfig.ImprovementDir, job.ID, job.Title),
 	}
 }
 
 type improvementWorkFiles struct {
-	InputPath    string
-	ContextPath  string
-	DraftPath    string
-	NotesPath    string
-	DecisionPath string
+	DraftPath string
 }
 
 func webFileExists(path string) (bool, error) {

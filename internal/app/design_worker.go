@@ -111,7 +111,7 @@ func runPendingDesigns(ctx context.Context, repoRoot string, cfg *config.Service
 func resolveDesignSkillName(cfg *config.Service, watchRuleID string) (string, error) {
 	rule, ok := cfg.WatchRuleByID(watchRuleID)
 	if !ok {
-		return "", os.ErrNotExist
+		return "design", nil
 	}
 
 	skillSet := strings.TrimSpace(rule.SkillSet)

@@ -316,23 +316,15 @@ func shellExecCommand(ctx context.Context, command string) *exec.Cmd {
 }
 
 func resolveJobToolWorkDir(cfg *config.Service, job domain.Job) (string, error) {
-	workers := 1
-	found := false
-	for _, repository := range cfg.App().MonitoredRepositories {
-		if canonicalRepositoryID(repository.Repository) != canonicalRepositoryID(job.Repository) {
-			continue
-		}
-		found = true
-		if repository.Workers > 0 {
-			workers = repository.Workers
-		}
-		break
-	}
-	if !found {
+	repoConfig, ok := resolveMonitoredRepository(cfg, job.Repository)
+	if !ok {
 		return "", fmt.Errorf("repository %q is not registered", job.Repository)
 	}
-	workerIndex := assignedWorkerIndex(job, job.Repository, workers)
-	repoDir := artifacts.RepositoryWorkerSourceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, workerIndex)
+	branch := strings.TrimSpace(repoConfig.Branch)
+	if branch == "" {
+		branch = "main"
+	}
+	repoDir := artifacts.RepositoryWorkerBranchWorkDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, branch)
 	info, err := os.Stat(repoDir)
 	if err != nil {
 		return "", fmt.Errorf("tool workdir is not available: %w", err)
@@ -341,6 +333,16 @@ func resolveJobToolWorkDir(cfg *config.Service, job domain.Job) (string, error) 
 		return "", fmt.Errorf("tool workdir is not a directory: %s", repoDir)
 	}
 	return repoDir, nil
+}
+
+func resolveMonitoredRepository(cfg *config.Service, repository string) (config.MonitoredRepository, bool) {
+	for _, monitored := range cfg.App().MonitoredRepositories {
+		if canonicalRepositoryID(monitored.Repository) != canonicalRepositoryID(repository) {
+			continue
+		}
+		return monitored, true
+	}
+	return config.MonitoredRepository{}, false
 }
 
 func assignedWorkerIndex(job domain.Job, repository string, workerCount int) int {

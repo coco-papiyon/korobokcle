@@ -123,12 +123,11 @@ func TestServiceUpdateAppClonesImprovementSettings(t *testing.T) {
 	app.MonitoredRepositories = []MonitoredRepository{{
 		Repository:         "owner/repo",
 		Branch:             "main",
-		WorkDir:            "artifacts/owner-repo/workspace",
+		WorkDir:            "source/owner-repo",
 		Workers:            2,
 		ImprovementEnabled: true,
 		ImprovementBranch:  "develop-ai",
-		ImprovementDir:     ".improvements-custom",
-		ImprovementWorkDir: ".improvement-custom",
+		ImprovementDir:     ".improvement-custom",
 	}}
 
 	if err := svc.UpdateApp(app); err != nil {
@@ -137,7 +136,6 @@ func TestServiceUpdateAppClonesImprovementSettings(t *testing.T) {
 
 	app.MonitoredRepositories[0].ImprovementBranch = "changed"
 	app.MonitoredRepositories[0].ImprovementDir = "changed"
-	app.MonitoredRepositories[0].ImprovementWorkDir = "changed"
 
 	got := svc.App()
 	if len(got.MonitoredRepositories) != 1 {
@@ -147,7 +145,7 @@ func TestServiceUpdateAppClonesImprovementSettings(t *testing.T) {
 	if !repository.ImprovementEnabled {
 		t.Fatalf("expected improvement feature enabled in cached config")
 	}
-	if repository.ImprovementBranch != "develop-ai" || repository.ImprovementDir != ".improvements-custom" || repository.ImprovementWorkDir != ".improvement-custom" {
+	if repository.ImprovementBranch != "develop-ai" || repository.ImprovementDir != ".improvement-custom" {
 		t.Fatalf("unexpected cached improvement settings: %#v", repository)
 	}
 
@@ -158,8 +156,7 @@ func TestServiceUpdateAppClonesImprovementSettings(t *testing.T) {
 	for _, expected := range [][]byte{
 		[]byte("improvementEnabled: true"),
 		[]byte("improvementBranch: develop-ai"),
-		[]byte("improvementDir: .improvements-custom"),
-		[]byte("improvementWorkDir: .improvement-custom"),
+		[]byte("improvementDir: .improvement-custom"),
 	} {
 		if !bytes.Contains(raw, expected) {
 			t.Fatalf("expected saved yaml to contain %q, got %s", expected, string(raw))

@@ -9,28 +9,19 @@ func TestRepositoryImprovementWorkFilesUseConfiguredDir(t *testing.T) {
 	t.Parallel()
 
 	workDir := filepath.Join("workspace", "tool", "artifacts", "owner-repo", "workspace")
-	files := repositoryImprovementWorkFiles(workDir, ".draft-improvements")
+	files := repositoryImprovementWorkFiles(workDir, ".draft-improvements", "job-1", "画面レイアウト改善")
 
 	if files.Dir != filepath.Join(workDir, ".draft-improvements") {
 		t.Fatalf("unexpected dir: %q", files.Dir)
 	}
-	if files.InputPath != filepath.Join(workDir, ".draft-improvements", "input.md") {
-		t.Fatalf("unexpected input path: %q", files.InputPath)
-	}
-	if files.ContextPath != filepath.Join(workDir, ".draft-improvements", "context.json") {
-		t.Fatalf("unexpected context path: %q", files.ContextPath)
-	}
 	if files.DraftDir != filepath.Join(workDir, ".draft-improvements", "draft") {
 		t.Fatalf("unexpected draft dir: %q", files.DraftDir)
 	}
-	if files.DraftPath != filepath.Join(workDir, ".draft-improvements", "draft", "draft.md") {
+	if files.DraftPath != filepath.Join(workDir, ".draft-improvements", "draft", "job-1_画面レイアウト改善.md") {
 		t.Fatalf("unexpected draft path: %q", files.DraftPath)
 	}
-	if files.NotesPath != filepath.Join(workDir, ".draft-improvements", "notes.md") {
-		t.Fatalf("unexpected notes path: %q", files.NotesPath)
-	}
-	if files.ImplementationPromptPath != filepath.Join(workDir, ".draft-improvements", "implementation-prompt.md") {
-		t.Fatalf("unexpected implementation prompt path: %q", files.ImplementationPromptPath)
+	if files.LegacyDraftPath != filepath.Join(workDir, ".draft-improvements", "draft", "draft.md") {
+		t.Fatalf("unexpected legacy draft path: %q", files.LegacyDraftPath)
 	}
 }
 
@@ -49,12 +40,6 @@ func TestRepositoryImprovementArtifactFilesUseImprovementDir(t *testing.T) {
 	}
 	if files.ContextPath != filepath.Join(wantDir, "context.json") {
 		t.Fatalf("unexpected context path: %q", files.ContextPath)
-	}
-	if files.DraftDir != filepath.Join(wantDir, "draft") {
-		t.Fatalf("unexpected draft dir: %q", files.DraftDir)
-	}
-	if files.DraftPath != filepath.Join(wantDir, "draft", "draft.md") {
-		t.Fatalf("unexpected draft path: %q", files.DraftPath)
 	}
 	if files.NotesPath != filepath.Join(wantDir, "notes.md") {
 		t.Fatalf("unexpected notes path: %q", files.NotesPath)

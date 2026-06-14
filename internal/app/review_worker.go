@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -112,7 +111,7 @@ func runPendingReviews(ctx context.Context, repoRoot string, cfg *config.Service
 func resolveReviewSkillName(cfg *config.Service, watchRuleID string) (string, error) {
 	rule, ok := cfg.WatchRuleByID(watchRuleID)
 	if !ok {
-		return "", os.ErrNotExist
+		return "review", nil
 	}
 
 	skillSet := strings.TrimSpace(rule.SkillSet)

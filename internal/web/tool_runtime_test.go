@@ -29,7 +29,7 @@ func TestToolRuntimeSeparatesStdoutAndStderr(t *testing.T) {
 		Repository:  "owner/repository",
 		WatchRuleID: "rule-1",
 	}
-	workerDir := artifacts.RepositoryWorkerSourceDir(root, files.App.ArtifactsDir, job.Repository, 0)
+	workerDir := artifacts.RepositoryWorkerBranchWorkDir(root, files.App.ArtifactsDir, job.Repository, "main")
 	if err := os.MkdirAll(workerDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -93,7 +93,7 @@ func TestToolRuntimeStopMarksExecutionStopped(t *testing.T) {
 		Repository:  "owner/repository",
 		WatchRuleID: "rule-1",
 	}
-	workerDir := artifacts.RepositoryWorkerSourceDir(root, files.App.ArtifactsDir, job.Repository, 0)
+	workerDir := artifacts.RepositoryWorkerBranchWorkDir(root, files.App.ArtifactsDir, job.Repository, "main")
 	if err := os.MkdirAll(workerDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}

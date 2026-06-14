@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -47,8 +45,8 @@ func applyImprovementApproval(ctx context.Context, cfg *config.Service, orch *or
 		return fmt.Errorf("improvement feature is disabled for repository %q", job.Repository)
 	}
 
-	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository)
-	workFiles := repositoryImprovementWorkFiles(workDir, repositoryConfig.ImprovementWorkDir)
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repositoryConfig))
+	workFiles := repositoryImprovementWorkFiles(workDir, repositoryConfig.ImprovementDir, job.ID, job.Title)
 	artifactFiles := repositoryImprovementArtifactFiles(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber)
 
 	draftRaw, err := os.ReadFile(workFiles.DraftPath)
@@ -99,7 +97,7 @@ func applyImprovementApproval(ctx context.Context, cfg *config.Service, orch *or
 		return nil
 	}
 
-	contextRaw, err := os.ReadFile(workFiles.ContextPath)
+	contextRaw, err := os.ReadFile(artifactFiles.ContextPath)
 	if err != nil {
 		return err
 	}
@@ -108,25 +106,25 @@ func applyImprovementApproval(ctx context.Context, cfg *config.Service, orch *or
 		return err
 	}
 
-	document := buildApprovedImprovementDocument(jobID, contextData, resultBody)
-	if err := writeImprovementImplementationPrompt(cfg, repositoryConfig, job, contextData, document, resultBody, workFiles, artifactFiles); err != nil && logger != nil {
-		logger.Printf("improvement implementation prompt generation failed job_id=%s error=%v", jobID, err)
+	phaseNames := improvementPhaseFileNames(contextData.Phases)
+	phaseName := improvementPrimaryPhaseName(phaseNames)
+	targetPath := artifacts.RepositoryWorkerImprovementPhaseFile(workDir, repositoryConfig.ImprovementDir, phaseName)
+	if err := writeImprovementImplementationPrompt(cfg, job, contextData, resultBody, phaseNames, targetPath, artifactFiles); err != nil {
+		return err
 	}
-	documentRaw, err := document.MarshalMarkdown()
+	implementationOutput, err := runImprovementImplementation(ctx, cfg, repositoryConfig, job, contextData, resultBody, targetPath, phaseNames, artifactFiles, logger)
 	if err != nil {
 		return err
 	}
-	if err := writeApprovedImprovementPhaseFiles(workDir, artifactFiles.Dir, repositoryConfig.ImprovementWorkDir, contextData.Phases, documentRaw); err != nil {
+	if err := writeImprovementFile(targetPath, []byte(strings.TrimSpace(implementationOutput)+"\n")); err != nil {
 		return err
 	}
 
-	repoRelativePath := filepath.ToSlash(filepath.Join(config.ResolveImprovementDir(repositoryConfig), document.FrontMatter.ID+".md"))
-	targetPath := filepath.Join(workDir, filepath.FromSlash(repoRelativePath))
-	if err := updateImprovementBranch(ctx, workDir, config.ResolveImprovementBranch(repositoryConfig), artifactFiles.Dir, repoRelativePath, targetPath, documentRaw); err != nil {
+	if err := prepareImprovementBranch(ctx, workDir, config.ResolveImprovementBranch(repositoryConfig), artifactFiles.Dir); err != nil {
 		return err
 	}
 	if logger != nil {
-		logger.Printf("improvement draft approved job_id=%s path=%s", jobID, targetPath)
+		logger.Printf("improvement draft approved job_id=%s path=%s prepared=true", jobID, targetPath)
 	}
 	return nil
 }
@@ -136,23 +134,23 @@ type improvementImplementationPromptContext struct {
 	Repository   string                 `json:"repository"`
 	IssueNumber  int                    `json:"issueNumber"`
 	Title        string                 `json:"title"`
+	WorkDir      string                 `json:"workDir"`
 	TargetPath   string                 `json:"targetPath"`
-	DocumentID   string                 `json:"documentId"`
 	Phases       []string               `json:"phases"`
 	Source       improvementSourceInput `json:"source"`
 	ApprovedBody string                 `json:"approvedBody"`
 }
 
-func writeImprovementImplementationPrompt(cfg *config.Service, repositoryConfig config.MonitoredRepository, job domain.Job, contextData improvementContextData, document ImprovementDocument, approvedBody string, workFiles improvementWorkFiles, artifactFiles improvementArtifactFiles) error {
-	targetPath := filepath.ToSlash(filepath.Join(config.ResolveImprovementDir(repositoryConfig), document.FrontMatter.ID+".md"))
+func writeImprovementImplementationPrompt(cfg *config.Service, job domain.Job, contextData improvementContextData, approvedBody string, phaseNames []string, targetPath string, artifactFiles improvementArtifactFiles) error {
+	repositoryConfig, _ := resolveMonitoredRepository(cfg, job.Repository)
 	promptContext := improvementImplementationPromptContext{
 		JobID:        job.ID,
 		Repository:   job.Repository,
 		IssueNumber:  job.GitHubNumber,
-		Title:        document.FrontMatter.Title,
+		Title:        contextData.Title,
+		WorkDir:      artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repositoryConfig)),
 		TargetPath:   targetPath,
-		DocumentID:   document.FrontMatter.ID,
-		Phases:       append([]string(nil), contextData.Phases...),
+		Phases:       append([]string(nil), phaseNames...),
 		Source:       contextData.Source,
 		ApprovedBody: approvedBody,
 	}
@@ -160,48 +158,8 @@ func writeImprovementImplementationPrompt(cfg *config.Service, repositoryConfig 
 	if err != nil {
 		return err
 	}
-	if err := writeImprovementFile(workFiles.ImplementationPromptPath, []byte(prompt)); err != nil {
-		return err
-	}
 	if err := writeImprovementFile(artifactFiles.ImplementationPromptPath, []byte(prompt)); err != nil {
 		return err
-	}
-	return nil
-}
-
-func buildApprovedImprovementDocument(jobID string, contextData improvementContextData, body string) ImprovementDocument {
-	title := improvementDocumentTitle(body, contextData.Title)
-	now := time.Now().UTC()
-	return ImprovementDocument{
-		FrontMatter: ImprovementFrontMatter{
-			ID:        improvementDocumentID(title, jobID),
-			Title:     title,
-			Scope:     "repository",
-			Phases:    append([]string(nil), contextData.Phases...),
-			Status:    "active",
-			UpdatedAt: now,
-			Source: ImprovementSource{
-				JobID:       contextData.JobID,
-				IssueNumber: contextData.IssueNumber,
-				Repository:  contextData.Repository,
-				Event:       contextData.Source.EventType,
-			},
-		},
-	Body: improvementDocumentBody(body),
-	}
-}
-
-func writeApprovedImprovementPhaseFiles(workDir string, artifactDir string, configuredWorkDir string, phases []string, raw []byte) error {
-	phaseNames := improvementPhaseFileNames(phases)
-	for _, phase := range phaseNames {
-		workPath := artifacts.RepositoryWorkerImprovementPhaseFile(workDir, configuredWorkDir, phase)
-		artifactPath := filepath.Join(artifactDir, phase+".md")
-		if err := writeImprovementFile(workPath, raw); err != nil {
-			return err
-		}
-		if err := writeImprovementFile(artifactPath, raw); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -227,72 +185,145 @@ func improvementPhaseFileNames(phases []string) []string {
 	return out
 }
 
-func improvementDocumentTitle(body string, fallback string) string {
-	lines := strings.Split(body, "\n")
-	inTitle := false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "## タイトル" || trimmed == "# タイトル" {
-			inTitle = true
-			continue
-		}
-		if inTitle {
-			if trimmed == "" {
-				continue
-			}
-			if strings.HasPrefix(trimmed, "#") {
-				break
-			}
-			return trimmed
-		}
-	}
-	trimmedFallback := strings.TrimSpace(fallback)
-	if trimmedFallback != "" {
-		return trimmedFallback
-	}
-	return "改善方針"
-}
-
-func improvementDocumentBody(body string) string {
-	lines := strings.Split(body, "\n")
-	start := -1
-	for i, line := range lines {
-		if strings.TrimSpace(line) == "## 汎化した方針案" {
-			start = i + 1
-			break
-		}
-	}
-	if start < 0 {
-		return strings.TrimSpace(body)
-	}
-	return strings.TrimSpace(strings.Join(lines[start:], "\n"))
-}
-
-func improvementDocumentID(title string, fallback string) string {
-	trimmed := strings.TrimSpace(strings.ToLower(title))
-	if trimmed == "" {
-		trimmed = strings.TrimSpace(strings.ToLower(fallback))
-	}
-	if trimmed == "" {
+func improvementPrimaryPhaseName(phases []string) string {
+	phaseNames := improvementPhaseFileNames(phases)
+	if len(phaseNames) == 0 {
 		return "improvement"
 	}
-	replacer := strings.NewReplacer(" ", "-", "/", "-", "\\", "-", ":", "-", "@", "-", "?", "-", "#", "-")
-	normalized := replacer.Replace(trimmed)
-	normalized = strings.Trim(normalized, "-")
-	if normalized == "" {
-		normalized = "improvement"
-	}
-	if len(normalized) <= 64 {
-		return normalized
-	}
-	sum := sha1.Sum([]byte(normalized))
-	return normalized[:48] + "-" + hex.EncodeToString(sum[:4])
+	return phaseNames[0]
 }
 
-func updateImprovementBranch(ctx context.Context, workDir string, branch string, artifactDir string, repoRelativePath string, targetPath string, raw []byte) error {
-	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
-		return err
+func runImprovementImplementation(ctx context.Context, cfg *config.Service, repositoryConfig config.MonitoredRepository, job domain.Job, contextData improvementContextData, approvedBody string, targetPath string, phaseNames []string, artifactFiles improvementArtifactFiles, logger *log.Logger) (string, error) {
+	if err := syncRepositoryImprovementWorkspace(ctx, cfg, repositoryConfig, artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repositoryConfig)), logger); err != nil {
+		return "", err
 	}
+
+	execution, err := resolveImprovementExecutionConfig(cfg, job.WatchRuleID)
+	if err != nil {
+		return "", err
+	}
+
+	promptContext := improvementImplementationPromptContext{
+		JobID:        job.ID,
+		Repository:   job.Repository,
+		IssueNumber:  job.GitHubNumber,
+		Title:        contextData.Title,
+		WorkDir:      artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repositoryConfig)),
+		TargetPath:   targetPath,
+		Phases:       append([]string(nil), phaseNames...),
+		Source:       contextData.Source,
+		ApprovedBody: approvedBody,
+	}
+
+	prompt, err := skill.RenderSkillPrompt(cfg.Root(), "default/improvement_implementation", promptContext)
+	if err != nil {
+		return "", err
+	}
+	if err := writeImprovementFile(artifactFiles.ImplementationPromptPath, []byte(prompt)); err != nil {
+		return "", err
+	}
+
+	provider, err := skill.ProviderFor(execution.Provider)
+	if err != nil {
+		return "", err
+	}
+	request := skill.AIRequest{
+		SkillName:         "improvement_implementation",
+		Prompt:            prompt,
+		Model:             execution.Model,
+		WorkDir:           artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repositoryConfig)),
+		ArtifactDir:       artifactFiles.Dir,
+		OutputPath:        targetPath,
+		CopilotAllowTools: cfg.App().CopilotAllowTools,
+	}
+	if logger != nil {
+		logger.Printf(
+			"ai execution started phase=%s skill=%s provider=%s model=%s workdir=%s artifact_dir=%s output_path=%s",
+			"improvement_implementation",
+			request.SkillName,
+			execution.Provider,
+			execution.Model,
+			request.WorkDir,
+			request.ArtifactDir,
+			request.OutputPath,
+		)
+	}
+	result, err := provider.Run(ctx, request)
+	if err != nil {
+		if logger != nil {
+			logger.Printf(
+				"ai execution failed phase=%s skill=%s provider=%s model=%s workdir=%s artifact_dir=%s output_path=%s error=%v",
+				"improvement_implementation",
+				request.SkillName,
+				execution.Provider,
+				execution.Model,
+				request.WorkDir,
+				request.ArtifactDir,
+				request.OutputPath,
+				err,
+			)
+		}
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(artifactFiles.Dir, "stdout.log"), []byte(result.Stdout), 0o644); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(artifactFiles.Dir, "stderr.log"), []byte(result.Stderr), 0o644); err != nil {
+		return "", err
+	}
+	if logger != nil {
+		logger.Printf(
+			"ai execution completed phase=%s skill=%s provider=%s model=%s workdir=%s artifact_dir=%s output_path=%s stdout_bytes=%d stderr_bytes=%d output_bytes=%d",
+			"improvement_implementation",
+			request.SkillName,
+			execution.Provider,
+			execution.Model,
+			request.WorkDir,
+			request.ArtifactDir,
+			request.OutputPath,
+			len(result.Stdout),
+			len(result.Stderr),
+			len(result.Output),
+		)
+	}
+	output := strings.TrimSpace(result.Output)
+	if output == "" {
+		return "", fmt.Errorf("improvement implementation provider returned empty output")
+	}
+	return output, nil
+}
+
+func resolveImprovementExecutionConfig(cfg *config.Service, watchRuleID string) (skill.ExecutionConfig, error) {
+	if trimmed := strings.TrimSpace(watchRuleID); trimmed != "" {
+		if execution, err := resolveExecutionConfig(cfg, trimmed); err == nil {
+			return execution, nil
+		}
+	}
+
+	provider := strings.ToLower(strings.TrimSpace(cfg.App().Provider))
+	if provider == "" {
+		provider = "mock"
+	}
+	spec, ok := cfg.ProviderByName(provider)
+	if !ok {
+		return skill.ExecutionConfig{}, fmt.Errorf("provider %q not found", provider)
+	}
+
+	model := strings.TrimSpace(cfg.App().Model)
+	if model != "" {
+		validatedModel, err := config.ValidateModelForProvider(spec, model)
+		if err != nil {
+			return skill.ExecutionConfig{}, fmt.Errorf("%w", err)
+		}
+		model = validatedModel
+	}
+	return skill.ExecutionConfig{
+		Provider: provider,
+		Model:    model,
+	}, nil
+}
+
+func prepareImprovementBranch(ctx context.Context, workDir string, branch string, artifactDir string) error {
 	fetchOutput, fetchErr := runGitCommandOutput(ctx, workDir, "git", "fetch", "--prune", "origin")
 	if err := writeGitLog(artifactDir, "git-fetch.log", fetchOutput, fetchErr); err != nil {
 		return err
@@ -323,22 +354,49 @@ func updateImprovementBranch(ctx context.Context, workDir string, branch string,
 		}
 	}
 
-	if err := writeImprovementFile(targetPath, raw); err != nil {
-		return err
-	}
-	addOutput, addErr := runGitCommandOutput(ctx, workDir, "git", "add", repoRelativePath)
+	addOutput, addErr := runGitCommandOutput(ctx, workDir, "git", "add", "-A", "--", ".", ":(exclude).improvement/draft/**")
 	if err := writeGitLog(artifactDir, "git-add.log", addOutput, addErr); err != nil {
 		return err
 	}
 	if addErr != nil {
 		return addErr
 	}
-	commitOutput, commitErr := runGitCommandOutput(ctx, workDir, "git", "commit", "--allow-empty", "-m", "Update improvement "+repoRelativePath)
+	commitOutput, commitErr := runGitCommandOutput(ctx, workDir, "git", "commit", "--allow-empty", "-m", "Update improvement workspace")
 	if err := writeGitLog(artifactDir, "git-commit.log", commitOutput, commitErr); err != nil {
 		return err
 	}
 	if commitErr != nil {
 		return commitErr
+	}
+
+	return nil
+}
+
+func pushImprovementBranch(ctx context.Context, workDir string, branch string, artifactDir string) error {
+	statusOutput, statusErr := runGitCommandOutput(ctx, workDir, "git", "status", "--porcelain", "--untracked-files=no")
+	if err := writeGitLog(artifactDir, "git-status.log", statusOutput, statusErr); err != nil {
+		return err
+	}
+	if statusErr != nil {
+		return statusErr
+	}
+
+	if strings.TrimSpace(statusOutput) != "" {
+		addOutput, addErr := runGitCommandOutput(ctx, workDir, "git", "add", "-A", "--", ".", ":(exclude).improvement/draft/**")
+		if err := writeGitLog(artifactDir, "git-add.log", addOutput, addErr); err != nil {
+			return err
+		}
+		if addErr != nil {
+			return addErr
+		}
+
+		commitOutput, commitErr := runGitCommandOutput(ctx, workDir, "git", "commit", "--allow-empty", "-m", "Update improvement workspace")
+		if err := writeGitLog(artifactDir, "git-commit.log", commitOutput, commitErr); err != nil {
+			return err
+		}
+		if commitErr != nil {
+			return commitErr
+		}
 	}
 
 	pushOutput, pushErr := runGitCommandOutput(ctx, workDir, "git", "push", "origin", branch)
@@ -349,17 +407,6 @@ func updateImprovementBranch(ctx context.Context, workDir string, branch string,
 		return err
 	}
 
-	retryFetchOutput, retryFetchErr := runGitCommandOutput(ctx, workDir, "git", "fetch", "--prune", "origin")
-	if err := writeGitLog(artifactDir, "git-fetch-retry.log", retryFetchOutput, retryFetchErr); err != nil {
-		return err
-	}
-	if retryFetchErr != nil {
-		return retryFetchErr
-	}
-	remoteRaw, remoteErr := readGitFile(ctx, workDir, "origin/"+branch, repoRelativePath)
-	if remoteErr == nil && !sameBytes(remoteRaw, raw) {
-		return fmt.Errorf("improvement branch conflict: remote file %s changed", repoRelativePath)
-	}
 	retryOutput, retryErr := runGitCommandOutput(ctx, workDir, "git", "push", "origin", branch)
 	if err := writeGitLog(artifactDir, "git-push-retry.log", retryOutput, retryErr); err != nil {
 		return err
@@ -388,27 +435,4 @@ func writeGitLog(artifactDir string, name string, output string, err error) erro
 		output = strings.TrimSpace(output + "\n" + err.Error())
 	}
 	return writeImprovementFile(filepath.Join(artifactDir, name), []byte(strings.TrimSpace(output)))
-}
-
-func readGitFile(ctx context.Context, repoDir string, ref string, path string) ([]byte, error) {
-	output, err := runGitCommand(ctx, repoDir, "git", "show", ref+":"+filepath.ToSlash(path))
-	if err != nil {
-		if strings.Contains(err.Error(), "exists on disk, but not in") || strings.Contains(err.Error(), "path") {
-			return nil, os.ErrNotExist
-		}
-		return nil, err
-	}
-	return []byte(output), nil
-}
-
-func sameBytes(left []byte, right []byte) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
 }

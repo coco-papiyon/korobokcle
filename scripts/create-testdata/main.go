@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -23,6 +24,11 @@ func main() {
 		fail(err)
 	}
 
+	const (
+		fixtureRepository = "coco-papiyon/dummy"
+		fixtureWorkDir    = "source/coco-papiyon-dummy"
+	)
+
 	fixtureRoot := filepath.Join(repoRoot, "tests", "data")
 	if err := os.RemoveAll(fixtureRoot); err != nil {
 		fail(err)
@@ -34,14 +40,13 @@ func main() {
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
 		{
-			Repository:         "coco-papiyon/korobokcle",
-			Branch:             "main",
-			WorkDir:            "artifacts/coco-papiyon-korobokcle/workspace",
+			Repository:         fixtureRepository,
+			Branch:             "",
+			WorkDir:            "",
 			Workers:            1,
-			ImprovementEnabled: true,
-			ImprovementBranch:  "improvement",
-			ImprovementDir:     ".improvements",
-			ImprovementWorkDir: ".improvement",
+			ImprovementEnabled: false,
+			ImprovementBranch:  "",
+			ImprovementDir:     "",
 		},
 	}
 	files.ToolCommands.Commands = []config.ToolCommand{
@@ -53,28 +58,36 @@ func main() {
 	}
 	files.WatchRules.Rules = []config.WatchRule{
 		{
-			ID:             "rule-1",
-			Name:           "Fixture Issue Rule",
-			Repositories:   []string{"coco-papiyon/korobokcle"},
+			ID:             "default-issues",
+			Name:           "Default Issue Rule",
+			Repositories:   []string{fixtureRepository},
 			Target:         "issue",
+			ProjectName:    "",
 			Labels:         []string{"ai:design"},
+			ProjectFilters: nil,
 			ExcludeDraftPR: true,
+			Provider:       "",
+			Model:          "",
 			SkillSet:       "default",
 			TestProfile:    "go-default",
-			ToolCommand:    "fixture-test",
-			Enabled:        true,
+			ToolCommand:    "",
+			Enabled:        false,
 		},
 		{
-			ID:             "rule-2",
-			Name:           "Fixture Review Rule",
-			Repositories:   []string{"coco-papiyon/korobokcle"},
+			ID:             "default-prs",
+			Name:           "Default PR Rule",
+			Repositories:   []string{fixtureRepository},
 			Target:         "pull_request",
+			ProjectName:    "",
 			Labels:         []string{"ai:review"},
+			ProjectFilters: nil,
 			ExcludeDraftPR: true,
+			Provider:       "",
+			Model:          "",
 			SkillSet:       "default",
 			TestProfile:    "go-default",
-			ToolCommand:    "fixture-test",
-			Enabled:        true,
+			ToolCommand:    "",
+			Enabled:        false,
 		},
 	}
 
@@ -96,7 +109,7 @@ func main() {
 	}()
 
 	ctx := context.Background()
-	for _, fixture := range buildFixtures(files.App.ArtifactsDir) {
+	for _, fixture := range buildFixtures(files.App.ArtifactsDir, fixtureRepository) {
 		if err := store.UpsertJob(ctx, fixture.job); err != nil {
 			fail(err)
 		}
@@ -105,9 +118,13 @@ func main() {
 				fail(err)
 			}
 		}
-		if err := writeRepositoryArtifacts(fixtureRoot, files.App.ArtifactsDir, files.App.MonitoredRepositories[0].WorkDir, fixture.job.Repository, fixture.job.GitHubNumber, fixture.job.Title, fixture.artifacts, fixture.workspaceFiles); err != nil {
+		if err := writeRepositoryArtifacts(fixtureRoot, files.App.ArtifactsDir, fixtureWorkDir, fixture.job.Repository, fixture.job.GitHubNumber, fixture.job.Title, fixture.artifacts, fixture.workspaceFiles); err != nil {
 			fail(err)
 		}
+	}
+
+	if err := initializeFixtureSourceRepository(filepath.Join(fixtureRoot, fixtureWorkDir)); err != nil {
+		fail(err)
 	}
 }
 
@@ -129,8 +146,7 @@ type workspaceFile struct {
 	content string
 }
 
-func buildFixtures(artifactsDir string) []jobFixture {
-	repository := "coco-papiyon/korobokcle"
+func buildFixtures(artifactsDir string, repository string) []jobFixture {
 	base := time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC)
 
 	registeredJob := domain.Job{
@@ -310,7 +326,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 				domainEvent(prCreatedJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 106, prCreatedJob.Title, domain.TargetIssue), base.Add(36*time.Minute)),
 				domainEvent(prCreatedJob.ID, "pr_created", string(domain.StatePRCreating), string(domain.StateCompleted), marshalJSON(map[string]any{
 					"artifactDir": artifacts.RepositoryWorkerJobPhaseDir("", artifactsDir, repository, 106, artifacts.WorkerPR),
-					"url":         "https://github.com/coco-papiyon/korobokcle/pull/106",
+					"url":         githubPullURL(repository, 106),
 					"pullNumber":  106,
 					"title":       prCreatedJob.Title,
 					"head":        prCreatedJob.BranchName,
@@ -318,7 +334,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 			},
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerPR, name: "result.json", content: marshalJSON(map[string]any{
-					"url":        "https://github.com/coco-papiyon/korobokcle/pull/106",
+					"url":        githubPullURL(repository, 106),
 					"pullNumber": 106,
 					"repository": repository,
 					"branchName": prCreatedJob.BranchName,
@@ -331,13 +347,13 @@ func buildFixtures(artifactsDir string) []jobFixture {
 						{
 							"author":    "fixture-reviewer",
 							"body":      "Looks good to me.",
-							"url":       "https://github.com/coco-papiyon/korobokcle/pull/106#issuecomment-1",
+							"url":       githubPullCommentURL(repository, 106, 1),
 							"createdAt": "2026-05-20T09:39:00Z",
 						},
 						{
 							"author":    "fixture-user",
 							"body":      "Addressed in the follow-up commit.",
-							"url":       "https://github.com/coco-papiyon/korobokcle/pull/106#issuecomment-2",
+							"url":       githubPullCommentURL(repository, 106, 2),
 							"createdAt": "2026-05-20T09:40:00Z",
 						},
 					},
@@ -354,7 +370,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 						"comment":   "同じ指摘が繰り返されているので恒久化する",
 					},
 				})},
-				{worker: artifacts.WorkerImprovement, name: "draft/draft.md", content: improvementDraftMarkdown("PR 作成前に最終確認を固定化する", "PR 作成前に変更点セルフレビューとテスト結果確認を必ず行う。")},
+				{worker: artifacts.WorkerImprovement, name: "notes.md", content: "# 生成メモ\n\n- mode: ai\n- job: fixture-pr-created\n"},
 				{worker: artifacts.WorkerImprovement, name: "decision.json", content: marshalJSON(map[string]any{
 					"decision":    "draft_created",
 					"reason":      "",
@@ -363,25 +379,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 				})},
 			},
 			workspaceFiles: []workspaceFile{
-				{path: filepath.Join(".improvement", "input.md"), content: improvementInputMarkdown(prCreatedJob, "final_rejected", []string{"implementation", "fix"}, "繰り返しレビューされる修正方針を恒久化する")},
-				{path: filepath.Join(".improvement", "context.json"), content: marshalJSON(map[string]any{
-					"jobID":       prCreatedJob.ID,
-					"repository":  repository,
-					"issueNumber": prCreatedJob.GitHubNumber,
-					"title":       prCreatedJob.Title,
-					"phases":      []string{"implementation", "fix"},
-					"source": map[string]any{
-						"eventType": "final_rejected",
-						"comment":   "同じ指摘が繰り返されているので恒久化する",
-					},
-				})},
-				{path: filepath.Join(".improvement", "draft", "draft.md"), content: improvementDraftMarkdown("PR 作成前に最終確認を固定化する", "PR 作成前に変更点セルフレビューとテスト結果確認を必ず行う。")},
-				{path: filepath.Join(".improvement", "decision.json"), content: marshalJSON(map[string]any{
-					"decision":    "draft_created",
-					"reason":      "",
-					"updatedAt":   "2026-05-20T09:39:00Z",
-					"sourceEvent": "final_rejected",
-				})},
+				{path: improvementDraftWorkspacePath(prCreatedJob), content: improvementDraftMarkdown("PR 作成前に最終確認を固定化する", "PR 作成前に変更点セルフレビューとテスト結果確認を必ず行う。")},
 			},
 		},
 		{
@@ -390,7 +388,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 				domainEvent(prCommentAnalysisRunningJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 108, prCommentAnalysisRunningJob.Title, domain.TargetIssue), base.Add(52*time.Minute)),
 				domainEvent(prCommentAnalysisRunningJob.ID, "pr_created", string(domain.StatePRCreating), string(domain.StateCompleted), marshalJSON(map[string]any{
 					"artifactDir": artifacts.RepositoryWorkerJobPhaseDir("", artifactsDir, repository, 108, artifacts.WorkerPR),
-					"url":         "https://github.com/coco-papiyon/korobokcle/pull/108",
+					"url":         githubPullURL(repository, 108),
 					"pullNumber":  108,
 					"title":       prCommentAnalysisRunningJob.Title,
 					"head":        prCommentAnalysisRunningJob.BranchName,
@@ -399,7 +397,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 					"comment": map[string]any{
 						"author":    "fixture-reviewer",
 						"body":      "Please simplify the conditional.",
-						"url":       "https://github.com/coco-papiyon/korobokcle/pull/108#issuecomment-1",
+						"url":       githubPullCommentURL(repository, 108, 1),
 						"createdAt": "2026-05-20T09:53:00Z",
 					},
 				}), base.Add(54*time.Minute)),
@@ -407,7 +405,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerImplementation, name: "result.md", content: "# Implementation Summary\n\n- Previous implementation result kept for analysis context.\n"},
 				{worker: artifacts.WorkerPR, name: "result.json", content: marshalJSON(map[string]any{
-					"url":        "https://github.com/coco-papiyon/korobokcle/pull/108",
+					"url":        githubPullURL(repository, 108),
 					"pullNumber": 108,
 					"repository": repository,
 					"branchName": prCommentAnalysisRunningJob.BranchName,
@@ -420,7 +418,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 						{
 							"author":    "fixture-reviewer",
 							"body":      "Please simplify the conditional.",
-							"url":       "https://github.com/coco-papiyon/korobokcle/pull/108#issuecomment-1",
+							"url":       githubPullCommentURL(repository, 108, 1),
 							"createdAt": "2026-05-20T09:53:00Z",
 						},
 					},
@@ -433,7 +431,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 				domainEvent(prCommentAnalysisReadyJob.ID, "issue_matched", "", string(domain.StateDetected), issuePayload(repository, 109, prCommentAnalysisReadyJob.Title, domain.TargetIssue), base.Add(55*time.Minute)),
 				domainEvent(prCommentAnalysisReadyJob.ID, "pr_created", string(domain.StatePRCreating), string(domain.StateCompleted), marshalJSON(map[string]any{
 					"artifactDir": artifacts.RepositoryWorkerJobPhaseDir("", artifactsDir, repository, 109, artifacts.WorkerPR),
-					"url":         "https://github.com/coco-papiyon/korobokcle/pull/109",
+					"url":         githubPullURL(repository, 109),
 					"pullNumber":  109,
 					"title":       prCommentAnalysisReadyJob.Title,
 					"head":        prCommentAnalysisReadyJob.BranchName,
@@ -442,7 +440,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 					"comment": map[string]any{
 						"author":    "fixture-reviewer",
 						"body":      "Please split this logic into a helper.",
-						"url":       "https://github.com/coco-papiyon/korobokcle/pull/109#issuecomment-1",
+						"url":       githubPullCommentURL(repository, 109, 1),
 						"createdAt": "2026-05-20T09:56:00Z",
 					},
 				}), base.Add(57*time.Minute)),
@@ -452,7 +450,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 					"comment": map[string]any{
 						"author":    "fixture-reviewer",
 						"body":      "Please split this logic into a helper.",
-						"url":       "https://github.com/coco-papiyon/korobokcle/pull/109#issuecomment-1",
+						"url":       githubPullCommentURL(repository, 109, 1),
 						"createdAt": "2026-05-20T09:56:00Z",
 					},
 				}), base.Add(58*time.Minute)),
@@ -460,7 +458,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 			artifacts: []artifactFile{
 				{worker: artifacts.WorkerImplementation, name: "result.md", content: "# Previous Implementation\n\n- Keep the previous implementation result for analysis comparison.\n"},
 				{worker: artifacts.WorkerPR, name: "result.json", content: marshalJSON(map[string]any{
-					"url":        "https://github.com/coco-papiyon/korobokcle/pull/109",
+					"url":        githubPullURL(repository, 109),
 					"pullNumber": 109,
 					"repository": repository,
 					"branchName": prCommentAnalysisReadyJob.BranchName,
@@ -473,7 +471,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 						{
 							"author":    "fixture-reviewer",
 							"body":      "Please split this logic into a helper.",
-							"url":       "https://github.com/coco-papiyon/korobokcle/pull/109#issuecomment-1",
+							"url":       githubPullCommentURL(repository, 109, 1),
 							"createdAt": "2026-05-20T09:56:00Z",
 						},
 					},
@@ -490,11 +488,11 @@ func buildFixtures(artifactsDir string) []jobFixture {
 						"eventType": "pr_comment_analysis_ready",
 						"comment":   "Please split this logic into a helper.",
 						"author":    "fixture-reviewer",
-						"url":       "https://github.com/coco-papiyon/korobokcle/pull/109#issuecomment-1",
+						"url":       githubPullCommentURL(repository, 109, 1),
 					},
 				})},
-				{worker: artifacts.WorkerImprovement, name: "draft/draft.md", content: improvementDraftMarkdown("複雑な条件分岐は helper に抽出する", "条件分岐が長くなったら helper 関数へ切り出し、呼び出し側の責務を狭く保つ。")},
-				{worker: artifacts.WorkerImprovement, name: "fix.md", content: approvedImprovementMarkdown(prCommentAnalysisReadyJob, "複雑な条件分岐は helper に抽出する", []string{"fix"}, "条件分岐が長くなったら helper 関数へ切り出し、呼び出し側の責務を狭く保つ。")},
+				{worker: artifacts.WorkerImprovement, name: "notes.md", content: "# 生成メモ\n\n- mode: ai\n- job: fixture-pr-comment-analysis-ready\n"},
+				{worker: artifacts.WorkerImprovement, name: "implementation-prompt.md", content: "implement .improvement/design.md"},
 				{worker: artifacts.WorkerImprovement, name: "result.md", content: improvementDraftMarkdown("複雑な条件分岐は helper に抽出する", "条件分岐が長くなったら helper 関数へ切り出し、呼び出し側の責務を狭く保つ。")},
 				{worker: artifacts.WorkerImprovement, name: "approval.json", content: marshalJSON(map[string]any{
 					"status":     "approved",
@@ -509,7 +507,8 @@ func buildFixtures(artifactsDir string) []jobFixture {
 				})},
 			},
 			workspaceFiles: []workspaceFile{
-				{path: filepath.Join(".improvements", "複雑な条件分岐は-helper-に抽出する.md"), content: approvedImprovementMarkdown(prCommentAnalysisReadyJob, "複雑な条件分岐は helper に抽出する", []string{"fix"}, "条件分岐が長くなったら helper 関数へ切り出し、呼び出し側の責務を狭く保つ。")},
+				{path: improvementDraftWorkspacePath(prCommentAnalysisReadyJob), content: improvementDraftMarkdown("複雑な条件分岐は helper に抽出する", "条件分岐が長くなったら helper 関数へ切り出し、呼び出し側の責務を狭く保つ。")},
+				{path: filepath.Join(".improvement", "design.md"), content: "# 改善実装結果\n\n## 修正箇所一覧\n\n- improvement workspace のソースコードを直接修正\n- `.improvement/design.md` を最終要約として更新\n\n## 変更したファイル\n\n- `src/example.go`\n- `.improvement/design.md`\n\n## 追加した処理\n\n- 改善案を直接コードに反映する処理\n\n## 変更した処理\n\n- 既存の実装を改善案ベースへ置き換え\n\n## 動作確認\n\n- mock provider の出力を書き込み可能であることを確認\n\n## 懸念点・残課題\n\n- 実コードの変更は mock のため行っていません。\n"},
 			},
 		},
 		{
@@ -579,7 +578,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 					"ruleName":   "Fixture Review Rule",
 					"repository": repository,
 					"number":     107,
-					"url":        "https://github.com/coco-papiyon/korobokcle/pull/107",
+					"url":        githubPullURL(repository, 107),
 					"target":     domain.TargetPullRequestReview,
 					"title":      prFeedbackJob.Title,
 					"body":       "Fixture PR review body used for manual verification.",
@@ -595,7 +594,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 							"body":      "Please tighten this logic.",
 							"path":      "internal/app/pr_worker.go",
 							"line":      120,
-							"url":       "https://github.com/coco-papiyon/korobokcle/pull/107#discussion_r1",
+							"url":       githubPullDiscussionURL(repository, 107, "discussion_r1"),
 							"createdAt": "2026-05-20T09:46:00Z",
 							"updatedAt": "2026-05-20T09:46:00Z",
 						},
@@ -606,7 +605,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 				domainEvent(prFeedbackJob.ID, "final_approved", string(domain.StateWaitingFinalApproval), string(domain.StatePRCreating), `{"comment":"review feedback addressed"}`, base.Add(49*time.Minute)),
 				domainEvent(prFeedbackJob.ID, "pr_updated", string(domain.StatePRCreating), string(domain.StateCompleted), marshalJSON(map[string]any{
 					"artifactDir": artifacts.RepositoryWorkerJobPhaseDir("", artifactsDir, repository, 107, artifacts.WorkerPR),
-					"url":         "https://github.com/coco-papiyon/korobokcle/pull/107",
+					"url":         githubPullURL(repository, 107),
 					"pullNumber":  107,
 					"title":       prFeedbackJob.Title,
 					"head":        prFeedbackJob.BranchName,
@@ -617,7 +616,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 				{worker: artifacts.WorkerImplementation, name: "stdout.log", content: "implementation worker started\nreview feedback applied\n"},
 				{worker: artifacts.WorkerImplementation, name: "stderr.log", content: ""},
 				{worker: artifacts.WorkerPR, name: "result.json", content: marshalJSON(map[string]any{
-					"url":        "https://github.com/coco-papiyon/korobokcle/pull/107",
+					"url":        githubPullURL(repository, 107),
 					"pullNumber": 107,
 					"repository": repository,
 					"branchName": prFeedbackJob.BranchName,
@@ -630,7 +629,7 @@ func buildFixtures(artifactsDir string) []jobFixture {
 						{
 							"author":    "fixture-reviewer",
 							"body":      "Thanks for the fix.",
-							"url":       "https://github.com/coco-papiyon/korobokcle/pull/107#issuecomment-1",
+							"url":       githubPullCommentURL(repository, 107, 1),
 							"createdAt": "2026-05-20T09:50:00Z",
 						},
 					},
@@ -677,7 +676,7 @@ func writeRepositoryArtifacts(root string, artifactsDir string, workDirSetting s
 		if err := os.WriteFile(path, []byte(file.content), 0o644); err != nil {
 			return err
 		}
-		if file.name == "result.md" && file.worker != artifacts.WorkerPR {
+		if file.name == "result.md" && file.worker != artifacts.WorkerPR && file.worker != artifacts.WorkerImprovement {
 			workingPath := artifacts.RepositoryWorkerWorkArtifactPath(workDir, file.worker, issueNumber, title)
 			if err := os.MkdirAll(filepath.Dir(workingPath), 0o755); err != nil {
 				return err
@@ -736,6 +735,10 @@ func improvementDraftMarkdown(title string, policy string) string {
 `, title, policy)
 }
 
+func improvementDraftWorkspacePath(job domain.Job) string {
+	return filepath.Join(".improvement", "draft", artifacts.RepositoryWorkerImprovementDraftFileName(job.ID, job.Title))
+}
+
 func approvedImprovementMarkdown(job domain.Job, title string, phases []string, body string) string {
 	return fmt.Sprintf(`---
 id: %s
@@ -782,7 +785,8 @@ func writeReadme(root string) error {
 
 動作確認用の fixture です。` + "`KOROBOKCLE_TOOL_ROOT=test/data`" + ` を指定して起動すると、
 この配下の ` + "`config/`" + `、` + "`data/`" + `、` + "`artifacts/`" + ` を使って UI を確認できます。
-	repository worker の作業ディレクトリは ` + "`artifacts/coco-papiyon-korobokcle/workspace`" + `、成果物は ` + "`artifacts/coco-papiyon-korobokcle/jobs/issue_<issue番号>/`" + ` 配下に出力されます。
+監視対象リポジトリは設定していないため、ここでは監視処理は動作しません。
+	repository worker の作業ディレクトリは ` + "`source/coco-papiyon-dummy`" + `、成果物は ` + "`artifacts/coco-papiyon-dummy/jobs/issue_<issue番号>/`" + ` 配下に出力されます。
 作業ディレクトリには、AI の ` + "`result.md`" + ` を ` + "`design/issue_<issue番号>_...md`" + ` などの形式で複製しています。
 
 含まれるジョブ:
@@ -802,8 +806,8 @@ func writeReadme(root string) error {
 
 改善 fixture:
 
-- ` + "`fixture-pr-created`" + `: ` + "`draft_created`" + `。shared workdir の ` + "`.improvement/draft/draft.md`" + ` に下書きがあります。
-- ` + "`fixture-pr-comment-analysis-ready`" + `: ` + "`approved`" + `。shared workdir の ` + "`.improvements/*.md`" + ` に承認済み指示があります。
+- ` + "`fixture-pr-created`" + `: ` + "`draft_created`" + `。shared workdir の ` + "`.improvement/draft/<job-id>_<title>.md`" + ` に下書きがあります。
+- ` + "`fixture-pr-comment-analysis-ready`" + `: ` + "`approved`" + `。shared workdir の ` + "`.improvement/design.md`" + ` に承認済み指示があります。
 - ` + "`fixture-failed`" + `: ` + "`no_improvement_needed`" + `。job artifact の ` + "`improvement/decision.json`" + ` に理由があります。
 
 再生成:
@@ -811,8 +815,37 @@ func writeReadme(root string) error {
 ` + "```powershell" + `
 go run ./scripts/create-testdata
 ` + "```" + `
-`
+	`
 	return os.WriteFile(filepath.Join(root, "README.md"), []byte(body), 0o644)
+}
+
+func initializeFixtureSourceRepository(workDir string) error {
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		return err
+	}
+	if err := runGitCommand(workDir, "init", "--initial-branch=main"); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("# Dummy fixture source\n"), 0o644); err != nil {
+		return err
+	}
+	if err := runGitCommand(workDir, "-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "add", "-A"); err != nil {
+		return err
+	}
+	if err := runGitCommand(workDir, "-c", "user.name=fixture", "-c", "user.email=fixture@example.com", "commit", "-m", "fixture source"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func runGitCommand(dir string, args ...string) error {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git %v failed: %w: %s", args, err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 func domainEvent(jobID string, eventType string, stateFrom string, stateTo string, payload string, createdAt time.Time) domain.Event {
@@ -860,6 +893,22 @@ func pullRequestPayload(repository string, number int, title string) string {
 		"branchName": "feature/review-cleanup",
 		"baseBranch": "main",
 	})
+}
+
+func githubIssueURL(repository string, number int) string {
+	return fmt.Sprintf("https://github.com/%s/issues/%d", repository, number)
+}
+
+func githubPullURL(repository string, number int) string {
+	return fmt.Sprintf("https://github.com/%s/pull/%d", repository, number)
+}
+
+func githubPullCommentURL(repository string, number int, commentIndex int) string {
+	return fmt.Sprintf("https://github.com/%s/pull/%d#issuecomment-%d", repository, number, commentIndex)
+}
+
+func githubPullDiscussionURL(repository string, number int, discussionID string) string {
+	return fmt.Sprintf("https://github.com/%s/pull/%d#%s", repository, number, discussionID)
 }
 
 func marshalJSON(value any) string {

@@ -10,7 +10,6 @@ const (
 	improvementInputFileName                = "input.md"
 	improvementContextFileName              = "context.json"
 	improvementDraftDirName                 = "draft"
-	improvementDraftFileName                = "draft.md"
 	improvementNotesFileName                = "notes.md"
 	improvementImplementationPromptFileName = "implementation-prompt.md"
 	improvementResultFileName               = "result.md"
@@ -19,23 +18,16 @@ const (
 )
 
 type improvementWorkFiles struct {
-	Dir                      string
-	InputPath                string
-	ContextPath              string
-	DraftDir                 string
-	DraftPath                string
-	NotesPath                string
-	ImplementationPromptPath string
-	DecisionPath             string
+	Dir             string
+	DraftDir        string
+	DraftPath       string
+	LegacyDraftPath string
 }
 
 type improvementArtifactFiles struct {
 	Dir                      string
 	InputPath                string
 	ContextPath              string
-	DraftDir                 string
-	DraftPath                string
-	PhasePath                string
 	NotesPath                string
 	ImplementationPromptPath string
 	ResultPath               string
@@ -43,17 +35,13 @@ type improvementArtifactFiles struct {
 	DecisionPath             string
 }
 
-func repositoryImprovementWorkFiles(workDir string, configuredDir string) improvementWorkFiles {
+func repositoryImprovementWorkFiles(workDir string, configuredDir string, identifier string, title string) improvementWorkFiles {
 	dir := artifacts.RepositoryWorkerImprovementWorkDir(workDir, configuredDir)
 	return improvementWorkFiles{
-		Dir:                      dir,
-		InputPath:                filepath.Join(dir, improvementInputFileName),
-		ContextPath:              filepath.Join(dir, improvementContextFileName),
-		DraftDir:                 filepath.Join(dir, improvementDraftDirName),
-		DraftPath:                filepath.Join(dir, improvementDraftDirName, improvementDraftFileName),
-		NotesPath:                filepath.Join(dir, improvementNotesFileName),
-		ImplementationPromptPath: filepath.Join(dir, improvementImplementationPromptFileName),
-		DecisionPath:             filepath.Join(dir, improvementDecisionFileName),
+		Dir:             dir,
+		DraftDir:        filepath.Join(dir, improvementDraftDirName),
+		DraftPath:       artifacts.RepositoryWorkerImprovementDraftFilePath(workDir, configuredDir, identifier, title),
+		LegacyDraftPath: filepath.Join(dir, improvementDraftDirName, "draft.md"),
 	}
 }
 
@@ -63,9 +51,6 @@ func repositoryImprovementArtifactFiles(root string, artifactsDir string, reposi
 		Dir:                      dir,
 		InputPath:                filepath.Join(dir, improvementInputFileName),
 		ContextPath:              filepath.Join(dir, improvementContextFileName),
-		DraftDir:                 filepath.Join(dir, improvementDraftDirName),
-		DraftPath:                filepath.Join(dir, improvementDraftDirName, improvementDraftFileName),
-		PhasePath:                "",
 		NotesPath:                filepath.Join(dir, improvementNotesFileName),
 		ImplementationPromptPath: filepath.Join(dir, improvementImplementationPromptFileName),
 		ResultPath:               filepath.Join(dir, improvementResultFileName),

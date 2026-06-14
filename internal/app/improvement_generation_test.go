@@ -44,8 +44,7 @@ func TestGenerateImprovementDraftCreatesDraftAndContext(t *testing.T) {
 				Repository:         "owner/repository",
 				Workers:            1,
 				ImprovementEnabled: true,
-				ImprovementDir:     ".repo-improvements",
-				ImprovementWorkDir: ".repo-improvement",
+				ImprovementDir:     ".repo-improvement",
 			}},
 		},
 	})
@@ -74,7 +73,7 @@ func TestGenerateImprovementDraftCreatesDraftAndContext(t *testing.T) {
 		t.Fatalf("AppendEvent(design_rejected) error = %v", err)
 	}
 
-	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository)
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository, "")
 	existingDocument := ImprovementDocument{
 		FrontMatter: ImprovementFrontMatter{
 			ID:        "existing-rule",
@@ -90,10 +89,10 @@ func TestGenerateImprovementDraftCreatesDraftAndContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalMarkdown() error = %v", err)
 	}
-	if err := os.MkdirAll(artifacts.RepositoryWorkerImprovementsDir(workDir, ".repo-improvements"), 0o755); err != nil {
+	if err := os.MkdirAll(artifacts.RepositoryWorkerImprovementsDir(workDir, ".repo-improvement"), 0o755); err != nil {
 		t.Fatalf("MkdirAll(improvementsDir) error = %v", err)
 	}
-	if err := os.WriteFile(artifacts.RepositoryWorkerImprovementsFile(workDir, ".repo-improvements", "existing-rule.md"), rawExisting, 0o644); err != nil {
+	if err := os.WriteFile(artifacts.RepositoryWorkerImprovementsFile(workDir, ".repo-improvement", "existing-rule.md"), rawExisting, 0o644); err != nil {
 		t.Fatalf("WriteFile(existing-rule.md) error = %v", err)
 	}
 
@@ -105,7 +104,7 @@ func TestGenerateImprovementDraftCreatesDraftAndContext(t *testing.T) {
 		t.Fatalf("expected draft_created, got %#v", result)
 	}
 
-	workFiles := repositoryImprovementWorkFiles(workDir, ".repo-improvement")
+	workFiles := repositoryImprovementWorkFiles(workDir, ".repo-improvement", job.ID, job.Title)
 	artifactFiles := repositoryImprovementArtifactFiles(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber)
 
 	draftRaw, err := os.ReadFile(workFiles.DraftPath)
@@ -125,7 +124,7 @@ func TestGenerateImprovementDraftCreatesDraftAndContext(t *testing.T) {
 		t.Fatalf("expected original comment in draft, got %s", string(draftRaw))
 	}
 
-	contextRaw, err := os.ReadFile(workFiles.ContextPath)
+	contextRaw, err := os.ReadFile(artifactFiles.ContextPath)
 	if err != nil {
 		t.Fatalf("ReadFile(context.json) error = %v", err)
 	}
@@ -202,13 +201,14 @@ func TestGenerateImprovementDraftWritesNoImprovementDecisionForEmptyComment(t *t
 		t.Fatalf("expected no_improvement_needed, got %#v", result)
 	}
 
-	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository)
-	workFiles := repositoryImprovementWorkFiles(workDir, "")
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository, "")
+	workFiles := repositoryImprovementWorkFiles(workDir, "", job.ID, job.Title)
+	artifactFiles := repositoryImprovementArtifactFiles(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber)
 
 	if _, err := os.Stat(workFiles.DraftPath); !os.IsNotExist(err) {
 		t.Fatalf("expected no draft to be created, err=%v", err)
 	}
-	decisionRaw, err := os.ReadFile(workFiles.DecisionPath)
+	decisionRaw, err := os.ReadFile(artifactFiles.DecisionPath)
 	if err != nil {
 		t.Fatalf("ReadFile(decision.json) error = %v", err)
 	}
@@ -314,13 +314,13 @@ func TestGenerateImprovementDraftUsesAIProviderWhenExecutionConfigured(t *testin
 		t.Fatalf("expected draft_created, got %#v", result)
 	}
 
-	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository)
-	workFiles := repositoryImprovementWorkFiles(workDir, "")
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository, "")
+	workFiles := repositoryImprovementWorkFiles(workDir, "", job.ID, job.Title)
 	draftRaw, err := os.ReadFile(workFiles.DraftPath)
 	if err != nil {
 		t.Fatalf("ReadFile(draft) error = %v", err)
 	}
-	notesRaw, err := os.ReadFile(workFiles.NotesPath)
+	notesRaw, err := os.ReadFile(repositoryImprovementArtifactFiles(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber).NotesPath)
 	if err != nil {
 		t.Fatalf("ReadFile(notes) error = %v", err)
 	}
@@ -417,8 +417,7 @@ func TestGenerateImprovementDraftSupportsRerunRequestSources(t *testing.T) {
 				t.Fatalf("expected draft_created, got %#v", result)
 			}
 
-			workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, cfg.App().ArtifactsDir, job.Repository)
-			contextRaw, err := os.ReadFile(repositoryImprovementWorkFiles(workDir, "").ContextPath)
+			contextRaw, err := os.ReadFile(repositoryImprovementArtifactFiles(root, cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber).ContextPath)
 			if err != nil {
 				t.Fatalf("ReadFile(context.json) error = %v", err)
 			}
@@ -441,10 +440,8 @@ func TestLoadCurrentImprovementResultUsesExistingDraftForRerunComments(t *testin
 
 	root := t.TempDir()
 	workFiles := improvementWorkFiles{
-		DraftPath: filepath.Join(root, ".improvement", "draft", "draft.md"),
-	}
-	artifactFiles := improvementArtifactFiles{
-		DraftPath: filepath.Join(root, "artifact", ".improvement", "draft", "draft.md"),
+		DraftPath:       filepath.Join(root, ".improvement", "draft", "job-1_改善案.md"),
+		LegacyDraftPath: filepath.Join(root, ".improvement", "draft", "draft.md"),
 	}
 	if err := os.MkdirAll(filepath.Dir(workFiles.DraftPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll(work draft) error = %v", err)
@@ -453,7 +450,7 @@ func TestLoadCurrentImprovementResultUsesExistingDraftForRerunComments(t *testin
 		t.Fatalf("WriteFile(work draft) error = %v", err)
 	}
 
-	got, err := loadCurrentImprovementResult("  revise the layout  ", workFiles, artifactFiles)
+	got, err := loadCurrentImprovementResult("  revise the layout  ", workFiles)
 	if err != nil {
 		t.Fatalf("loadCurrentImprovementResult() error = %v", err)
 	}
@@ -467,10 +464,8 @@ func TestLoadCurrentImprovementResultSkipsWhenCommentEmpty(t *testing.T) {
 
 	root := t.TempDir()
 	workFiles := improvementWorkFiles{
-		DraftPath: filepath.Join(root, ".improvement", "draft", "draft.md"),
-	}
-	artifactFiles := improvementArtifactFiles{
-		DraftPath: filepath.Join(root, "artifact", ".improvement", "draft", "draft.md"),
+		DraftPath:       filepath.Join(root, ".improvement", "draft", "job-1_改善案.md"),
+		LegacyDraftPath: filepath.Join(root, ".improvement", "draft", "draft.md"),
 	}
 	if err := os.MkdirAll(filepath.Dir(workFiles.DraftPath), 0o755); err != nil {
 		t.Fatalf("MkdirAll(work draft) error = %v", err)
@@ -479,7 +474,7 @@ func TestLoadCurrentImprovementResultSkipsWhenCommentEmpty(t *testing.T) {
 		t.Fatalf("WriteFile(work draft) error = %v", err)
 	}
 
-	got, err := loadCurrentImprovementResult("   ", workFiles, artifactFiles)
+	got, err := loadCurrentImprovementResult("   ", workFiles)
 	if err != nil {
 		t.Fatalf("loadCurrentImprovementResult() error = %v", err)
 	}

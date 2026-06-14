@@ -14,8 +14,8 @@ func TestLoadRepositoryImprovementInstructionsFiltersByPhaseAndStatus(t *testing
 	t.Parallel()
 
 	root := t.TempDir()
-	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, "artifacts", "owner-repo")
-	improvementsDir := artifacts.RepositoryWorkerImprovementsDir(workDir, ".improvements")
+	workDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(root, "artifacts", "owner-repo", "")
+	improvementsDir := artifacts.RepositoryWorkerImprovementsDir(workDir, ".improvement")
 	if err := os.MkdirAll(improvementsDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(improvementsDir) error = %v", err)
 	}
@@ -83,7 +83,7 @@ func TestLoadRepositoryImprovementInstructionsFiltersByPhaseAndStatus(t *testing
 			MonitoredRepositories: []config.MonitoredRepository{{
 				Repository:         "owner/repository",
 				ImprovementEnabled: true,
-				ImprovementDir:     ".improvements",
+				ImprovementDir:     ".improvement",
 			}},
 		},
 	})

@@ -10,10 +10,6 @@ import (
 
 func resolveExecutionConfig(cfg *config.Service, watchRuleID string) (skill.ExecutionConfig, error) {
 	rule, ok := cfg.WatchRuleByID(watchRuleID)
-	if !ok {
-		return skill.ExecutionConfig{}, fmt.Errorf("watch rule %q not found", watchRuleID)
-	}
-
 	provider := firstNonEmpty(rule.Provider, cfg.App().Provider)
 	spec, ok := cfg.ProviderByName(strings.ToLower(strings.TrimSpace(provider)))
 	if !ok {

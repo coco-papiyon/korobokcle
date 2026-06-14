@@ -33,6 +33,9 @@ func (p *MockProvider) Run(_ context.Context, req AIRequest) (AIResult, error) {
 	if req.SkillName == "improvement_consideration" {
 		output = "# 改善方針案\n\n## タイトル\n\nMock provider が汎化した改善方針\n\n## 適用対象\n\n- repository: mock/repository\n- phases: design\n- sourceEvent: design_rerun_requested\n\n## 改善項目\n\n- 画面レイアウト方針\n  - 画面ごとの主要アクションと補足説明の配置ルールを明文化する\n\n## 汎化メモ\n\n- 元コメントを継続利用できる指示へ整理した mock 出力です。\n\n## 元コメント\n\nXX画面で、ボタンを左に、説明を右に配置する\n"
 	}
+	if req.SkillName == "improvement_implementation" {
+		output = "# 改善実装結果\n\n## 修正箇所一覧\n\n- improvement workspace のソースコードを直接修正\n- `.improvement/design.md` を最終要約として更新\n\n## 変更したファイル\n\n- `src/example.go`\n- `.improvement/design.md`\n\n## 追加した処理\n\n- 改善案を直接コードに反映する処理\n\n## 変更した処理\n\n- 既存の実装を改善案ベースへ置き換え\n\n## 動作確認\n\n- mock provider の出力を書き込み可能であることを確認\n\n## 懸念点・残課題\n\n- 実コードの変更は mock のため行っていません。\n"
+	}
 	return AIResult{
 		Stdout: "mock provider executed",
 		Output: output,
