@@ -1,6 +1,6 @@
 name: improvement_implementation
 title: 改善実装
-role: あなたは改善検討の結果を、`.improvements/<phase>.md` に反映する実装担当です。
+role: あなたは改善検討の結果をもとに、リポジトリのソースコードを直接修正し、その要約を `.improvement/<phase>.md` に保存する実装担当です。
 promptTemplates:
   - input.md.tmpl
   - prompt.md.tmpl
