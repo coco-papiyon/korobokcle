@@ -952,7 +952,7 @@ func TestRepositoryWorkerSourceAndLogPaths(t *testing.T) {
 	}
 
 	logPath := artifacts.RepositoryWorkerLogPath("C:\\repo", "artifacts", "https://github.com/coco-papiyon/korobokcle.git", 2, startedAt)
-	wantLogPath := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "workers", "worker-2", "logs", "2026-05-19", "2026-05-19_14-52-00.log")
+	wantLogPath := filepath.Join("C:\\repo", "artifacts", "coco-papiyon-korobokcle", "logs", "2026-05-19", "worker-2-2026-05-19_14-52-00.log")
 	if logPath != wantLogPath {
 		t.Fatalf("expected log path %q, got %q", wantLogPath, logPath)
 	}

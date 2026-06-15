@@ -89,6 +89,10 @@ func RepositoryWorkerJobDir(root string, artifactsDir string, repository string,
 	return filepath.Join(repositoryArtifactsRoot(root, artifactsDir, repository), "jobs", fmt.Sprintf("issue_%d", issueNumber))
 }
 
+func RepositoryWorkerSessionsPath(root string, artifactsDir string, repository string) string {
+	return filepath.Join(repositoryArtifactsRoot(root, artifactsDir, repository), "jobs", "session.json")
+}
+
 func RepositoryWorkerJobPhaseDir(root string, artifactsDir string, repository string, issueNumber int, phase string) string {
 	return filepath.Join(RepositoryWorkerJobDir(root, artifactsDir, repository, issueNumber), phase)
 }
@@ -196,22 +200,22 @@ func RepositoryWorkerArtifactDir(workerDir string, workspaceDir string, issueNum
 }
 
 func RepositoryWorkerLogsDir(root string, artifactsDir string, repository string, workerIndex int) string {
-	return filepath.Join(RepositoryWorkerDir(root, artifactsDir, repository, workerIndex), "logs")
+	return filepath.Join(repositoryArtifactsRoot(root, artifactsDir, repository), "logs")
 }
 
 func RepositoryWorkerLogPath(root string, artifactsDir string, repository string, workerIndex int, startedAt time.Time) string {
 	dateDir := startedAt.Format("2006-01-02")
-	fileName := startedAt.Format("2006-01-02_15-04-05") + ".log"
+	fileName := fmt.Sprintf("worker-%d-%s.log", workerIndex, startedAt.Format("2006-01-02_15-04-05"))
 	return filepath.Join(RepositoryWorkerLogsDir(root, artifactsDir, repository, workerIndex), dateDir, fileName)
 }
 
 func RepositoryWorkerLogsDirFromWorkerDir(workerDir string, workspaceDir string) string {
-	return filepath.Join(RepositoryWorkerWorkspaceDir(workerDir, workspaceDir), "logs")
+	return filepath.Join(filepath.Dir(filepath.Dir(workerDir)), "logs")
 }
 
 func RepositoryWorkerLogPathFromWorkerDir(workerDir string, workspaceDir string, startedAt time.Time) string {
 	dateDir := startedAt.Format("2006-01-02")
-	fileName := startedAt.Format("2006-01-02_15-04-05") + ".log"
+	fileName := fmt.Sprintf("%s-%s.log", filepath.Base(workerDir), startedAt.Format("2006-01-02_15-04-05"))
 	return filepath.Join(RepositoryWorkerLogsDirFromWorkerDir(workerDir, workspaceDir), dateDir, fileName)
 }
 

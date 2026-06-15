@@ -73,6 +73,12 @@ func TestRepositoryWorkerPathsUseJobDirs(t *testing.T) {
 	if improvementWorkspaceDir != wantImprovementWorkspaceDir {
 		t.Fatalf("RepositoryWorkerImprovementWorkspaceDir() = %q, want %q", improvementWorkspaceDir, wantImprovementWorkspaceDir)
 	}
+
+	sessionsPath := RepositoryWorkerSessionsPath(root, "artifacts", "https://github.com/coco-papiyon/korobokcle.git")
+	wantSessionsPath := filepath.Join(root, "artifacts", "coco-papiyon-korobokcle", "jobs", "session.json")
+	if sessionsPath != wantSessionsPath {
+		t.Fatalf("RepositoryWorkerSessionsPath() = %q, want %q", sessionsPath, wantSessionsPath)
+	}
 }
 
 func TestRepositoryWorkerImprovementPathsUseDefaults(t *testing.T) {

@@ -209,7 +209,7 @@ worker pool は 2 系統です。
 3. base clone を準備する
 4. 必要なら improvement workspace を準備する
 5. `artifact/source/<repo>-<branch>` の worktree を作成する
-6. job の `session.json` があれば読み込み、AI 実行に渡す
+6. repository の `session.json` があれば読み込み、AI 実行に渡す
 7. resident AI CLI を起動し、startup prompt を 1 回だけ送る
 8. job state を監視しながら次の phase を順に処理する
    - design
@@ -244,10 +244,10 @@ worker pool は 2 系統です。
 
 ### 7.4 session の使い方
 
-各 job は session ID を 1 つ持ちます。
+各 repository の worker は session ID を 1 つ持ちます。
 
 - 保存先
-  - `artifacts/jobs/<job-id>/session.json`
+  - `artifacts/<repo>/jobs/session.json`
 - 読み込みタイミング
   - design / implementation / PR の各 phase 開始時
 - 更新タイミング
@@ -285,7 +285,7 @@ PR レビュー worker は次の job に対して起動されます。
 3. base clone を準備する
 4. 必要なら improvement workspace を準備する
 5. `artifact/source/<repo>-<branch>` の worktree を作成する
-6. job の `session.json` があれば読み込み、AI 実行に渡す
+6. repository の `session.json` があれば読み込み、AI 実行に渡す
 7. `collecting_context` 中に review phase を実行する
 8. AI 実行が返した session ID を `session.json` に保存する
 9. 承認後に `completed` へ遷移したら停止する
@@ -311,7 +311,7 @@ PR レビュー worker も job ごとに専用 worktree を持ちます。
 
 ### 8.5 session
 
-PR レビュー worker も job ごとに session ID を持ちます。
+PR レビュー worker も repository ごとに session ID を持ちます。
 
 - review 再実行時は同じ session ID を使う
 - worker 停止後も `session.json` が残る

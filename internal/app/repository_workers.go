@@ -350,7 +350,7 @@ func processDesignJob(ctx context.Context, cfg *config.Service, orch *orchestrat
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
 	}
-	saveJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID, result.SessionID)
+	saveJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, result.SessionID)
 	if err := copyAIResultToWorkDir(workDir, artifacts.WorkerDesign, job, contextData.ArtifactDir); err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "design_failed", map[string]any{"error": err.Error()})
 	}
@@ -407,7 +407,7 @@ func processImplementationJob(ctx context.Context, cfg *config.Service, orch *or
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 	}
-	saveJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID, result.SessionID)
+	saveJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, result.SessionID)
 	if err := copyAIResultToWorkDir(workDir, filepath.Base(runSpec.ArtifactDir), job, contextData.ArtifactDir); err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 	}
@@ -505,7 +505,7 @@ func processReviewJob(ctx context.Context, cfg *config.Service, orch *orchestrat
 	if err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
 	}
-	saveJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID, result.SessionID)
+	saveJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, result.SessionID)
 	if err := copyAIResultToWorkDir(workDir, artifacts.WorkerReview, job, contextData.ArtifactDir); err != nil {
 		return orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
 	}

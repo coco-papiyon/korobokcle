@@ -42,7 +42,7 @@
 | テストレポート | `結果格納ディレクトリ/{implementation,fix}/` | `test-report.json` | 実装・修正フェーズのテスト結果 | 結果格納ディレクトリ |
 | PR 生成結果 | `結果格納ディレクトリ/pr/` | `result.json` | PR URL、PR 番号、ブランチ名などの保存 | 結果格納ディレクトリ |
 | PR 関連ログ・補助ファイル | `結果格納ディレクトリ/pr/` | `body.md`, `gh-pr-comments.json`, `gh-pr-comment-body.md`, `gh-pr-comment.log`, `gh-pr-create.log`, `git-*.log` | PR 本文、会話コメント、`git push` / `gh pr create` / `gh pr comment` のログ | 結果格納ディレクトリ |
-| worker ログ | `ワーカー作業ディレクトリ/logs/**日付**/` | `*.log` | ワーカーごとの実行ログ | ワーカー作業ディレクトリ |
+| worker ログ | `成果物ディレクトリ/**リポジトリ**/logs/**日付**/` | `worker-**番号**-**日時**.log` | ワーカーごとの実行ログ | 成果物ディレクトリ |
 | Web entrypoint | `frontend/dist/` | `index.html` | Web UI の SPA エントリ | 実行ファイル配置ディレクトリ |
 
 補足:
