@@ -176,7 +176,8 @@ export type MonitoredRepository = {
   repository: string
   branch: string
   workDir: string
-  workers: number
+  implementationWorkers: number
+  reviewWorkers: number
   improvementEnabled: boolean
   improvementBranch: string
   improvementDir: string

@@ -20,7 +20,7 @@ func TestToolRuntimeSeparatesStdoutAndStderr(t *testing.T) {
 	root := t.TempDir()
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "owner/repository", Branch: "", Workers: 1},
+		{Repository: "owner/repository", Branch: "", ImplementationWorkers: 1},
 	}
 	svc := config.NewService(root, files)
 	manager := newToolRuntimeManager()
@@ -84,7 +84,7 @@ func TestToolRuntimeStopMarksExecutionStopped(t *testing.T) {
 	root := t.TempDir()
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "owner/repository", Branch: "", Workers: 1},
+		{Repository: "owner/repository", Branch: "", ImplementationWorkers: 1},
 	}
 	svc := config.NewService(root, files)
 	manager := newToolRuntimeManager()

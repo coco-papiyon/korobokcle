@@ -148,13 +148,14 @@ func cloneMonitoredRepositories(values []MonitoredRepository) []MonitoredReposit
 	cloned := make([]MonitoredRepository, 0, len(values))
 	for _, repository := range values {
 		cloned = append(cloned, MonitoredRepository{
-			Repository:         repository.Repository,
-			Branch:             repository.Branch,
-			WorkDir:            repository.WorkDir,
-			Workers:            repository.Workers,
-			ImprovementEnabled: repository.ImprovementEnabled,
-			ImprovementBranch:  repository.ImprovementBranch,
-			ImprovementDir:     repository.ImprovementDir,
+			Repository:            repository.Repository,
+			Branch:                repository.Branch,
+			WorkDir:               repository.WorkDir,
+			ImplementationWorkers: repository.ImplementationWorkers,
+			ReviewWorkers:         repository.ReviewWorkers,
+			ImprovementEnabled:    repository.ImprovementEnabled,
+			ImprovementBranch:     repository.ImprovementBranch,
+			ImprovementDir:        repository.ImprovementDir,
 		})
 	}
 	return cloned

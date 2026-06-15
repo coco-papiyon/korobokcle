@@ -81,9 +81,13 @@ func runPendingReviews(ctx context.Context, repoRoot string, cfg *config.Service
 			continue
 		}
 
-		if _, err := runner.RunReview(ctx, skillName, contextData, execution); err != nil {
+		result, err := runner.RunReview(ctx, skillName, contextData, execution)
+		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
 			continue
+		}
+		if err := saveJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID, result.SessionID); err != nil {
+			logger.Printf("review session save failed for %s: %v", job.ID, err)
 		}
 		if err := copyAIResultToWorkDir(repoRoot, artifacts.WorkerReview, jobDetail, contextData.ArtifactDir); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
@@ -130,6 +134,7 @@ func buildReviewContext(cfg *config.Service, job domain.Job, events []domain.Eve
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
 		ArtifactDir: artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerReview),
+		SessionID:   loadJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID),
 	}
 
 	for _, event := range events {

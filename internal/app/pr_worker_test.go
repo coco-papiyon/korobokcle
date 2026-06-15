@@ -90,7 +90,7 @@ func TestBuildPRCreateRequestAppendsFixSummary(t *testing.T) {
 
 	root := t.TempDir()
 	files := config.DefaultFiles()
-	files.App.MonitoredRepositories = []config.MonitoredRepository{{Repository: "owner/repo", Branch: "release/1.x", Workers: 1}}
+	files.App.MonitoredRepositories = []config.MonitoredRepository{{Repository: "owner/repo", Branch: "release/1.x", ImplementationWorkers: 1}}
 	cfg := config.NewService(root, files)
 	job := domain.Job{
 		ID:           "job-1",
@@ -157,7 +157,7 @@ func TestBuildPRCreateRequestUsesDefaultBranchWhenMonitoringBranchIsEmpty(t *tes
 	}
 
 	files := config.DefaultFiles()
-	files.App.MonitoredRepositories = []config.MonitoredRepository{{Repository: "owner/repo", Branch: "", Workers: 1}}
+	files.App.MonitoredRepositories = []config.MonitoredRepository{{Repository: "owner/repo", Branch: "", ImplementationWorkers: 1}}
 	cfg := config.NewService(root, files)
 	workDir, err := cloneRepositoryWorkspace(context.Background(), cfg, source, 0)
 	if err != nil {

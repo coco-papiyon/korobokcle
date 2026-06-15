@@ -41,10 +41,10 @@ func TestGenerateImprovementDraftCreatesDraftAndContext(t *testing.T) {
 		App: config.App{
 			ArtifactsDir: "artifacts",
 			MonitoredRepositories: []config.MonitoredRepository{{
-				Repository:         "owner/repository",
-				Workers:            1,
-				ImprovementEnabled: true,
-				ImprovementDir:     ".repo-improvement",
+				Repository:            "owner/repository",
+				ImplementationWorkers: 1,
+				ImprovementEnabled:    true,
+				ImprovementDir:        ".repo-improvement",
 			}},
 		},
 	})
@@ -163,9 +163,9 @@ func TestGenerateImprovementDraftWritesNoImprovementDecisionForEmptyComment(t *t
 		App: config.App{
 			ArtifactsDir: "artifacts",
 			MonitoredRepositories: []config.MonitoredRepository{{
-				Repository:         "owner/repository",
-				Workers:            1,
-				ImprovementEnabled: true,
+				Repository:            "owner/repository",
+				ImplementationWorkers: 1,
+				ImprovementEnabled:    true,
 			}},
 		},
 	})
@@ -265,9 +265,9 @@ func TestGenerateImprovementDraftUsesAIProviderWhenExecutionConfigured(t *testin
 			ArtifactsDir: "artifacts",
 			Provider:     "mock",
 			MonitoredRepositories: []config.MonitoredRepository{{
-				Repository:         "owner/repository",
-				Workers:            1,
-				ImprovementEnabled: true,
+				Repository:            "owner/repository",
+				ImplementationWorkers: 1,
+				ImprovementEnabled:    true,
 			}},
 		},
 		WatchRules: config.WatchRulesFile{
@@ -347,9 +347,9 @@ func TestGenerateImprovementDraftSupportsRerunRequestSources(t *testing.T) {
 		App: config.App{
 			ArtifactsDir: "artifacts",
 			MonitoredRepositories: []config.MonitoredRepository{{
-				Repository:         "owner/repository",
-				Workers:            1,
-				ImprovementEnabled: true,
+				Repository:            "owner/repository",
+				ImplementationWorkers: 1,
+				ImprovementEnabled:    true,
 			}},
 		},
 	})

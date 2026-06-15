@@ -37,6 +37,7 @@ func buildRepositoryDesignContext(cfg *config.Service, workDir string, improveme
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
 		ArtifactDir: repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerDesign),
+		SessionID:   loadJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID),
 	}
 
 	for _, event := range events {
@@ -121,6 +122,7 @@ func buildRepositoryImplementationContext(cfg *config.Service, workDir string, i
 		DesignArtifact:    string(designArtifactRaw),
 		DesignArtifactDir: designArtifactDir,
 		ArtifactDir:       runSpec.ArtifactDir,
+		SessionID:         loadJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID),
 	}
 
 	ctxData.DesignApprovalComment, err = loadDesignApprovalComment(events)
@@ -172,6 +174,7 @@ func buildRepositoryPRFeedbackImplementationContext(cfg *config.Service, workDir
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
 		ArtifactDir: runSpec.ArtifactDir,
+		SessionID:   loadJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID),
 	}
 
 	implementationArtifact, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerImplementation, job, repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation), "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
@@ -242,6 +245,7 @@ func buildRepositoryReviewContext(cfg *config.Service, workDir string, improveme
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
 		ArtifactDir: repositoryWorkerArtifactDir(cfg, job.Repository, job.GitHubNumber, artifacts.WorkerReview),
+		SessionID:   loadJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID),
 	}
 
 	for _, event := range events {

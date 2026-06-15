@@ -20,13 +20,14 @@ type App struct {
 }
 
 type MonitoredRepository struct {
-	Repository         string `yaml:"repository"`
-	Branch             string `yaml:"branch"`
-	WorkDir            string `yaml:"workDir"`
-	Workers            int    `yaml:"workers"`
-	ImprovementEnabled bool   `yaml:"improvementEnabled"`
-	ImprovementBranch  string `yaml:"improvementBranch"`
-	ImprovementDir     string `yaml:"improvementDir"`
+	Repository            string `yaml:"repository"`
+	Branch                string `yaml:"branch"`
+	WorkDir               string `yaml:"workDir"`
+	ImplementationWorkers int    `yaml:"implementationWorkers"`
+	ReviewWorkers         int    `yaml:"reviewWorkers"`
+	ImprovementEnabled    bool   `yaml:"improvementEnabled"`
+	ImprovementBranch     string `yaml:"improvementBranch"`
+	ImprovementDir        string `yaml:"improvementDir"`
 }
 
 type ProviderSpec struct {

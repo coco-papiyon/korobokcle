@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
+	"github.com/google/uuid"
 )
 
 type MockProvider struct{}
@@ -49,6 +50,7 @@ func NewCopilotCLIProvider() *CopilotCLIProvider {
 }
 
 func (p *CopilotCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, error) {
+	req.SessionID = ensureSessionID(req.SessionID)
 	provider := ExternalCLIProvider{
 		Name:             "copilot",
 		EnvPrefix:        "KOROBOKCLE_COPILOT",
@@ -56,7 +58,11 @@ func (p *CopilotCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		DefaultArgs:      copilotDefaultArgs(req.CopilotAllowTools),
 		PreferOutputFile: true,
 	}
-	return provider.Run(ctx, req)
+	result, err := provider.Run(ctx, req)
+	if err != nil {
+		return result, err
+	}
+	return enrichJSONResult(result, req.SessionID)
 }
 
 type ClaudeCLIProvider struct{}
@@ -91,13 +97,27 @@ func (p *CodexCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, er
 		DefaultBin: "codex",
 		DefaultArgs: []string{
 			"exec",
+			"--json",
+			"--output-last-message",
+			"{{output_path}}",
 			"--sandbox",
 			"workspace-write",
 			"{{model_flag}}",
 			"{{model}}",
+			"{{resume_command}}",
+			"{{session_id}}",
 		},
+		PreferOutputFile: true,
 	}
-	return provider.Run(ctx, req)
+	result, err := provider.Run(ctx, req)
+	if err != nil {
+		return result, err
+	}
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID == "" {
+		sessionID = extractSessionID(result.Stdout)
+	}
+	return enrichJSONResult(result, sessionID)
 }
 
 type ExternalCLIProvider struct {
@@ -127,9 +147,11 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 	cmd.Dir = workDir
 
 	outputPathPreexisting := false
+	outputPathBefore := ""
 	if req.OutputPath != "" {
-		if _, err := os.Stat(req.OutputPath); err == nil {
+		if raw, err := os.ReadFile(req.OutputPath); err == nil {
 			outputPathPreexisting = true
+			outputPathBefore = strings.TrimSpace(string(raw))
 		} else if err != nil && !os.IsNotExist(err) {
 			return AIResult{}, err
 		}
@@ -157,7 +179,7 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		Output: strings.TrimSpace(stdout.String()),
 	}
 
-	if output := readProviderOutputFile(req.OutputPath); output != "" && (p.PreferOutputFile || !outputPathPreexisting || result.Output == "") {
+	if output := readProviderOutputFile(req.OutputPath); output != "" && (!outputPathPreexisting || output != outputPathBefore || result.Output == "" || p.PreferOutputFile && output != outputPathBefore) {
 		result.Output = output
 	}
 
@@ -185,14 +207,16 @@ func loadProviderArgs(envName string, defaults []string) ([]string, error) {
 
 func expandProviderArgs(args []string, req AIRequest) []string {
 	replacements := map[string]string{
-		"{{prompt}}":       req.Prompt,
-		"{{model_flag}}":   modelFlag(req.Model),
-		"{{model}}":        normalizedModelValue(req.Model),
-		"{{work_dir}}":     req.WorkDir,
-		"{{artifact_dir}}": req.ArtifactDir,
-		"{{output_path}}":  req.OutputPath,
-		"{{output_file}}":  filepath.Base(req.OutputPath),
-		"{{skill_name}}":   req.SkillName,
+		"{{prompt}}":         req.Prompt,
+		"{{model_flag}}":     modelFlag(req.Model),
+		"{{model}}":          normalizedModelValue(req.Model),
+		"{{work_dir}}":       req.WorkDir,
+		"{{artifact_dir}}":   req.ArtifactDir,
+		"{{output_path}}":    req.OutputPath,
+		"{{output_file}}":    filepath.Base(req.OutputPath),
+		"{{skill_name}}":     req.SkillName,
+		"{{session_id}}":     strings.TrimSpace(req.SessionID),
+		"{{resume_command}}": resumeCommand(req.SessionID),
 	}
 
 	expanded := make([]string, 0, len(args))
@@ -266,6 +290,10 @@ func copilotDefaultArgs(allowTools []string) []string {
 	args := []string{
 		"-p", "Read the instructions in {{artifact_dir}}/prompt.md and follow them. Use the repository root as the working directory and modify the repository files directly. Write the final response to {{output_path}}. Standard output may be used for progress logs only.",
 		"-s",
+		"--output-format",
+		"json",
+		"--session-id",
+		"{{session_id}}",
 		"{{model_flag}}", "{{model}}",
 		"--add-dir",
 		"{{artifact_dir}}",
@@ -283,6 +311,109 @@ func copilotDefaultArgs(allowTools []string) []string {
 	}
 	args = append(args, "--no-ask-user")
 	return args
+}
+
+func ensureSessionID(sessionID string) string {
+	trimmed := strings.TrimSpace(sessionID)
+	if trimmed != "" {
+		return trimmed
+	}
+	return uuid.NewString()
+}
+
+func enrichJSONResult(result AIResult, sessionID string) (AIResult, error) {
+	result.SessionID = strings.TrimSpace(sessionID)
+	events, err := parseJSONLEvents(result.Stdout)
+	if err != nil {
+		result.JSON = marshalProviderResultJSON(result.SessionID, result.Output, result.Stdout, result.Stderr, nil)
+		return result, nil
+	}
+	result.JSON = marshalProviderResultJSON(result.SessionID, result.Output, result.Stdout, result.Stderr, events)
+	return result, nil
+}
+
+func parseJSONLEvents(raw string) ([]map[string]any, error) {
+	lines := splitNonEmptyLines(raw)
+	events := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		var event map[string]any
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, nil
+}
+
+func extractSessionID(raw string) string {
+	events, err := parseJSONLEvents(raw)
+	if err != nil {
+		return ""
+	}
+	for _, event := range events {
+		if strings.TrimSpace(stringValue(event, "type")) != "thread.started" {
+			continue
+		}
+		if sessionID := firstNonEmpty(stringValue(event, "thread_id"), stringValue(event, "threadId")); sessionID != "" {
+			return sessionID
+		}
+		if thread, ok := event["thread"].(map[string]any); ok {
+			if sessionID := firstNonEmpty(stringValue(thread, "id"), stringValue(thread, "thread_id")); sessionID != "" {
+				return sessionID
+			}
+		}
+	}
+	return ""
+}
+
+func stringValue(values map[string]any, key string) string {
+	raw, ok := values[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch value := raw.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+}
+
+func resumeCommand(sessionID string) string {
+	if strings.TrimSpace(sessionID) == "" {
+		return ""
+	}
+	return "resume"
+}
+
+func marshalProviderResultJSON(sessionID string, output string, stdout string, stderr string, events []map[string]any) string {
+	payload := map[string]any{
+		"session_id": strings.TrimSpace(sessionID),
+		"output":     output,
+		"stdout":     stdout,
+		"stderr":     stderr,
+	}
+	if len(events) > 0 {
+		payload["events"] = events
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return string(raw)
+}
+
+func splitNonEmptyLines(value string) []string {
+	lines := strings.Split(value, "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		filtered = append(filtered, trimmed)
+	}
+	return filtered
 }
 
 func normalizeCopilotAllowTools(values []string) []string {

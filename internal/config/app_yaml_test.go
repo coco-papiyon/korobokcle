@@ -71,12 +71,13 @@ func TestAppMonitoredRepositoryBranchRoundTrip(t *testing.T) {
 	app := DefaultFiles().App
 	app.MonitoredRepositories = []MonitoredRepository{
 		{
-			Repository:         "owner/repo",
-			Branch:             "release/1.x",
-			Workers:            2,
-			ImprovementEnabled: true,
-			ImprovementBranch:  "develop-ai",
-			ImprovementDir:     ".repo-improvement",
+			Repository:            "owner/repo",
+			Branch:                "release/1.x",
+			ImplementationWorkers: 2,
+			ReviewWorkers:         3,
+			ImprovementEnabled:    true,
+			ImprovementBranch:     "develop-ai",
+			ImprovementDir:        ".repo-improvement",
 		},
 	}
 
@@ -91,6 +92,8 @@ func TestAppMonitoredRepositoryBranchRoundTrip(t *testing.T) {
 		"improvementEnabled: true",
 		"improvementBranch: develop-ai",
 		"improvementDir: .repo-improvement",
+		"implementationWorkers: 2",
+		"reviewWorkers: 3",
 	} {
 		if !strings.Contains(string(raw), expected) {
 			t.Fatalf("expected %q in yaml, got %s", expected, string(raw))
@@ -115,5 +118,8 @@ func TestAppMonitoredRepositoryBranchRoundTrip(t *testing.T) {
 	}
 	if got := decoded.MonitoredRepositories[0].ImprovementDir; got != ".repo-improvement" {
 		t.Fatalf("expected improvement dir .repo-improvement, got %q", got)
+	}
+	if got := decoded.MonitoredRepositories[0].ReviewWorkers; got != 3 {
+		t.Fatalf("expected review workers 3, got %d", got)
 	}
 }

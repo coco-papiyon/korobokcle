@@ -96,6 +96,7 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 		WorkDir:           workDir,
 		ArtifactDir:       contextData.ArtifactDir,
 		OutputPath:        outputPath,
+		SessionID:         contextData.SessionID,
 		CopilotAllowTools: r.copilotAllowTools,
 	})
 	if err != nil {
@@ -164,6 +165,7 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 		WorkDir:           workDir,
 		ArtifactDir:       contextData.ArtifactDir,
 		OutputPath:        outputPath,
+		SessionID:         contextData.SessionID,
 		CopilotAllowTools: r.copilotAllowTools,
 	})
 	if err != nil {
@@ -232,6 +234,7 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 		WorkDir:           workDir,
 		ArtifactDir:       contextData.ArtifactDir,
 		OutputPath:        outputPath,
+		SessionID:         contextData.SessionID,
 		CopilotAllowTools: r.copilotAllowTools,
 	})
 	if err != nil {

@@ -19,7 +19,8 @@ watch(
       repository: entry.repository ?? '',
       branch: entry.branch ?? '',
       workDir: entry.workDir ?? '',
-      workers: Math.max(1, Number(entry.workers) || 1),
+      implementationWorkers: Math.max(1, Number(entry.implementationWorkers) || 1),
+      reviewWorkers: Math.max(1, Number(entry.reviewWorkers) || 1),
       improvementEnabled: Boolean(entry.improvementEnabled),
       improvementBranch: entry.improvementBranch ?? '',
       improvementDir: entry.improvementDir ?? '',
@@ -36,7 +37,8 @@ function addMonitoredRepository() {
       repository: '',
       branch: '',
       workDir: '',
-      workers: 1,
+      implementationWorkers: 1,
+      reviewWorkers: 1,
       improvementEnabled: false,
       improvementBranch: '',
       improvementDir: '',
@@ -79,7 +81,8 @@ function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
       repository: entry.repository.trim(),
       branch: entry.branch.trim(),
       workDir: entry.workDir.trim(),
-      workers: Math.floor(Number(entry.workers)),
+      implementationWorkers: Math.floor(Number(entry.implementationWorkers)),
+      reviewWorkers: Math.floor(Number(entry.reviewWorkers)),
       improvementEnabled: Boolean(entry.improvementEnabled),
       improvementBranch: entry.improvementBranch.trim(),
       improvementDir: entry.improvementDir.trim(),
@@ -89,7 +92,9 @@ function normalizeMonitoredRepositories(values: MonitoredRepository[]) {
       repository: entry.repository,
       branch: entry.branch,
       workDir: entry.workDir,
-      workers: Number.isInteger(entry.workers) && entry.workers >= 1 ? entry.workers : 1,
+      implementationWorkers:
+        Number.isInteger(entry.implementationWorkers) && entry.implementationWorkers >= 1 ? entry.implementationWorkers : 1,
+      reviewWorkers: Number.isInteger(entry.reviewWorkers) && entry.reviewWorkers >= 1 ? entry.reviewWorkers : 1,
       improvementEnabled: entry.improvementEnabled,
       improvementBranch: entry.improvementBranch,
       improvementDir: entry.improvementDir,
@@ -108,7 +113,8 @@ async function persistConfig() {
       repository: entry.repository ?? '',
       branch: entry.branch ?? '',
       workDir: entry.workDir ?? '',
-      workers: Math.max(1, Number(entry.workers) || 1),
+      implementationWorkers: Math.max(1, Number(entry.implementationWorkers) || 1),
+      reviewWorkers: Math.max(1, Number(entry.reviewWorkers) || 1),
       improvementEnabled: Boolean(entry.improvementEnabled),
       improvementBranch: entry.improvementBranch ?? '',
       improvementDir: entry.improvementDir ?? '',
@@ -165,8 +171,12 @@ async function persistConfig() {
                 />
               </label>
               <label class="field">
-                <span class="field__label">ワーカー数</span>
-                <input v-model.number="entry.workers" class="field__control" type="number" min="1" step="1" />
+                <span class="field__label">実装 worker 数</span>
+                <input v-model.number="entry.implementationWorkers" class="field__control" type="number" min="1" step="1" />
+              </label>
+              <label class="field">
+                <span class="field__label">PRレビュー数</span>
+                <input v-model.number="entry.reviewWorkers" class="field__control" type="number" min="1" step="1" />
               </label>
               <label class="field field-full">
                 <span class="field__label">改善機能</span>
@@ -186,7 +196,7 @@ async function persistConfig() {
               <button class="button button-secondary" type="button" @click="removeMonitoredRepository(index)">削除</button>
             </div>
           </div>
-          <p class="text-muted">作業ディレクトリを空にすると既定の `source/&lt;repo&gt;` を使います。`&lt;repo&gt;` は `owner-repository` のようなリポジトリ識別子です。ブランチを空にするとリモートの既定ブランチを使います。実際の作業用 worktree は `source/&lt;repo&gt;-&lt;branch&gt;` になります。改善設定は空欄なら `improvement` / `.improvement` にフォールバックします。監視ルール側では、ここで登録したリポジトリのみ選択できます。</p>
+          <p class="text-muted">作業ディレクトリを空にすると既定の `source/&lt;repo&gt;` を使います。`&lt;repo&gt;` は `owner-repository` のようなリポジトリ識別子です。ブランチを空にするとリモートの既定ブランチを使います。実際の作業用 worktree は `source/&lt;repo&gt;-&lt;branch&gt;` になります。改善設定は空欄なら `improvement` / `.improvement` にフォールバックします。監視ルール側では、ここで登録したリポジトリのみ選択できます。`実装 worker 数` は実装系、`PRレビュー数` は PR レビュー系の並列上限です。</p>
         </div>
 
         <div v-if="saveState === 'saved'" class="notice notice-success">ワーカー設定を更新しました。</div>

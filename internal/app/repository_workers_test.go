@@ -560,7 +560,7 @@ func TestSyncRepositoryWorkspaceUsesConfiguredMonitoredRepositoryBranch(t *testi
 
 	cfg := config.DefaultFiles()
 	cfg.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "owner/repo", Branch: "release/1.x", Workers: 1},
+		{Repository: "owner/repo", Branch: "release/1.x", ImplementationWorkers: 1},
 	}
 	svc := config.NewService(root, cfg)
 	workerDir, err := cloneRepositoryWorkspace(context.Background(), svc, source, 0)
@@ -634,7 +634,7 @@ func TestSyncRepositoryWorkspaceUsesDefaultBranchWhenMonitoringBranchIsEmpty(t *
 
 	cfg := config.DefaultFiles()
 	cfg.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "owner/repo", Branch: "", Workers: 1},
+		{Repository: "owner/repo", Branch: "", ImplementationWorkers: 1},
 	}
 	svc := config.NewService(root, cfg)
 	workerDir, err := cloneRepositoryWorkspace(context.Background(), svc, source, 0)
@@ -669,6 +669,79 @@ func TestSyncRepositoryWorkspaceUsesDefaultBranchWhenMonitoringBranchIsEmpty(t *
 	}
 	if string(readmeRaw) != "main\n" {
 		t.Fatalf("expected synced main README, got %q", string(readmeRaw))
+	}
+}
+
+func TestSyncRepositoryWorkspaceUsesIssueBranchNameAndFallsBackToBaseBranch(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile main error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add main error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit main error = %v", err)
+	}
+
+	cfg := config.DefaultFiles()
+	cfg.App.MonitoredRepositories = []config.MonitoredRepository{
+		{Repository: "owner/repo", Branch: "", ImplementationWorkers: 1},
+	}
+	svc := config.NewService(root, cfg)
+	workerDir, err := cloneRepositoryWorkspaceForBranch(context.Background(), svc, source, "issue_97")
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspaceForBranch() error = %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("updated main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile updated README error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add updated README error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "update"); err != nil {
+		t.Fatalf("git commit update error = %v", err)
+	}
+
+	job := domain.Job{
+		ID:         "job-issue-branch",
+		Type:       domain.JobTypeIssue,
+		Repository: "owner/repo",
+		BranchName: "issue_97",
+		State:      domain.StateDetected,
+	}
+	if err := syncRepositoryWorkspace(context.Background(), svc, job, workerDir, log.New(io.Discard, "", 0)); err != nil {
+		t.Fatalf("syncRepositoryWorkspace() error = %v", err)
+	}
+
+	currentBranch, err := runGitCommand(context.Background(), workerDir, "git", "branch", "--show-current")
+	if err != nil {
+		t.Fatalf("git branch --show-current error = %v", err)
+	}
+	if strings.TrimSpace(currentBranch) != "issue_97" {
+		t.Fatalf("expected issue_97 branch, got %q", currentBranch)
+	}
+
+	readmeRaw, err := os.ReadFile(filepath.Join(workerDir, "README.md"))
+	if err != nil {
+		t.Fatalf("ReadFile README.md error = %v", err)
+	}
+	if string(readmeRaw) != "updated main\n" {
+		t.Fatalf("expected synced README from base branch, got %q", string(readmeRaw))
 	}
 }
 
@@ -821,10 +894,10 @@ func TestBuildRepositoryDesignContextLoadsInstructionsFromImprovementWorkspace(t
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
 		{
-			Repository:         "owner/repository",
-			Workers:            1,
-			ImprovementEnabled: true,
-			ImprovementDir:     ".improvement",
+			Repository:            "owner/repository",
+			ImplementationWorkers: 1,
+			ImprovementEnabled:    true,
+			ImprovementDir:        ".improvement",
 		},
 	}
 	svc := config.NewService(root, files)
@@ -927,7 +1000,7 @@ func TestRepositoryWorkerSourceDirUsesConfiguredWorkerDir(t *testing.T) {
 	root := t.TempDir()
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "owner/repository", Branch: "main", WorkDir: "custom/workers", Workers: 2},
+		{Repository: "owner/repository", Branch: "main", WorkDir: "custom/workers", ImplementationWorkers: 2},
 	}
 	cfg := config.NewService(root, files)
 
@@ -1567,8 +1640,8 @@ func TestRepositoryWorkersFromJobsSkipsEmptyRepositories(t *testing.T) {
 	if repositories[0].Repository != "owner/repository" {
 		t.Fatalf("repository = %q, want owner/repository", repositories[0].Repository)
 	}
-	if repositories[0].Workers != 1 {
-		t.Fatalf("workers = %d, want 1", repositories[0].Workers)
+	if repositories[0].ImplementationWorkers != 1 {
+		t.Fatalf("workers = %d, want 1", repositories[0].ImplementationWorkers)
 	}
 }
 

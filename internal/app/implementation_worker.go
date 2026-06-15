@@ -90,9 +90,13 @@ func runPendingImplementations(ctx context.Context, repoRoot string, cfg *config
 			continue
 		}
 
-		if _, err := runner.RunImplementation(ctx, runSpec.SkillName, contextData, execution); err != nil {
+		result, err := runner.RunImplementation(ctx, runSpec.SkillName, contextData, execution)
+		if err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
 			continue
+		}
+		if err := saveJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID, result.SessionID); err != nil {
+			logger.Printf("implementation session save failed for %s: %v", job.ID, err)
 		}
 		if err := copyAIResultToWorkDir(repoRoot, filepath.Base(runSpec.ArtifactDir), jobDetail, contextData.ArtifactDir); err != nil {
 			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "implementation_failed", map[string]any{"error": err.Error()})
@@ -165,6 +169,7 @@ func buildImplementationContext(cfg *config.Service, workDir string, job domain.
 		DesignArtifact:    string(designArtifactRaw),
 		DesignArtifactDir: designArtifactDir,
 		ArtifactDir:       runSpec.ArtifactDir,
+		SessionID:         loadJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID),
 	}
 
 	ctxData.DesignApprovalComment, err = loadDesignApprovalComment(events)
@@ -302,6 +307,7 @@ func buildPRFeedbackImplementationContext(cfg *config.Service, workDir string, j
 		WatchRuleID: job.WatchRuleID,
 		BranchName:  job.BranchName,
 		ArtifactDir: runSpec.ArtifactDir,
+		SessionID:   loadJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.ID),
 	}
 
 	implementationArtifact, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerImplementation, job, artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation), "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")

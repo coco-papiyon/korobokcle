@@ -68,7 +68,7 @@ func setupToolCommandJobServer(t *testing.T) (*Server, *domain.Job) {
 	root := t.TempDir()
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
-		{Repository: "owner/repository", Branch: "", Workers: 1},
+		{Repository: "owner/repository", Branch: "", ImplementationWorkers: 1},
 	}
 	files.WatchRules.Rules = []config.WatchRule{
 		{
@@ -359,11 +359,12 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 			Models []string `json:"models"`
 		} `json:"providers"`
 		MonitoredRepositories []struct {
-			Repository         string `json:"repository"`
-			Workers            int    `json:"workers"`
-			ImprovementEnabled bool   `json:"improvementEnabled"`
-			ImprovementBranch  string `json:"improvementBranch"`
-			ImprovementDir     string `json:"improvementDir"`
+			Repository            string `json:"repository"`
+			ImplementationWorkers int    `json:"implementationWorkers"`
+			ReviewWorkers         int    `json:"reviewWorkers"`
+			ImprovementEnabled    bool   `json:"improvementEnabled"`
+			ImprovementBranch     string `json:"improvementBranch"`
+			ImprovementDir        string `json:"improvementDir"`
 		} `json:"monitoredRepositories"`
 	}
 	if err := json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&got); err != nil {
@@ -400,7 +401,7 @@ func TestHandleAppConfigIncludesPollInterval(t *testing.T) {
 	if got.Providers[1].Name != "claude" || len(got.Providers[1].Models) != 2 {
 		t.Fatalf("unexpected claude provider catalog: %#v", got.Providers)
 	}
-	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].Workers != 1 {
+	if len(got.MonitoredRepositories) != 1 || got.MonitoredRepositories[0].Repository != "owner/repository" || got.MonitoredRepositories[0].ImplementationWorkers != 1 || got.MonitoredRepositories[0].ReviewWorkers != 1 {
 		t.Fatalf("unexpected monitored repositories: %#v", got.MonitoredRepositories)
 	}
 	if got.MonitoredRepositories[0].ImprovementEnabled {
@@ -1017,7 +1018,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","branch":"main","workDir":"artifacts/custom/repository-0","workers":1,"improvementEnabled":true,"improvementBranch":"develop-ai","improvementDir":".improvement-custom"},{"repository":"owner/other","branch":"release/1.x","workDir":"/tmp/korobokcle-worker","workers":3,"improvementEnabled":false,"improvementBranch":"","improvementDir":""}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","branch":"main","workDir":"artifacts/custom/repository-0","implementationWorkers":1,"reviewWorkers":1,"improvementEnabled":true,"improvementBranch":"develop-ai","improvementDir":".improvement-custom"},{"repository":"owner/other","branch":"release/1.x","workDir":"/tmp/korobokcle-worker","implementationWorkers":3,"reviewWorkers":2,"improvementEnabled":false,"improvementBranch":"","improvementDir":""}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -1026,7 +1027,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
 	}
-	if got := svc.App().MonitoredRepositories; len(got) != 2 || got[0].Repository != "owner/repository" || got[0].Branch != "main" || got[0].Workers != 1 || got[0].WorkDir != "artifacts/custom/repository-0" || !got[0].ImprovementEnabled || got[0].ImprovementBranch != "develop-ai" || got[0].ImprovementDir != ".improvement-custom" || got[1].Repository != "owner/other" || got[1].Branch != "release/1.x" || got[1].Workers != 3 || got[1].WorkDir != "/tmp/korobokcle-worker" {
+	if got := svc.App().MonitoredRepositories; len(got) != 2 || got[0].Repository != "owner/repository" || got[0].Branch != "main" || got[0].ImplementationWorkers != 1 || got[0].ReviewWorkers != 1 || got[0].WorkDir != "artifacts/custom/repository-0" || !got[0].ImprovementEnabled || got[0].ImprovementBranch != "develop-ai" || got[0].ImprovementDir != ".improvement-custom" || got[1].Repository != "owner/other" || got[1].Branch != "release/1.x" || got[1].ImplementationWorkers != 3 || got[1].ReviewWorkers != 2 || got[1].WorkDir != "/tmp/korobokcle-worker" {
 		t.Fatalf("unexpected monitored repositories: %#v", got)
 	}
 
@@ -1035,7 +1036,7 @@ func TestHandleSaveAppConfigUpdatesMonitoredRepositories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read saved config: %v", err)
 	}
-	if !bytes.Contains(raw, []byte("monitoredRepositories:")) || !bytes.Contains(raw, []byte("repository: owner/other")) || !bytes.Contains(raw, []byte("branch: release/1.x")) || !bytes.Contains(raw, []byte("workers: 3")) || !bytes.Contains(raw, []byte("workDir: /tmp/korobokcle-worker")) || !bytes.Contains(raw, []byte("improvementEnabled: true")) || !bytes.Contains(raw, []byte("improvementBranch: develop-ai")) || !bytes.Contains(raw, []byte("improvementDir: .improvement-custom")) {
+	if !bytes.Contains(raw, []byte("monitoredRepositories:")) || !bytes.Contains(raw, []byte("repository: owner/other")) || !bytes.Contains(raw, []byte("branch: release/1.x")) || !bytes.Contains(raw, []byte("implementationWorkers: 3")) || !bytes.Contains(raw, []byte("reviewWorkers: 2")) || !bytes.Contains(raw, []byte("workDir: /tmp/korobokcle-worker")) || !bytes.Contains(raw, []byte("improvementEnabled: true")) || !bytes.Contains(raw, []byte("improvementBranch: develop-ai")) || !bytes.Contains(raw, []byte("improvementDir: .improvement-custom")) {
 		t.Fatalf("expected saved config to contain monitoredRepositories, got %s", string(raw))
 	}
 }
@@ -1048,7 +1049,7 @@ func TestHandleSaveAppConfigRejectsInvalidMonitoredRepositoryWorkers(t *testing.
 	svc := config.NewService(root, files)
 	server := &Server{config: svc}
 
-	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","workers":0}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
+	body := []byte(`{"provider":"mock","model":"","copilotAllowTools":[],"monitoredRepositories":[{"repository":"owner/repository","implementationWorkers":0,"reviewWorkers":1}],"pollInterval":90,"prTitleTemplate":"PR {{issue_number}}: {{issue_title}}","branchTemplate":"feature_{{issue_number}}"}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/app-config", bytes.NewReader(body))
 
@@ -3335,12 +3336,12 @@ func setupImprovementServer(t *testing.T) (*Server, config.MonitoredRepository, 
 	root := t.TempDir()
 	files := config.DefaultFiles()
 	repoConfig := config.MonitoredRepository{
-		Repository:         "owner/repository",
-		Branch:             "main",
-		Workers:            1,
-		ImprovementEnabled: true,
-		ImprovementBranch:  "develop",
-		ImprovementDir:     ".improvement",
+		Repository:            "owner/repository",
+		Branch:                "main",
+		ImplementationWorkers: 1,
+		ImprovementEnabled:    true,
+		ImprovementBranch:     "develop",
+		ImprovementDir:        ".improvement",
 	}
 	files.App.MonitoredRepositories = []config.MonitoredRepository{repoConfig}
 	svc := config.NewService(root, files)

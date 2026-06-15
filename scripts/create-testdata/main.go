@@ -40,13 +40,13 @@ func main() {
 	files := config.DefaultFiles()
 	files.App.MonitoredRepositories = []config.MonitoredRepository{
 		{
-			Repository:         fixtureRepository,
-			Branch:             "",
-			WorkDir:            "",
-			Workers:            1,
-			ImprovementEnabled: false,
-			ImprovementBranch:  "",
-			ImprovementDir:     "",
+			Repository:            fixtureRepository,
+			Branch:                "",
+			WorkDir:               "",
+			ImplementationWorkers: 1,
+			ImprovementEnabled:    false,
+			ImprovementBranch:     "",
+			ImprovementDir:        "",
 		},
 	}
 	files.ToolCommands.Commands = []config.ToolCommand{

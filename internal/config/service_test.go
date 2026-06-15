@@ -121,13 +121,14 @@ func TestServiceUpdateAppClonesImprovementSettings(t *testing.T) {
 	svc := NewService(root, DefaultFiles())
 	app := DefaultFiles().App
 	app.MonitoredRepositories = []MonitoredRepository{{
-		Repository:         "owner/repo",
-		Branch:             "main",
-		WorkDir:            "source/owner-repo",
-		Workers:            2,
-		ImprovementEnabled: true,
-		ImprovementBranch:  "develop-ai",
-		ImprovementDir:     ".improvement-custom",
+		Repository:            "owner/repo",
+		Branch:                "main",
+		WorkDir:               "source/owner-repo",
+		ImplementationWorkers: 2,
+		ReviewWorkers:         4,
+		ImprovementEnabled:    true,
+		ImprovementBranch:     "develop-ai",
+		ImprovementDir:        ".improvement-custom",
 	}}
 
 	if err := svc.UpdateApp(app); err != nil {
@@ -145,6 +146,9 @@ func TestServiceUpdateAppClonesImprovementSettings(t *testing.T) {
 	if !repository.ImprovementEnabled {
 		t.Fatalf("expected improvement feature enabled in cached config")
 	}
+	if repository.ReviewWorkers != 4 {
+		t.Fatalf("expected review worker limit to be preserved, got %#v", repository)
+	}
 	if repository.ImprovementBranch != "develop-ai" || repository.ImprovementDir != ".improvement-custom" {
 		t.Fatalf("unexpected cached improvement settings: %#v", repository)
 	}
@@ -157,6 +161,8 @@ func TestServiceUpdateAppClonesImprovementSettings(t *testing.T) {
 		[]byte("improvementEnabled: true"),
 		[]byte("improvementBranch: develop-ai"),
 		[]byte("improvementDir: .improvement-custom"),
+		[]byte("implementationWorkers: 2"),
+		[]byte("reviewWorkers: 4"),
 	} {
 		if !bytes.Contains(raw, expected) {
 			t.Fatalf("expected saved yaml to contain %q, got %s", expected, string(raw))

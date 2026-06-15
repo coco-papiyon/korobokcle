@@ -156,13 +156,14 @@ type providerSpecResponse struct {
 }
 
 type monitoredRepositoryResponse struct {
-	Repository         string `json:"repository"`
-	Branch             string `json:"branch"`
-	WorkDir            string `json:"workDir"`
-	Workers            int    `json:"workers"`
-	ImprovementEnabled bool   `json:"improvementEnabled"`
-	ImprovementBranch  string `json:"improvementBranch"`
-	ImprovementDir     string `json:"improvementDir"`
+	Repository            string `json:"repository"`
+	Branch                string `json:"branch"`
+	WorkDir               string `json:"workDir"`
+	ImplementationWorkers int    `json:"implementationWorkers"`
+	ReviewWorkers         int    `json:"reviewWorkers"`
+	ImprovementEnabled    bool   `json:"improvementEnabled"`
+	ImprovementBranch     string `json:"improvementBranch"`
+	ImprovementDir        string `json:"improvementDir"`
 }
 
 type appConfigResponse struct {
@@ -1583,18 +1584,23 @@ func toMonitoredRepositoryResponses(values []config.MonitoredRepository) []monit
 			continue
 		}
 		seen[repository] = struct{}{}
-		workers := value.Workers
-		if workers < 1 {
-			workers = 1
+		implementationWorkers := value.ImplementationWorkers
+		if implementationWorkers < 1 {
+			implementationWorkers = 1
+		}
+		reviewWorkers := value.ReviewWorkers
+		if reviewWorkers < 1 {
+			reviewWorkers = 1
 		}
 		out = append(out, monitoredRepositoryResponse{
-			Repository:         repository,
-			Branch:             strings.TrimSpace(value.Branch),
-			WorkDir:            strings.TrimSpace(value.WorkDir),
-			Workers:            workers,
-			ImprovementEnabled: value.ImprovementEnabled,
-			ImprovementBranch:  strings.TrimSpace(value.ImprovementBranch),
-			ImprovementDir:     strings.TrimSpace(value.ImprovementDir),
+			Repository:            repository,
+			Branch:                strings.TrimSpace(value.Branch),
+			WorkDir:               strings.TrimSpace(value.WorkDir),
+			ImplementationWorkers: implementationWorkers,
+			ReviewWorkers:         reviewWorkers,
+			ImprovementEnabled:    value.ImprovementEnabled,
+			ImprovementBranch:     strings.TrimSpace(value.ImprovementBranch),
+			ImprovementDir:        strings.TrimSpace(value.ImprovementDir),
 		})
 	}
 	return out
@@ -1612,19 +1618,24 @@ func normalizeMonitoredRepositoryResponses(values []monitoredRepositoryResponse)
 			continue
 		}
 		branch := strings.TrimSpace(value.Branch)
-		workers := value.Workers
-		if workers < 1 {
-			return nil, fmt.Errorf("item[%d].workers must be at least 1", index)
+		implementationWorkers := value.ImplementationWorkers
+		if implementationWorkers < 1 {
+			return nil, fmt.Errorf("item[%d].implementationWorkers must be at least 1", index)
+		}
+		reviewWorkers := value.ReviewWorkers
+		if reviewWorkers < 1 {
+			reviewWorkers = 1
 		}
 		seen[repository] = struct{}{}
 		out = append(out, config.MonitoredRepository{
-			Repository:         repository,
-			Branch:             branch,
-			WorkDir:            strings.TrimSpace(value.WorkDir),
-			Workers:            workers,
-			ImprovementEnabled: value.ImprovementEnabled,
-			ImprovementBranch:  strings.TrimSpace(value.ImprovementBranch),
-			ImprovementDir:     strings.TrimSpace(value.ImprovementDir),
+			Repository:            repository,
+			Branch:                branch,
+			WorkDir:               strings.TrimSpace(value.WorkDir),
+			ImplementationWorkers: implementationWorkers,
+			ReviewWorkers:         reviewWorkers,
+			ImprovementEnabled:    value.ImprovementEnabled,
+			ImprovementBranch:     strings.TrimSpace(value.ImprovementBranch),
+			ImprovementDir:        strings.TrimSpace(value.ImprovementDir),
 		})
 	}
 	return out, nil

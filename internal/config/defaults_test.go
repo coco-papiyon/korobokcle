@@ -39,6 +39,9 @@ func TestDefaultImprovementSettings(t *testing.T) {
 		t.Fatalf("expected one default repository, got %d", len(app.MonitoredRepositories))
 	}
 	repository := app.MonitoredRepositories[0]
+	if repository.ImplementationWorkers != 1 || repository.ReviewWorkers != 1 {
+		t.Fatalf("expected default worker limits to be 1, got %#v", repository)
+	}
 	if repository.ImprovementEnabled {
 		t.Fatalf("expected improvement feature disabled by default")
 	}

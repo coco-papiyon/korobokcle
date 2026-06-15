@@ -74,12 +74,12 @@ func TestApplyImprovementApprovalPreparesBranchAndPushesLater(t *testing.T) {
 		App: config.App{
 			ArtifactsDir: "artifacts",
 			MonitoredRepositories: []config.MonitoredRepository{{
-				Repository:         "owner/repository",
-				WorkDir:            worktree,
-				Workers:            1,
-				ImprovementEnabled: true,
-				ImprovementBranch:  "develop",
-				ImprovementDir:     ".improvement",
+				Repository:            "owner/repository",
+				WorkDir:               worktree,
+				ImplementationWorkers: 1,
+				ImprovementEnabled:    true,
+				ImprovementBranch:     "develop",
+				ImprovementDir:        ".improvement",
 			}},
 		},
 	})
@@ -214,9 +214,9 @@ func TestApplyImprovementApprovalRejectsWithoutGitUpdate(t *testing.T) {
 		App: config.App{
 			ArtifactsDir: "artifacts",
 			MonitoredRepositories: []config.MonitoredRepository{{
-				Repository:         "owner/repository",
-				Workers:            1,
-				ImprovementEnabled: true,
+				Repository:            "owner/repository",
+				ImplementationWorkers: 1,
+				ImprovementEnabled:    true,
 			}},
 		},
 	})

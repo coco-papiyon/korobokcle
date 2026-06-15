@@ -338,7 +338,7 @@ async function persistRules() {
                 >
                   <option value="">リポジトリを選択</option>
                   <option v-for="entry in availableRepositoryEntries" :key="entry.repository" :value="entry.repository">
-                    {{ entry.repository }} (ワーカー数: {{ entry.workers }})
+                    {{ entry.repository }} (実装 worker 数: {{ entry.implementationWorkers }})
                   </option>
                 </select>
                 <p v-else class="text-muted">設定画面で監視対象リポジトリを追加してください。</p>

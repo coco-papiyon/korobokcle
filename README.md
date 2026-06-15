@@ -213,7 +213,10 @@ model を指定した場合は `--model` を付けて実行します。
 `copilot` の許可ツールは `config/app.yaml` の `copilotAllowTools` で指定できます。必要ならここで制限できます。
 `claude` は `KOROBOKCLE_CLAUDE_BIN` / `KOROBOKCLE_CLAUDE_ARGS_JSON` で上書きできます。
 `claude` の prompt はデフォルトで標準入力から渡します。
-`codex` は `codex exec --sandbox workspace-write` で実行し、標準入力にプロンプト本文を渡します。
+`codex` は `codex exec --json --output-last-message <result.md> --sandbox workspace-write` で実行し、標準入力にプロンプト本文を渡します。
+`codex` の JSONL 出力に `thread.started` が含まれる場合は、その `thread_id` を session ID として扱います。
+`copilot` は `--output-format json --session-id <uuid>` を付けて起動し、JSONL 出力を受け取ります。
+`AIRequest` に session ID を指定した場合は、`codex` はその session へ再開し、`copilot` も同じ session ID で再開します。
 Linux では対話CLI向けに擬似端末経由で起動します。
 環境に応じて `KOROBOKCLE_COPILOT_BIN` / `KOROBOKCLE_COPILOT_ARGS_JSON`、
 `KOROBOKCLE_CLAUDE_BIN` / `KOROBOKCLE_CLAUDE_ARGS_JSON`、
@@ -221,7 +224,7 @@ Linux では対話CLI向けに擬似端末経由で起動します。
 `KOROBOKCLE_TOOL_ROOT` を指定すると、ツール配置ディレクトリを明示できます。
 `dataDir`、`artifactsDir`、`sqlitePath` の相対パスは `KOROBOKCLE_TOOL_ROOT` で指定した
 ツール配置ディレクトリ基準で解決されます。
-`*_ARGS_JSON` は JSON 配列で、`{{prompt}}`, `{{model_flag}}`, `{{model}}`, `{{work_dir}}`, `{{artifact_dir}}`, `{{output_path}}`, `{{skill_name}}` を使えます。
+`*_ARGS_JSON` は JSON 配列で、`{{prompt}}`, `{{model_flag}}`, `{{model}}`, `{{work_dir}}`, `{{artifact_dir}}`, `{{output_path}}`, `{{skill_name}}`, `{{session_id}}`, `{{resume_command}}` を使えます。
 
 `config/watch-rules.yaml` の `repositories` は `owner/repo` 形式を推奨します。
 `https://github.com/owner/repo` の形式が入っていても、現在は自動で `owner/repo` に正規化されます。

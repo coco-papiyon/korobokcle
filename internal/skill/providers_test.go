@@ -2,6 +2,7 @@ package skill
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,6 +33,79 @@ func TestExternalCLIProviderReadsStdout(t *testing.T) {
 	}
 }
 
+func TestCodexCLIProviderExtractsSessionIDFromJSONL(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := writeProviderScript(
+		t,
+		dir,
+		"jsonl-codex",
+		"@echo off\r\necho {\"type\":\"thread.started\",\"thread_id\":\"thread-123\"}\r\necho {\"type\":\"message\",\"data\":\"progress\"}\r\necho {\"type\":\"end\"}\r\n>\"%3\" echo final response\r\n",
+		"#!/usr/bin/env sh\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"thread-123\"}'\nprintf '%s\\n' '{\"type\":\"message\",\"data\":\"progress\"}'\nprintf '%s\\n' '{\"type\":\"end\"}'\nprintf '%s\\n' 'final response' > \"$3\"\nprintf '%s\\n' \"$*\" >&2\n",
+	)
+
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["--json","--output-last-message","{{output_path}}"]`)
+
+	provider := NewCodexCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:      "codex prompt",
+		WorkDir:     dir,
+		ArtifactDir: dir,
+		OutputPath:  filepath.Join(dir, "result.md"),
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.SessionID != "thread-123" {
+		t.Fatalf("expected session id from thread.started, got %q", result.SessionID)
+	}
+	if strings.TrimSpace(result.Output) != "final response" {
+		t.Fatalf("expected output file contents, got %q", result.Output)
+	}
+	if result.JSON == "" {
+		t.Fatalf("expected JSON payload")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.JSON), &payload); err != nil {
+		t.Fatalf("json.Unmarshal(result.JSON) error = %v", err)
+	}
+	if got := strings.TrimSpace(stringValue(payload, "session_id")); got != "thread-123" {
+		t.Fatalf("expected JSON session_id thread-123, got %q", got)
+	}
+}
+
+func TestCodexCLIProviderRespectsProvidedSessionID(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := writeProviderScript(
+		t,
+		dir,
+		"resume-codex",
+		"@echo off\r\necho resume check\r\n>\"%3\" echo resumed result\r\n",
+		"#!/usr/bin/env sh\nprintf 'resume check\\n'\nprintf '%s\\n' 'resumed result' > \"$3\"\nprintf '%s\\n' \"$*\" >&2\n",
+	)
+
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["--json","--output-last-message","{{output_path}}","{{resume_command}}","{{session_id}}"]`)
+
+	provider := NewCodexCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:      "codex prompt",
+		SessionID:   "thread-existing",
+		WorkDir:     dir,
+		ArtifactDir: dir,
+		OutputPath:  filepath.Join(dir, "result.md"),
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if result.SessionID != "thread-existing" {
+		t.Fatalf("expected preserved session id, got %q", result.SessionID)
+	}
+	if !strings.Contains(result.Stderr, "resume thread-existing") {
+		t.Fatalf("expected resume args in stderr, got %q", result.Stderr)
+	}
+}
+
 func TestCodexCLIProviderUsesWritableSandboxByDefault(t *testing.T) {
 	dir := t.TempDir()
 	scriptPath := writeProviderScript(t, dir, "echo-codex", "@echo off\r\necho %*\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$*\"\n")
@@ -55,6 +129,50 @@ func TestCodexCLIProviderUsesWritableSandboxByDefault(t *testing.T) {
 	}
 	if strings.Contains(result.Output, "--ask-for-approval") {
 		t.Fatalf("unexpected approval flag in %q", result.Output)
+	}
+}
+
+func TestCopilotCLIProviderAssignsAndReturnsSessionID(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := writeProviderScript(
+		t,
+		dir,
+		"json-copilot",
+		"@echo off\r\necho {\"type\":\"message\",\"data\":\"progress\"}\r\necho {\"type\":\"end\"}\r\n>\"%4\" echo final copilot result\r\n",
+		"#!/usr/bin/env sh\nprintf '%s\\n' '{\"type\":\"message\",\"data\":\"progress\"}'\nprintf '%s\\n' '{\"type\":\"end\"}'\nprintf '%s\\n' 'final copilot result' > \"$5\"\nprintf '%s\\n' \"$*\" >&2\n",
+	)
+
+	t.Setenv("KOROBOKCLE_COPILOT_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_COPILOT_ARGS_JSON", `["--output-format","json","--session-id","{{session_id}}","{{output_path}}"]`)
+
+	provider := NewCopilotCLIProvider()
+	result, err := provider.Run(context.Background(), AIRequest{
+		Prompt:      "copilot prompt",
+		WorkDir:     dir,
+		ArtifactDir: dir,
+		OutputPath:  filepath.Join(dir, "result.md"),
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if strings.TrimSpace(result.Output) != "final copilot result" {
+		t.Fatalf("expected output file contents, got %q", result.Output)
+	}
+	if result.SessionID == "" {
+		t.Fatalf("expected generated session id")
+	}
+	if !strings.Contains(result.Stderr, "--session-id") || !strings.Contains(result.Stderr, result.SessionID) {
+		t.Fatalf("expected session id to be passed on the command line, got %q", result.Stderr)
+	}
+	if result.JSON == "" {
+		t.Fatalf("expected JSON payload")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.JSON), &payload); err != nil {
+		t.Fatalf("json.Unmarshal(result.JSON) error = %v", err)
+	}
+	if got := strings.TrimSpace(stringValue(payload, "session_id")); got != result.SessionID {
+		t.Fatalf("expected JSON session_id %q, got %q", result.SessionID, got)
 	}
 }
 

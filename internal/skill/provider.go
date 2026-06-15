@@ -9,13 +9,16 @@ type AIRequest struct {
 	WorkDir           string
 	ArtifactDir       string
 	OutputPath        string
+	SessionID         string
 	CopilotAllowTools []string
 }
 
 type AIResult struct {
-	Stdout string
-	Stderr string
-	Output string
+	Stdout    string
+	Stderr    string
+	Output    string
+	SessionID string
+	JSON      string
 }
 
 type AIProvider interface {

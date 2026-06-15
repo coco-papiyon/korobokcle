@@ -5,6 +5,7 @@ type DesignContext struct {
 	Repository          string               `json:"repository"`
 	IssueNumber         int                  `json:"issueNumber"`
 	Title               string               `json:"title"`
+	SessionID           string               `json:"sessionId,omitempty"`
 	Body                string               `json:"body"`
 	Author              string               `json:"author"`
 	Labels              []string             `json:"labels"`
@@ -22,6 +23,7 @@ type ImplementationContext struct {
 	Repository             string               `json:"repository"`
 	IssueNumber            int                  `json:"issueNumber"`
 	Title                  string               `json:"title"`
+	SessionID              string               `json:"sessionId,omitempty"`
 	Body                   string               `json:"body"`
 	Author                 string               `json:"author"`
 	Labels                 []string             `json:"labels"`
@@ -54,6 +56,7 @@ type ReviewContext struct {
 	Repository          string               `json:"repository"`
 	PullNumber          int                  `json:"pullNumber"`
 	Title               string               `json:"title"`
+	SessionID           string               `json:"sessionId,omitempty"`
 	Body                string               `json:"body"`
 	Author              string               `json:"author"`
 	Labels              []string             `json:"labels"`
