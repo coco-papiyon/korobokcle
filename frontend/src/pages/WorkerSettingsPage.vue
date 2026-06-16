@@ -131,18 +131,18 @@ async function persistConfig() {
 
 <template>
   <AppShell
-    title="ワーカー設定"
-    description="監視対象リポジトリと、各リポジトリの作業ディレクトリとワーカー数を設定します。"
+    title="リポジトリ設定"
+    description="監視対象リポジトリと、各リポジトリの作業ディレクトリやワーカー数を設定します。"
   >
     <AsyncState :is-loading="isLoading" :error="error">
       <section class="panel stack-md">
         <div class="rule-editor__header">
           <div>
-            <h2>ワーカー設定</h2>
+            <h2>リポジトリ設定</h2>
             <p class="text-muted">1 行につき 1 リポジトリを追加し、作業ディレクトリと 1 以上のワーカー数を指定します。</p>
           </div>
           <button class="button button-primary" type="button" :disabled="saveState === 'saving'" @click="persistConfig">
-            {{ saveState === 'saving' ? '保存中...' : 'ワーカー設定を保存' }}
+            {{ saveState === 'saving' ? '保存中...' : 'リポジトリ設定を保存' }}
           </button>
         </div>
 
@@ -199,7 +199,7 @@ async function persistConfig() {
           <p class="text-muted">作業ディレクトリを空にすると既定の `source/&lt;repo&gt;` を使います。`&lt;repo&gt;` は `owner-repository` のようなリポジトリ識別子です。ブランチを空にするとリモートの既定ブランチを使います。実際の作業用 worktree は `source/&lt;repo&gt;-&lt;branch&gt;` になります。改善設定は空欄なら `improvement` / `.improvement` にフォールバックします。監視ルール側では、ここで登録したリポジトリのみ選択できます。`実装 worker 数` は実装系、`PRレビュー数` は PR レビュー系の並列上限です。</p>
         </div>
 
-        <div v-if="saveState === 'saved'" class="notice notice-success">ワーカー設定を更新しました。</div>
+        <div v-if="saveState === 'saved'" class="notice notice-success">リポジトリ設定を更新しました。</div>
         <div v-if="saveState === 'error'" class="notice notice-danger">{{ saveError }}</div>
       </section>
     </AsyncState>
