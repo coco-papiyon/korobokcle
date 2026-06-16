@@ -15,6 +15,8 @@ describe('markdown rendering', () => {
         '| Name | Value |',
         '| --- | --- |',
         '| Example | [OpenAI](https://openai.com) |',
+        '| Escaped pipe | a\\|b |',
+        '| Code span | `left | right` |',
         '| Unsafe | [Bad](javascript:alert(1)) |',
         '',
         '- first',
@@ -33,7 +35,10 @@ describe('markdown rendering', () => {
     expect(html).toContain('<h2 id="section">Section</h2>')
     expect(html).toContain('<div class="markdown-table"><table>')
     expect(html).toContain('<a href="https://openai.com">OpenAI</a>')
-    expect(html).toContain('<a href="#">Bad</a>')
+    expect(html).toContain('<td>a|b</td>')
+    expect(html).toContain('<td><code>left | right</code></td>')
+    expect(html).not.toContain('href="#"')
+    expect(html).not.toContain('<a href="javascript:alert(1)">Bad</a>')
     expect(html).toContain('<ul><li>first</li><li>second</li></ul>')
     expect(html).toContain('<pre><code class="language-ts">const value = &quot;&lt;tag&gt;&quot;</code></pre>')
     expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')

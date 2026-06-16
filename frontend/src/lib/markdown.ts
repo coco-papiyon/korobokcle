@@ -20,7 +20,7 @@ function slugify(value: string): string {
   return normalized || 'section'
 }
 
-function sanitizeHref(value: string): string {
+function sanitizeHref(value: string): string | null {
   const href = value.trim()
   if (
     href.startsWith('http://') ||
@@ -35,7 +35,7 @@ function sanitizeHref(value: string): string {
   ) {
     return href
   }
-  return '#'
+  return null
 }
 
 function renderInlineMarkdown(value: string): string {
@@ -76,7 +76,12 @@ function renderInlineMarkdown(value: string): string {
         if (depth === 0) {
           const label = value.slice(index + 1, closingLabel)
           const href = value.slice(closingLabel + 2, closingHref)
-          output += `<a href="${escapeHTML(sanitizeHref(href))}">${renderInlineMarkdown(label)}</a>`
+          const safeHref = sanitizeHref(href)
+          if (safeHref) {
+            output += `<a href="${escapeHTML(safeHref)}">${renderInlineMarkdown(label)}</a>`
+          } else {
+            output += renderInlineMarkdown(label)
+          }
           index = closingHref + 1
           continue
         }
@@ -117,7 +122,53 @@ function isTableSeparatorLine(line: string): boolean {
 
 function splitTableRow(line: string): string[] {
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
-  return trimmed.split('|').map((cell) => cell.trim())
+  const cells: string[] = []
+  let current = ''
+  let index = 0
+  let codeSpanLength = 0
+  let inCodeSpan = false
+
+  while (index < trimmed.length) {
+    const char = trimmed[index]
+
+    if (char === '\\' && trimmed[index + 1] === '|') {
+      current += '|'
+      index += 2
+      continue
+    }
+
+    if (char === '`') {
+      let runLength = 1
+      while (index + runLength < trimmed.length && trimmed[index + runLength] === '`') {
+        runLength += 1
+      }
+      current += '`'.repeat(runLength)
+      if (inCodeSpan) {
+        if (runLength === codeSpanLength) {
+          inCodeSpan = false
+          codeSpanLength = 0
+        }
+      } else {
+        inCodeSpan = true
+        codeSpanLength = runLength
+      }
+      index += runLength
+      continue
+    }
+
+    if (char === '|' && !inCodeSpan) {
+      cells.push(current.trim())
+      current = ''
+      index += 1
+      continue
+    }
+
+    current += char
+    index += 1
+  }
+
+  cells.push(current.trim())
+  return cells
 }
 
 function isTableRow(line: string): boolean {

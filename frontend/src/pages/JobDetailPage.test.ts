@@ -235,7 +235,63 @@ describe('JobDetailPage', () => {
       ].join('\n'),
       designArtifact: {
         path: 'result.md',
-        content: 'design',
+        content: [
+          '# Design result',
+          '',
+          '- first',
+          '- second',
+          '',
+          '| Name | Value |',
+          '| --- | --- |',
+          '| Example | `code` |',
+        ].join('\n'),
+      },
+      implementationArtifact: {
+        path: 'implementation.md',
+        content: [
+          '## Implementation result',
+          '',
+          '```ts',
+          'const value = 1',
+          '```',
+        ].join('\n'),
+      },
+      testReport: {
+        path: 'test-report.json',
+        content: JSON.stringify({
+          profile: 'default',
+          success: false,
+          startedAt: '2026-06-08T00:00:00Z',
+          finishedAt: '2026-06-08T00:02:00Z',
+          results: [
+            {
+              command: 'npm test',
+              exitCode: 1,
+              durationMs: 1200,
+              stdout: 'suite output',
+              stderr: 'failed output',
+              success: false,
+            },
+          ],
+        }),
+      },
+      reviewArtifact: {
+        path: 'review.md',
+        content: [
+          '# Review result',
+          '',
+          '[OpenAI](https://openai.com)',
+        ].join('\n'),
+      },
+      prCommentAnalysisArtifact: {
+        path: 'analysis.md',
+        content: [
+          '## PR comment analysis',
+          '',
+          '| Field | Value |',
+          '| --- | --- |',
+          '| Example | `a\\|b` |',
+        ].join('\n'),
       },
       logs: [],
     })
@@ -293,6 +349,7 @@ describe('JobDetailPage', () => {
     expect(markdown.find('pre code').text()).toContain('const value = 1')
   })
 
+  it('renders artifact modals as html', async () => {
   it('reloads before opening the test report modal', async () => {
     const wrapper = mount(JobDetailPage, {
       global: {
@@ -306,6 +363,58 @@ describe('JobDetailPage', () => {
     })
 
     await flushPromises()
+
+    const openAndAssert = async (buttonText: string, assertions: () => void) => {
+      const button = wrapper.findAll('button').find((candidate) => candidate.text() === buttonText)
+      expect(button).toBeDefined()
+      await button!.trigger('click')
+      await flushPromises()
+      assertions()
+      const closeButton = wrapper.findAll('button').find((candidate) => candidate.text() === '閉じる')
+      expect(closeButton).toBeDefined()
+      await closeButton!.trigger('click')
+      await flushPromises()
+    }
+
+    await openAndAssert('設計結果を開く', () => {
+      const markdown = wrapper.find('.modal-panel .markdown-content')
+      expect(markdown.exists()).toBe(true)
+      expect(markdown.find('h1').text()).toBe('Design result')
+      expect(markdown.find('ul').exists()).toBe(true)
+      expect(markdown.find('table').exists()).toBe(true)
+      expect(markdown.find('code').text()).toContain('code')
+    })
+
+    await openAndAssert('実装結果を開く', () => {
+      const markdown = wrapper.find('.modal-panel .markdown-content')
+      expect(markdown.exists()).toBe(true)
+      expect(markdown.find('h2').text()).toBe('Implementation result')
+      expect(markdown.find('pre code').text()).toContain('const value = 1')
+    })
+
+    await openAndAssert('テスト結果を開く', () => {
+      const markdown = wrapper.find('.modal-panel .markdown-content')
+      expect(markdown.exists()).toBe(true)
+      expect(markdown.text()).toContain('テスト結果')
+      expect(markdown.find('h1').text()).toBe('テスト結果')
+      expect(markdown.find('code.language-text').exists()).toBe(true)
+    })
+
+    await openAndAssert('分析結果を開く', () => {
+      const markdown = wrapper.find('.modal-panel .markdown-content')
+      expect(markdown.exists()).toBe(true)
+      expect(markdown.find('h2').text()).toBe('PR comment analysis')
+      expect(markdown.find('table').exists()).toBe(true)
+      expect(markdown.find('code').text()).toContain('a|b')
+    })
+
+    await openAndAssert('レビュー結果を開く', () => {
+      const markdown = wrapper.find('.modal-panel .markdown-content')
+      expect(markdown.exists()).toBe(true)
+      expect(markdown.find('h1').text()).toBe('Review result')
+      expect(markdown.find('a').attributes('href')).toBe('https://openai.com')
+    })
+  })
 
     const openButton = wrapper.findAll('button').find((candidate) => candidate.text() === 'テスト結果を開く')
     expect(openButton).toBeDefined()

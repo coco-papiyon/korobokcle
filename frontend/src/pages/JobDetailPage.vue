@@ -235,6 +235,11 @@ const currentRepositoryConfig = computed(() => {
   return appConfig.value?.monitoredRepositories.find((entry) => entry.repository === repository) ?? null
 })
 const issueBodyHtml = computed(() => renderMarkdown(formatIssueBody(data.value?.issueBody)))
+const designArtifactHtml = computed(() => renderMarkdown(data.value?.designArtifact?.content ?? ''))
+const implementationArtifactHtml = computed(() => renderMarkdown(data.value?.implementationArtifact?.content ?? ''))
+const testReportHtml = computed(() => renderMarkdown(formatTestReportMarkdown(data.value?.testReport?.content)))
+const prCommentAnalysisHtml = computed(() => renderMarkdown(prCommentAnalysisRawContent.value))
+const reviewArtifactHtml = computed(() => renderMarkdown(data.value?.reviewArtifact?.content ?? ''))
 const improvementEnabledForJob = computed(() => Boolean(currentRepositoryConfig.value?.improvementEnabled))
 const availableImprovementSource = computed(() => {
   if (hasPRCommentAnalysis.value) {
@@ -292,7 +297,6 @@ const finalApprovalWarning = computed(() => {
   }
   return ''
 })
-const testReportMarkdown = computed(() => formatTestReportMarkdown(data.value?.testReport?.content))
 const configuredToolCommand = computed(() => data.value?.toolCommand ?? null)
 const availableToolCommands = computed(() => toolCommands.value ?? [])
 const selectedToolCommand = computed(() => {
@@ -1301,7 +1305,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="designArtifactModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ data.designArtifact.content }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="designArtifactHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea
@@ -1369,7 +1373,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="implementationArtifactModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ data.implementationArtifact.content }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="implementationArtifactHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea
@@ -1459,7 +1463,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="testReportModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ testReportMarkdown }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="testReportHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea
@@ -1570,7 +1574,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="prCommentAnalysisModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ prCommentAnalysisRawContent }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="prCommentAnalysisHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea
@@ -1611,7 +1615,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="reviewArtifactModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="reviewArtifactHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea
