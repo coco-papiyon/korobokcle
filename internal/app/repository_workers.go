@@ -200,6 +200,9 @@ func runRepositoryWorkerCycle(ctx context.Context, cfg *config.Service, orch *or
 			if logger != nil {
 				logger.Printf("repository worktree clone failed repository=%s worker=%d kind=%s job_id=%s error=%v", repository.Repository, workerIndex, kind, job.ID, err)
 			}
+			if interruptedErr := markRepositoryWorkerJobInterrupted(ctx, orch, job, err); interruptedErr != nil {
+				return fmt.Errorf("mark interrupted failed: %w (cause: %v)", interruptedErr, err)
+			}
 			return err
 		}
 
@@ -283,6 +286,33 @@ func jobsForRepositoryWorker(jobs []domain.Job, repository string, workerIndex i
 		selected = append(selected, job)
 	}
 	return selected
+}
+
+func markRepositoryWorkerJobInterrupted(ctx context.Context, orch *orchestrator.Orchestrator, job domain.Job, cause error) error {
+	eventType, ok := repositoryWorkerInterruptedEventType(job.State)
+	if !ok {
+		return cause
+	}
+	return orch.UpdateJobState(ctx, job.ID, domain.StateInterrupted, eventType, map[string]any{
+		"error": cause.Error(),
+	})
+}
+
+func repositoryWorkerInterruptedEventType(state domain.JobState) (string, bool) {
+	switch state {
+	case domain.StateDetected, domain.StateDesignRunning, domain.StateDesignReady, domain.StateWaitingDesignApproval:
+		return "design_interrupted", true
+	case domain.StateImplementationRunning, domain.StateImplementationReady, domain.StateWaitingFinalApproval:
+		return "implementation_interrupted", true
+	case domain.StateTestRunning:
+		return "test_interrupted", true
+	case domain.StateCollectingContext, domain.StateReviewRunning, domain.StateReviewReady:
+		return "review_interrupted", true
+	case domain.StatePRCreating:
+		return "pr_interrupted", true
+	default:
+		return "", false
+	}
 }
 
 func workerReservedByJob(job domain.Job) bool {
@@ -907,7 +937,7 @@ func ensureRepositoryWorkerWorktree(ctx context.Context, baseDir string, worktre
 	} else if exists {
 		return nil
 	} else if stale {
-		if _, err := runGitCommand(ctx, baseDir, "git", "worktree", "prune", "--expire", "now"); err != nil {
+		if err := cleanupRepositoryWorkerWorktreeRegistration(ctx, baseDir, worktreeDir); err != nil {
 			return err
 		}
 	}
@@ -930,6 +960,81 @@ func ensureRepositoryWorkerWorktree(ctx context.Context, baseDir string, worktre
 		return err
 	}
 
+	if err := createRepositoryWorkerWorktree(ctx, baseDir, worktreeDir, branch); err != nil {
+		if isRepositoryWorkerWorktreeRegistrationError(err) {
+			if cleanupErr := cleanupRepositoryWorkerWorktreeRegistration(ctx, baseDir, worktreeDir); cleanupErr != nil {
+				return fmt.Errorf("%w; cleanup failed: %v", err, cleanupErr)
+			}
+			if retryErr := createRepositoryWorkerWorktree(ctx, baseDir, worktreeDir, branch); retryErr != nil {
+				return retryErr
+			}
+		} else {
+			return err
+		}
+	}
+	if err := ensureRepositoryWorkerRemote(ctx, worktreeDir, source); err != nil {
+		return err
+	}
+	if err := removeRepositoryWorkerWorkspace(worktreeDir, workspaceDir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func repositoryWorkerWorktreeStatus(ctx context.Context, baseDir string, worktreeDir string) (bool, bool, error) {
+	output, err := runGitCommand(ctx, baseDir, "git", "worktree", "list", "--porcelain")
+	if err != nil {
+		return false, false, err
+	}
+
+	var currentWorktree string
+	var listed bool
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			currentWorktree = ""
+			continue
+		}
+		if strings.HasPrefix(line, "worktree ") {
+			currentWorktree = strings.TrimSpace(strings.TrimPrefix(line, "worktree "))
+			if sameRepositoryWorkerPath(currentWorktree, worktreeDir) {
+				listed = true
+				if _, err := os.Stat(worktreeDir); err == nil {
+					return true, false, nil
+				} else if os.IsNotExist(err) {
+					return false, true, nil
+				} else {
+					return false, false, err
+				}
+			}
+		}
+	}
+	return false, listed, nil
+}
+
+func sameRepositoryWorkerPath(left string, right string) bool {
+	return normalizeRepositoryWorkerPath(left) == normalizeRepositoryWorkerPath(right)
+}
+
+func normalizeRepositoryWorkerPath(value string) string {
+	return filepath.Clean(filepath.FromSlash(strings.TrimSpace(value)))
+}
+
+func repositoryWorkerWorktreeExists(ctx context.Context, baseDir string, worktreeDir string) (bool, error) {
+	exists, _, err := repositoryWorkerWorktreeStatus(ctx, baseDir, worktreeDir)
+	return exists, err
+}
+
+func cleanupRepositoryWorkerWorktreeRegistration(ctx context.Context, baseDir string, worktreeDir string) error {
+	_, _ = runGitCommand(ctx, baseDir, "git", "worktree", "remove", "--force", worktreeDir)
+	_, _ = runGitCommand(ctx, baseDir, "git", "worktree", "prune", "--expire", "now")
+	if err := os.RemoveAll(worktreeDir); err != nil {
+		return err
+	}
+	return nil
+}
+
+func createRepositoryWorkerWorktree(ctx context.Context, baseDir string, worktreeDir string, branch string) error {
 	startPoint := branch
 	if !gitRemoteBranchExists(ctx, baseDir, branch) {
 		baseBranch, err := resolveRepositoryBaseBranch(ctx, baseDir, strings.TrimSpace(branch))
@@ -957,49 +1062,15 @@ func ensureRepositoryWorkerWorktree(ctx context.Context, baseDir string, worktre
 	if _, err := runGitCommand(ctx, baseDir, args...); err != nil {
 		return err
 	}
-	if err := ensureRepositoryWorkerRemote(ctx, worktreeDir, source); err != nil {
-		return err
-	}
-	if err := removeRepositoryWorkerWorkspace(worktreeDir, workspaceDir); err != nil {
-		return err
-	}
 	return nil
 }
 
-func repositoryWorkerWorktreeStatus(ctx context.Context, baseDir string, worktreeDir string) (bool, bool, error) {
-	output, err := runGitCommand(ctx, baseDir, "git", "worktree", "list", "--porcelain")
-	if err != nil {
-		return false, false, err
+func isRepositoryWorkerWorktreeRegistrationError(err error) bool {
+	if err == nil {
+		return false
 	}
-
-	var currentWorktree string
-	var listed bool
-	for _, line := range strings.Split(output, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			currentWorktree = ""
-			continue
-		}
-		if strings.HasPrefix(line, "worktree ") {
-			currentWorktree = strings.TrimSpace(strings.TrimPrefix(line, "worktree "))
-			if currentWorktree == worktreeDir {
-				listed = true
-				if _, err := os.Stat(worktreeDir); err == nil {
-					return true, false, nil
-				} else if os.IsNotExist(err) {
-					return false, true, nil
-				} else {
-					return false, false, err
-				}
-			}
-		}
-	}
-	return false, listed, nil
-}
-
-func repositoryWorkerWorktreeExists(ctx context.Context, baseDir string, worktreeDir string) (bool, error) {
-	exists, _, err := repositoryWorkerWorktreeStatus(ctx, baseDir, worktreeDir)
-	return exists, err
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "already used by worktree") || strings.Contains(message, "is already checked out at")
 }
 
 func removeRepositoryWorkerWorkspace(targetDir string, workspaceDir string) error {

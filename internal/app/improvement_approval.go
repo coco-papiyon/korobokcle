@@ -234,6 +234,8 @@ func runImprovementImplementation(ctx context.Context, cfg *config.Service, repo
 		WorkDir:           artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, config.ResolveImprovementBranch(repositoryConfig)),
 		ArtifactDir:       artifactFiles.Dir,
 		OutputPath:        targetPath,
+		StdoutLogPath:     filepath.Join(artifactFiles.Dir, "stdout.log"),
+		StderrLogPath:     filepath.Join(artifactFiles.Dir, "stderr.log"),
 		CopilotAllowTools: cfg.App().CopilotAllowTools,
 	}
 	if logger != nil {

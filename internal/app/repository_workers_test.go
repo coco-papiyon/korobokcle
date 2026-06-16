@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -614,6 +615,16 @@ func TestCloneRepositoryWorkspaceForBranchRepairsMissingWorktree(t *testing.T) {
 	}
 }
 
+func TestSameRepositoryWorkerPathNormalizesSeparators(t *testing.T) {
+	t.Parallel()
+
+	left := "C:/data/dev/go/src/github.com/coco-papiyon/korobokcle/tests/base/source/coco-papiyon-korobokcle-issue_101"
+	right := `C:\data\dev\go\src\github.com\coco-papiyon\korobokcle\tests\base\source\coco-papiyon-korobokcle-issue_101`
+	if !sameRepositoryWorkerPath(left, right) {
+		t.Fatalf("expected paths to match: %q vs %q", left, right)
+	}
+}
+
 func TestSyncRepositoryWorkspaceUsesConfiguredMonitoredRepositoryBranch(t *testing.T) {
 	t.Parallel()
 
@@ -1096,6 +1107,59 @@ func TestNewRepositoryWorkerLoggerMirrorsErrorLinesToFallback(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte("repository worker cycle failed repository=owner/repo worker=2 kind=review error=boom")) {
 		t.Fatalf("expected worker log file to contain error message, got %q", string(data))
+	}
+}
+
+func TestMarkRepositoryWorkerJobInterruptedUpdatesStateAndEvent(t *testing.T) {
+	t.Parallel()
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	orch := orchestrator.New(store, notification.NewNopNotifier())
+	job := domain.Job{
+		ID:           "job-1",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 1,
+		State:        domain.StateImplementationRunning,
+		Title:        "test job",
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	cause := errors.New("git worktree add failed: fatal: 'issue_1' is already used")
+	if err := markRepositoryWorkerJobInterrupted(context.Background(), orch, job, cause); err != nil {
+		t.Fatalf("markRepositoryWorkerJobInterrupted() error = %v", err)
+	}
+
+	gotJob, err := store.GetJob(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("GetJob() error = %v", err)
+	}
+	if gotJob.State != domain.StateInterrupted {
+		t.Fatalf("expected job state %q, got %q", domain.StateInterrupted, gotJob.State)
+	}
+
+	events, err := store.ListEvents(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	if len(events) == 0 {
+		t.Fatalf("expected interrupted event")
+	}
+	gotEvent := events[len(events)-1]
+	if gotEvent.EventType != "implementation_interrupted" {
+		t.Fatalf("expected event type %q, got %q", "implementation_interrupted", gotEvent.EventType)
+	}
+	if !strings.Contains(gotEvent.Payload, "already used") {
+		t.Fatalf("expected payload to contain error, got %q", gotEvent.Payload)
 	}
 }
 

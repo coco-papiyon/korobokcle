@@ -173,7 +173,7 @@ func TestApplyImprovementApprovalPreparesBranchAndPushesLater(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(implementation-prompt.md) error = %v", err)
 	}
-	if !strings.Contains(string(promptRaw), ".improvement/design.md") {
+	if !strings.Contains(filepath.ToSlash(string(promptRaw)), ".improvement/design.md") {
 		t.Fatalf("expected implementation prompt to mention target path, got %s", string(promptRaw))
 	}
 

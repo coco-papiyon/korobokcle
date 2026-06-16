@@ -10,11 +10,11 @@ frontend/node_modules/
 frontend/dist/
 frontend/.npm-cache/
 frontend/.vite-dist-temp/
+frontend/coverage
+
 release/
 exec/
-!test/
-!test/data/
-!test/data/**
+tests/
 
 *.exe
 korobokcle

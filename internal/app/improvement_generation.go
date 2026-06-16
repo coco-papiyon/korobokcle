@@ -285,6 +285,8 @@ func generateImprovementDraftWithAI(
 		WorkDir:           workDir,
 		ArtifactDir:       generationDir,
 		OutputPath:        filepath.Join(generationDir, "result.md"),
+		StdoutLogPath:     filepath.Join(generationDir, "stdout.log"),
+		StderrLogPath:     filepath.Join(generationDir, "stderr.log"),
 		CopilotAllowTools: cfg.App().CopilotAllowTools,
 	}
 	if logger != nil {

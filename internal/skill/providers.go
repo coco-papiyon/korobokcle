@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -159,11 +160,23 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdoutWriter, stdoutFile, err := openStreamLogWriter(req.StdoutLogPath)
+	if err != nil {
+		return AIResult{}, err
+	}
+	defer func() { _ = closeStreamLogWriter(stdoutFile) }()
+
+	stderrWriter, stderrFile, err := openStreamLogWriter(req.StderrLogPath)
+	if err != nil {
+		return AIResult{}, err
+	}
+	defer func() { _ = closeStreamLogWriter(stderrFile) }()
+
+	cmd.Stdout = io.MultiWriter(&stdout, stdoutWriter)
+	cmd.Stderr = io.MultiWriter(&stderr, stderrWriter)
 	if debugEnabled {
-		fmt.Fprintf(&stderr, "[debug] provider=%s executable=%s workdir=%s prompt_in_args=%t args=%s\n", p.Name, executable, workDir, promptInArgs, debugArgsForLog(args))
-		fmt.Fprintf(&stderr, "[debug] prompt=%s\n", req.Prompt)
+		fmt.Fprintf(cmd.Stderr, "[debug] provider=%s executable=%s workdir=%s prompt_in_args=%t args=%s\n", p.Name, executable, workDir, promptInArgs, debugArgsForLog(args))
+		fmt.Fprintf(cmd.Stderr, "[debug] prompt=%s\n", req.Prompt)
 	}
 	if !promptInArgs && !strings.EqualFold(p.Name, "copilot") {
 		cmd.Stdin = strings.NewReader(req.Prompt)
@@ -171,7 +184,7 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 
 	err = cmd.Run()
 	if debugEnabled {
-		fmt.Fprintf(&stderr, "[debug] provider=%s exit_err=%v stdout_bytes=%d stderr_bytes=%d\n", p.Name, err, stdout.Len(), stderr.Len())
+		fmt.Fprintf(cmd.Stderr, "[debug] provider=%s exit_err=%v stdout_bytes=%d stderr_bytes=%d\n", p.Name, err, stdout.Len(), stderr.Len())
 	}
 	result := AIResult{
 		Stdout: stdout.String(),
@@ -190,6 +203,28 @@ func (p ExternalCLIProvider) Run(ctx context.Context, req AIRequest) (AIResult, 
 		return result, fmt.Errorf("%s provider returned empty output", p.Name)
 	}
 	return result, nil
+}
+
+func openStreamLogWriter(path string) (io.Writer, *os.File, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return io.Discard, nil, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(trimmed), 0o755); err != nil {
+		return nil, nil, err
+	}
+	file, err := os.Create(trimmed)
+	if err != nil {
+		return nil, nil, err
+	}
+	return file, file, nil
+}
+
+func closeStreamLogWriter(file *os.File) error {
+	if file == nil {
+		return nil
+	}
+	return file.Close()
 }
 
 func loadProviderArgs(envName string, defaults []string) ([]string, error) {

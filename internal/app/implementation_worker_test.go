@@ -225,13 +225,16 @@ func TestImplementationPromptIncludesExistingImplementationAndPreviousTestReport
 		WatchRuleID:            "rule-1",
 		BranchName:             "issue-42",
 		ArtifactDir:            t.TempDir(),
+		TestProfile: skill.TestProfileContext{
+			Commands: []string{"go test ./...", "go test ./internal/app"},
+		},
 	}
 
 	prompt, err := skill.RenderSkillPrompt(filepath.Join("..", ".."), "implement", ctx)
 	if err != nil {
 		t.Fatalf("RenderSkillPrompt() error = %v", err)
 	}
-	for _, expected := range []string{"## Design Approval Comment", ctx.DesignApprovalComment, "## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
+	for _, expected := range []string{"## Design Approval Comment", ctx.DesignApprovalComment, "## Test Profile", "go test ./...", "go test ./internal/app", "テスト時はこの commands を参考にして、同じ確認手順を優先してください。", "## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected prompt to contain %q, got %q", expected, prompt)
 		}
@@ -257,13 +260,16 @@ func TestImplementFixPromptIncludesExistingImplementation(t *testing.T) {
 		WatchRuleID:            "rule-1",
 		BranchName:             "issue-42",
 		ArtifactDir:            t.TempDir(),
+		TestProfile: skill.TestProfileContext{
+			Commands: []string{"go test ./..."},
+		},
 	}
 
 	prompt, err := skill.RenderSkillPrompt(filepath.Join("..", ".."), "implement_fix", ctx)
 	if err != nil {
 		t.Fatalf("RenderSkillPrompt() error = %v", err)
 	}
-	for _, expected := range []string{"## Design Approval Comment", ctx.DesignApprovalComment, "## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
+	for _, expected := range []string{"## Design Approval Comment", ctx.DesignApprovalComment, "## Test Profile", "go test ./...", "テスト時はこの commands を参考にして、同じ確認手順を優先してください。", "## Existing Implementation", ctx.ImplementationArtifact, "## Previous Test Report", ctx.PreviousTestReport} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected prompt to contain %q, got %q", expected, prompt)
 		}

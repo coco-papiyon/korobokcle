@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -14,10 +15,11 @@
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
-    "@vue/test-utils": "^2.4.6",
-    "@vue/tsconfig": "^0.7.0",
     "@types/node": "^22.15.29",
     "@vitejs/plugin-vue": "^5.2.4",
+    "@vitest/coverage-v8": "^2.1.9",
+    "@vue/test-utils": "^2.4.6",
+    "@vue/tsconfig": "^0.7.0",
     "jsdom": "^25.0.1",
     "typescript": "^5.8.3",
     "vite": "^5.4.19",

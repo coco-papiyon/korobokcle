@@ -9,6 +9,8 @@ type AIRequest struct {
 	WorkDir           string
 	ArtifactDir       string
 	OutputPath        string
+	StdoutLogPath     string
+	StderrLogPath     string
 	SessionID         string
 	CopilotAllowTools []string
 }

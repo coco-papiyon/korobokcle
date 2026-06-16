@@ -120,12 +120,14 @@ const testReportComment = ref('')
 const reviewArtifactComment = ref('')
 const designRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
+const testReportRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const prRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const reviewRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const reviewSubmitState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const reviewApproveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const designRerunError = ref<string | null>(null)
 const implementationRerunError = ref<string | null>(null)
+const testReportRerunError = ref<string | null>(null)
 const prRerunError = ref<string | null>(null)
 const reviewRerunError = ref<string | null>(null)
 const reviewSubmitError = ref<string | null>(null)
@@ -171,6 +173,9 @@ const prCreateInfo = computed(() => {
 })
 const prCreateRawContent = computed(() => data.value?.prCreateArtifact?.content ?? '')
 const prCommentAnalysisRawContent = computed(() => data.value?.prCommentAnalysisArtifact?.content ?? '')
+const hasPRCommentAnalysis = computed(() => {
+  return Boolean(data.value?.prCommentAnalysisArtifact) && (data.value?.events ?? []).some((event) => event.eventType === 'pr_comment_analysis_ready')
+})
 const hasPRCommentsArtifact = computed(() => {
   if (prCreateInfo.value?.pullNumber) {
     return true
@@ -181,6 +186,29 @@ const hasPRCommentsArtifact = computed(() => {
 const latestEvent = computed(() => {
   const events = data.value?.events ?? []
   return events.length > 0 ? events[events.length - 1] : null
+})
+
+const latestJobErrorMessage = computed(() => {
+  const jobState = data.value?.job.state
+  const event = latestEvent.value
+  if (!jobState || !event) {
+    return ''
+  }
+  if (jobState !== 'failed' && jobState !== 'interrupted') {
+    return ''
+  }
+
+  try {
+    const payload = JSON.parse(event.payload) as { error?: unknown }
+    const error = typeof payload.error === 'string' ? payload.error.trim() : ''
+    if (error.length > 0) {
+      return `${jobState === 'interrupted' ? 'ジョブが中断されました' : 'ジョブが失敗しました'}: ${error}`
+    }
+  } catch {
+    // Fall through to a generic message.
+  }
+
+  return `${jobState === 'interrupted' ? 'ジョブが中断されました' : 'ジョブが失敗しました'}: ${formatEventTypeLabel(event.eventType)}`
 })
 
 const eventRows = computed(() =>
@@ -200,8 +228,6 @@ const flowRerunEvent = computed<JobEvent | null>(() => {
   }
   return null
 })
-
-const hasPRCommentAnalysis = computed(() => (data.value?.prCommentAnalysisArtifact?.content ?? '').trim().length > 0)
 const currentRepositoryConfig = computed(() => {
   const repository = data.value?.job.repository
   if (!repository) {
@@ -210,6 +236,11 @@ const currentRepositoryConfig = computed(() => {
   return appConfig.value?.monitoredRepositories.find((entry) => entry.repository === repository) ?? null
 })
 const issueBodyHtml = computed(() => renderMarkdown(formatIssueBody(data.value?.issueBody)))
+const designArtifactHtml = computed(() => renderMarkdown(data.value?.designArtifact?.content ?? ''))
+const implementationArtifactHtml = computed(() => renderMarkdown(data.value?.implementationArtifact?.content ?? ''))
+const testReportHtml = computed(() => renderMarkdown(formatTestReportMarkdown(data.value?.testReport?.content)))
+const prCommentAnalysisHtml = computed(() => renderMarkdown(prCommentAnalysisRawContent.value))
+const reviewArtifactHtml = computed(() => renderMarkdown(data.value?.reviewArtifact?.content ?? ''))
 const improvementEnabledForJob = computed(() => Boolean(currentRepositoryConfig.value?.improvementEnabled))
 const availableImprovementSource = computed(() => {
   if (hasPRCommentAnalysis.value) {
@@ -267,7 +298,6 @@ const finalApprovalWarning = computed(() => {
   }
   return ''
 })
-const testReportMarkdown = computed(() => formatTestReportMarkdown(data.value?.testReport?.content))
 const configuredToolCommand = computed(() => data.value?.toolCommand ?? null)
 const availableToolCommands = computed(() => toolCommands.value ?? [])
 const selectedToolCommand = computed(() => {
@@ -560,20 +590,20 @@ async function submitImplementationArtifactRerun() {
 }
 
 async function submitTestReportRerun() {
-  implementationRerunState.value = 'saving'
-  implementationRerunError.value = null
+  testReportRerunState.value = 'saving'
+  testReportRerunError.value = null
   try {
     const comment = testReportComment.value.trim().length > 0
       ? testReportComment.value
       : defaultRerunCommentForEvent('retry_implementation', latestEvent.value)
     data.value = await submitImplementationRerun(jobID.value, comment)
-    implementationRerunState.value = 'idle'
+    testReportRerunState.value = 'idle'
     testReportComment.value = ''
     testReportModalOpen.value = false
     await reload()
   } catch (err) {
-    implementationRerunState.value = 'error'
-    implementationRerunError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
+    testReportRerunState.value = 'error'
+    testReportRerunError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -968,24 +998,27 @@ function openPRCreateModal() {
             </div>
           </PanelCard>
           <PanelCard title="フロー">
-            <div class="stack-sm">
-              <div v-if="!isDeletedJob && flowRerunActionInFlow" class="status-inline">
-                <StateBadge :state="data.job.state" />
-                <button
-                  class="button button-secondary"
+              <div class="stack-sm">
+                <div v-if="!isDeletedJob && flowRerunActionInFlow" class="status-inline">
+                  <StateBadge :state="data.job.state" />
+                  <button
+                    class="button button-secondary"
                   type="button"
                   :disabled="rerunState(flowRerunActionInFlow) === 'saving'"
                   @click="submitRerun(flowRerunActionInFlow, flowRerunEvent?.id)"
-                >
-                  {{ rerunButtonLabel(flowRerunActionInFlow, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
-                </button>
-              </div>
-              <StateBadge v-else :state="data.job.state" />
-              <template v-if="canShowToolFlow">
-                <div class="stack-sm">
-                  <p class="text-muted">
-                    <span v-if="toolExecution">
-                      実行中: <code>{{ toolExecution.name }}</code> / 
+                  >
+                    {{ rerunButtonLabel(flowRerunActionInFlow, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
+                  </button>
+                </div>
+                <StateBadge v-else :state="data.job.state" />
+                <p v-if="latestJobErrorMessage" class="notice notice-danger">
+                  {{ latestJobErrorMessage }}
+                </p>
+                <template v-if="canShowToolFlow">
+                  <div class="stack-sm">
+                    <p class="text-muted">
+                      <span v-if="toolExecution">
+                        実行中: <code>{{ toolExecution.name }}</code> / 
                     </span>
                     {{ formatToolExecutionSummary() }}
                   </p>
@@ -1273,7 +1306,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="designArtifactModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ data.designArtifact.content }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="designArtifactHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea
@@ -1341,7 +1374,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="implementationArtifactModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ data.implementationArtifact.content }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="implementationArtifactHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea
@@ -1431,7 +1464,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="testReportModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ testReportMarkdown }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="testReportHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea
@@ -1447,8 +1480,8 @@ function openPRCreateModal() {
                   <button v-if="canReviewImplementation" class="button button-primary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('approved', testReportComment, 'test-report')">
                     {{ finalApprovalState === 'saving' ? '承認中...' : '承認' }}
                   </button>
-                  <button class="button button-secondary" type="button" :disabled="implementationRerunState === 'saving'" @click="submitTestReportRerun">
-                    {{ implementationRerunState === 'saving' ? '再実行中...' : '再実行' }}
+                  <button class="button button-secondary" type="button" :disabled="testReportRerunState === 'saving'" @click="submitTestReportRerun">
+                    {{ testReportRerunState === 'saving' ? 'テストを再実行中...' : 'テストを再実行' }}
                   </button>
                 </div>
                 <div v-if="canReviewImplementation" class="modal-actions__right">
@@ -1457,7 +1490,7 @@ function openPRCreateModal() {
                   </button>
                 </div>
               </div>
-              <p v-if="implementationRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_implementation') }}: {{ implementationRerunError }}</p>
+              <p v-if="testReportRerunState === 'error'" class="notice notice-danger">テストの再実行: {{ testReportRerunError }}</p>
               <p v-if="finalApprovalWarning && canReviewImplementation" class="notice notice-danger">{{ finalApprovalWarning }}</p>
               <p v-if="finalApprovalState === 'error'" class="notice notice-danger">{{ finalApprovalError }}</p>
             </div>
@@ -1532,7 +1565,7 @@ function openPRCreateModal() {
           </div>
         </div>
 
-        <div v-if="prCommentAnalysisModalOpen && data.prCommentAnalysisArtifact" class="modal-backdrop" @click.self="prCommentAnalysisModalOpen = false">
+        <div v-if="prCommentAnalysisModalOpen && hasPRCommentAnalysis && data.prCommentAnalysisArtifact" class="modal-backdrop" @click.self="prCommentAnalysisModalOpen = false">
           <div class="modal-panel">
               <div class="modal-panel__header">
                 <div>
@@ -1542,7 +1575,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="prCommentAnalysisModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ prCommentAnalysisRawContent }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="prCommentAnalysisHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea
@@ -1583,7 +1616,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="reviewArtifactModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ data.reviewArtifact.content }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="reviewArtifactHtml"></div>
               <label class="field field-full">
                 <span class="field__label">コメント</span>
                 <textarea

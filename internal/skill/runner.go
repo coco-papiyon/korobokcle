@@ -96,6 +96,8 @@ func (r *Runner) RunDesign(ctx context.Context, skillName string, contextData De
 		WorkDir:           workDir,
 		ArtifactDir:       contextData.ArtifactDir,
 		OutputPath:        outputPath,
+		StdoutLogPath:     filepath.Join(contextData.ArtifactDir, "stdout.log"),
+		StderrLogPath:     filepath.Join(contextData.ArtifactDir, "stderr.log"),
 		SessionID:         contextData.SessionID,
 		CopilotAllowTools: r.copilotAllowTools,
 	})
@@ -165,6 +167,8 @@ func (r *Runner) RunImplementation(ctx context.Context, skillName string, contex
 		WorkDir:           workDir,
 		ArtifactDir:       contextData.ArtifactDir,
 		OutputPath:        outputPath,
+		StdoutLogPath:     filepath.Join(contextData.ArtifactDir, "stdout.log"),
+		StderrLogPath:     filepath.Join(contextData.ArtifactDir, "stderr.log"),
 		SessionID:         contextData.SessionID,
 		CopilotAllowTools: r.copilotAllowTools,
 	})
@@ -234,6 +238,8 @@ func (r *Runner) RunReview(ctx context.Context, skillName string, contextData Re
 		WorkDir:           workDir,
 		ArtifactDir:       contextData.ArtifactDir,
 		OutputPath:        outputPath,
+		StdoutLogPath:     filepath.Join(contextData.ArtifactDir, "stdout.log"),
+		StderrLogPath:     filepath.Join(contextData.ArtifactDir, "stderr.log"),
 		SessionID:         contextData.SessionID,
 		CopilotAllowTools: r.copilotAllowTools,
 	})
