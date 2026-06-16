@@ -183,6 +183,29 @@ const latestEvent = computed(() => {
   return events.length > 0 ? events[events.length - 1] : null
 })
 
+const latestJobErrorMessage = computed(() => {
+  const jobState = data.value?.job.state
+  const event = latestEvent.value
+  if (!jobState || !event) {
+    return ''
+  }
+  if (jobState !== 'failed' && jobState !== 'interrupted') {
+    return ''
+  }
+
+  try {
+    const payload = JSON.parse(event.payload) as { error?: unknown }
+    const error = typeof payload.error === 'string' ? payload.error.trim() : ''
+    if (error.length > 0) {
+      return `${jobState === 'interrupted' ? 'ジョブが中断されました' : 'ジョブが失敗しました'}: ${error}`
+    }
+  } catch {
+    // Fall through to a generic message.
+  }
+
+  return `${jobState === 'interrupted' ? 'ジョブが中断されました' : 'ジョブが失敗しました'}: ${formatEventTypeLabel(event.eventType)}`
+})
+
 const eventRows = computed(() =>
   (data.value?.events ?? []).map((event) => ({
     ...event,
@@ -968,24 +991,27 @@ function openPRCreateModal() {
             </div>
           </PanelCard>
           <PanelCard title="フロー">
-            <div class="stack-sm">
-              <div v-if="!isDeletedJob && flowRerunActionInFlow" class="status-inline">
-                <StateBadge :state="data.job.state" />
-                <button
-                  class="button button-secondary"
+              <div class="stack-sm">
+                <div v-if="!isDeletedJob && flowRerunActionInFlow" class="status-inline">
+                  <StateBadge :state="data.job.state" />
+                  <button
+                    class="button button-secondary"
                   type="button"
                   :disabled="rerunState(flowRerunActionInFlow) === 'saving'"
                   @click="submitRerun(flowRerunActionInFlow, flowRerunEvent?.id)"
-                >
-                  {{ rerunButtonLabel(flowRerunActionInFlow, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
-                </button>
-              </div>
-              <StateBadge v-else :state="data.job.state" />
-              <template v-if="canShowToolFlow">
-                <div class="stack-sm">
-                  <p class="text-muted">
-                    <span v-if="toolExecution">
-                      実行中: <code>{{ toolExecution.name }}</code> / 
+                  >
+                    {{ rerunButtonLabel(flowRerunActionInFlow, flowRerunEvent?.eventType, flowRerunEvent?.sourceEventType) }}
+                  </button>
+                </div>
+                <StateBadge v-else :state="data.job.state" />
+                <p v-if="latestJobErrorMessage" class="notice notice-danger">
+                  {{ latestJobErrorMessage }}
+                </p>
+                <template v-if="canShowToolFlow">
+                  <div class="stack-sm">
+                    <p class="text-muted">
+                      <span v-if="toolExecution">
+                        実行中: <code>{{ toolExecution.name }}</code> / 
                     </span>
                     {{ formatToolExecutionSummary() }}
                   </p>

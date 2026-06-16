@@ -76,49 +76,12 @@ vi.mock('@/composables/useAsyncData', () => ({
         reload: reloadMock,
       }
     }
+    const data = ref<unknown>(null)
+    void Promise.resolve().then(async () => {
+      data.value = await apiMocks.fetchJobDetail()
+    })
     return {
-      data: ref({
-        job: {
-          id: 'job-1',
-          type: 'issue',
-          repository: 'owner/repository',
-          githubNumber: 42,
-          state: 'waiting_design_approval',
-          title: 'Improve prompts',
-          branchName: 'issue_42',
-          watchRuleId: 'rule-1',
-          createdAt: '2026-06-08T00:00:00Z',
-          updatedAt: '2026-06-08T00:00:00Z',
-        },
-        events: [
-          {
-            id: 1,
-            jobId: 'job-1',
-            eventType: 'design_rejected',
-            stateFrom: 'design_ready',
-            stateTo: 'waiting_design_approval',
-            payload: '{}',
-            createdAt: '2026-06-08T00:00:00Z',
-            availableActions: [],
-          },
-        ],
-        issueBody: [
-          '# Issue title',
-          '',
-          '| Name | Value |',
-          '| --- | --- |',
-          '| Example | `code` |',
-          '',
-          '```ts',
-          'const value = 1',
-          '```',
-        ].join('\n'),
-        designArtifact: {
-          path: 'result.md',
-          content: 'design',
-        },
-        logs: [],
-      }),
+      data,
       isLoading: ref(false),
       isRefreshing: ref(false),
       error: ref(null),
@@ -131,6 +94,48 @@ describe('JobDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.generateImprovement.mockResolvedValue({})
+    apiMocks.fetchJobDetail.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        type: 'issue',
+        repository: 'owner/repository',
+        githubNumber: 42,
+        state: 'waiting_design_approval',
+        title: 'Improve prompts',
+        branchName: 'issue_42',
+        watchRuleId: 'rule-1',
+        createdAt: '2026-06-08T00:00:00Z',
+        updatedAt: '2026-06-08T00:00:00Z',
+      },
+      events: [
+        {
+          id: 1,
+          jobId: 'job-1',
+          eventType: 'design_rejected',
+          stateFrom: 'design_ready',
+          stateTo: 'waiting_design_approval',
+          payload: '{}',
+          createdAt: '2026-06-08T00:00:00Z',
+          availableActions: [],
+        },
+      ],
+      issueBody: [
+        '# Issue title',
+        '',
+        '| Name | Value |',
+        '| --- | --- |',
+        '| Example | `code` |',
+        '',
+        '```ts',
+        'const value = 1',
+        '```',
+      ].join('\n'),
+      designArtifact: {
+        path: 'result.md',
+        content: 'design',
+      },
+      logs: [],
+    })
   })
 
   it('shows improvement panel and starts generation from job detail', async () => {
@@ -183,5 +188,51 @@ describe('JobDetailPage', () => {
     expect(markdown.find('h1').text()).toBe('Issue title')
     expect(markdown.find('table').exists()).toBe(true)
     expect(markdown.find('pre code').text()).toContain('const value = 1')
+  })
+
+  it('shows interrupted job errors prominently', async () => {
+    apiMocks.fetchJobDetail.mockResolvedValueOnce({
+      job: {
+        id: 'job-1',
+        type: 'issue',
+        repository: 'owner/repository',
+        githubNumber: 42,
+        state: 'interrupted',
+        title: 'Improve prompts',
+        branchName: 'issue_42',
+        watchRuleId: 'rule-1',
+        createdAt: '2026-06-08T00:00:00Z',
+        updatedAt: '2026-06-08T00:00:00Z',
+      },
+      events: [
+        {
+          id: 1,
+          jobId: 'job-1',
+          eventType: 'design_interrupted',
+          stateFrom: 'detected',
+          stateTo: 'interrupted',
+          payload: JSON.stringify({ error: "fatal: 'issue_42' is already used by worktree" }),
+          createdAt: '2026-06-08T00:00:00Z',
+          availableActions: [],
+        },
+      ],
+      logs: [],
+    })
+
+    const wrapper = mount(JobDetailPage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="typeof to === \'string\' ? to : String(to)"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('ジョブが中断されました')
+    expect(wrapper.text()).toContain("fatal: 'issue_42' is already used by worktree")
   })
 })
