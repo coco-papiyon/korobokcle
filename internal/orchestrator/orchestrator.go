@@ -107,7 +107,10 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 
 	branchName := makeBranchName(appConfig, event.Item)
 	if event.Item.Target == domain.TargetPullRequest {
-		branchName = makePRReviewBranchName(event.Item.Number)
+		branchName = strings.TrimSpace(event.Item.BranchName)
+		if branchName == "" {
+			branchName = makePRReviewBranchName(event.Item.Number)
+		}
 	} else if event.Item.Target == domain.TargetPullRequestReview {
 		branchName = strings.TrimSpace(event.Item.BranchName)
 	}
@@ -131,6 +134,13 @@ func (o *Orchestrator) ProcessMatch(ctx context.Context, appConfig config.App, r
 		job.ID = existing.ID
 		job.CreatedAt = existing.CreatedAt
 		job.UpdatedAt = time.Now().UTC()
+		if jobType == domain.JobTypePRReview {
+			if existing.BranchName != job.BranchName || existing.Title != job.Title || existing.WatchRuleID != job.WatchRuleID || existing.State != job.State {
+				job.State = existing.State
+				return o.store.UpsertJob(ctx, job)
+			}
+			return nil
+		}
 		if jobType != domain.JobTypePRFeedback {
 			return nil
 		}

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ type Client struct {
 	baseURL    string
 	httpClient *http.Client
 	tokenSrc   TokenProvider
+	ghCommand  string
 	info       *log.Logger
 	debug      *log.Logger
 }
@@ -43,8 +45,9 @@ func NewClient(tokenSrc TokenProvider, debug *log.Logger) *Client {
 		httpClient: &http.Client{
 			Timeout: 20 * time.Second,
 		},
-		tokenSrc: tokenSrc,
-		debug:    debug,
+		tokenSrc:  tokenSrc,
+		ghCommand: "gh",
+		debug:     debug,
 	}
 }
 
@@ -345,6 +348,18 @@ func (c *Client) ListPullRequestReviews(ctx context.Context, rule config.WatchRu
 			continue
 		}
 		item := pull.toDomain(normalizedRepository, "pulls")
+		if strings.TrimSpace(item.BranchName) == "" || strings.TrimSpace(item.BaseBranch) == "" {
+			headRef, baseRef, err := c.resolvePullRequestRefs(ctx, normalizedRepository, pullNumber)
+			if err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(item.BranchName) == "" {
+				item.BranchName = headRef
+			}
+			if strings.TrimSpace(item.BaseBranch) == "" {
+				item.BaseBranch = baseRef
+			}
+		}
 		item.Target = domain.TargetPullRequestReview
 		item.DefaultState = domain.StateImplementationRunning
 		item.ReviewComments = reviewComments
@@ -368,6 +383,20 @@ func (c *Client) listRepositoryItems(ctx context.Context, rule config.WatchRule,
 	items := make([]domain.RepositoryItem, 0, len(payload))
 	for _, item := range payload {
 		domainItem := item.toDomain(normalizedRepository, searchEndpointForTarget(target))
+		if target == domain.TargetPullRequest {
+			if strings.TrimSpace(domainItem.BranchName) == "" || strings.TrimSpace(domainItem.BaseBranch) == "" {
+				headRef, baseRef, err := c.resolvePullRequestRefs(ctx, normalizedRepository, domainItem.Number)
+				if err != nil {
+					return nil, err
+				}
+				if strings.TrimSpace(domainItem.BranchName) == "" {
+					domainItem.BranchName = headRef
+				}
+				if strings.TrimSpace(domainItem.BaseBranch) == "" {
+					domainItem.BaseBranch = baseRef
+				}
+			}
+		}
 		if target == domain.TargetPullRequest && len(rule.Reviewers) > 0 {
 			reviewers, err := c.loadPullRequestRequestedReviewers(ctx, normalizedRepository, domainItem.Number)
 			if err != nil {
@@ -380,6 +409,29 @@ func (c *Client) listRepositoryItems(ctx context.Context, rule config.WatchRule,
 		items = append(items, domainItem)
 	}
 	return items, nil
+}
+
+func (c *Client) resolvePullRequestRefs(ctx context.Context, repository string, pullNumber int) (string, string, error) {
+	ghCmd := strings.TrimSpace(c.ghCommand)
+	if ghCmd == "" {
+		ghCmd = "gh"
+	}
+
+	cmd := exec.CommandContext(ctx, ghCmd, "pr", "view", fmt.Sprintf("%d", pullNumber), "--repo", repository, "--json", "headRefName,baseRefName")
+	raw, err := cmd.CombinedOutput()
+	output := strings.TrimSpace(string(raw))
+	if err != nil {
+		return "", "", fmt.Errorf("%s pr view failed: %w: %s", ghCmd, err, output)
+	}
+
+	var payload struct {
+		HeadRefName string `json:"headRefName"`
+		BaseRefName string `json:"baseRefName"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", "", err
+	}
+	return strings.TrimSpace(payload.HeadRefName), strings.TrimSpace(payload.BaseRefName), nil
 }
 
 func (c *Client) searchAPIItems(ctx context.Context, repository string, target domain.MonitoredTarget, rule config.WatchRule, since time.Time) ([]apiItem, error) {

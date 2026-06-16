@@ -80,6 +80,93 @@ func TestProcessMatchCreatesPRFeedbackJob(t *testing.T) {
 	}
 }
 
+func TestProcessMatchCreatesPRReviewJobUsesHeadBranch(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	appConfig := config.DefaultFiles().App
+	rule := config.WatchRule{ID: "rule-pr-review", Name: "PR review"}
+	event := domain.DomainEvent{
+		Type:   domain.DomainEventPRMatched,
+		RuleID: rule.ID,
+		Item: domain.RepositoryItem{
+			Repository: "owner/repo",
+			Number:     99,
+			Title:      "Add feature",
+			Target:     domain.TargetPullRequest,
+			BranchName: "feature/add-feature",
+		},
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("ProcessMatch() error = %v", err)
+	}
+
+	jobs, err := orch.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs() error = %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if jobs[0].Type != domain.JobTypePRReview {
+		t.Fatalf("expected pr_review, got %s", jobs[0].Type)
+	}
+	if jobs[0].BranchName != "feature/add-feature" {
+		t.Fatalf("expected branch feature/add-feature, got %q", jobs[0].BranchName)
+	}
+}
+
+func TestProcessMatchUpdatesExistingPRReviewJobBranch(t *testing.T) {
+	t.Parallel()
+
+	orch := newTestOrchestrator(t)
+	job := domain.Job{
+		ID:           "job-pr-review-1",
+		Type:         domain.JobTypePRReview,
+		Repository:   "owner/repo",
+		GitHubNumber: 99,
+		State:        domain.StateCollectingContext,
+		Title:        "Add feature",
+		BranchName:   "korobokcle/pr-review-99",
+		WatchRuleID:  "rule-pr-review",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := orch.store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	appConfig := config.DefaultFiles().App
+	rule := config.WatchRule{ID: "rule-pr-review", Name: "PR review"}
+	event := domain.DomainEvent{
+		Type:   domain.DomainEventPRMatched,
+		RuleID: rule.ID,
+		Item: domain.RepositoryItem{
+			Repository: "owner/repo",
+			Number:     99,
+			Title:      "Add feature",
+			Target:     domain.TargetPullRequest,
+			BranchName: "issue_97",
+		},
+	}
+
+	if err := orch.ProcessMatch(context.Background(), appConfig, rule, event); err != nil {
+		t.Fatalf("ProcessMatch() error = %v", err)
+	}
+
+	saved, events, err := orch.JobDetail(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("JobDetail() error = %v", err)
+	}
+	if saved.BranchName != "issue_97" {
+		t.Fatalf("expected branch issue_97, got %q", saved.BranchName)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected no new events for updated PR review job, got %+v", events)
+	}
+}
+
 func TestProcessMatchRestartsIdlePRFeedbackJob(t *testing.T) {
 	t.Parallel()
 

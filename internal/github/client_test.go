@@ -41,6 +41,7 @@ func TestClientListIssues(t *testing.T) {
 
 	client := NewClient(stubTokenProvider{}, nil)
 	client.baseURL = server.URL
+	client.ghCommand = fakeGhCommand(t, `{"headRefName":"feature","baseRefName":"main"}`)
 
 	items, err := client.ListIssues(context.Background(), config.WatchRule{}, "owner/repo", time.Time{})
 	if err != nil {
@@ -119,6 +120,7 @@ func TestClientListIssuesUsesSearchQueryFilters(t *testing.T) {
 
 	client := NewClient(stubTokenProvider{}, nil)
 	client.baseURL = server.URL
+	client.ghCommand = fakeGhCommand(t, `{"headRefName":"issue_97","baseRefName":"main"}`)
 
 	rule := config.WatchRule{
 		Target:         string(domain.TargetPullRequest),
@@ -136,6 +138,12 @@ func TestClientListIssuesUsesSearchQueryFilters(t *testing.T) {
 	}
 	if items[0].Target != domain.TargetPullRequest {
 		t.Fatalf("expected pull_request target, got %s", items[0].Target)
+	}
+	if items[0].BranchName != "issue_97" {
+		t.Fatalf("expected branch issue_97, got %q", items[0].BranchName)
+	}
+	if items[0].BaseBranch != "main" {
+		t.Fatalf("expected base branch main, got %q", items[0].BaseBranch)
 	}
 }
 
@@ -350,6 +358,7 @@ func TestClientListPullRequestsIncludesReviewers(t *testing.T) {
 
 	client := NewClient(stubTokenProvider{}, nil)
 	client.baseURL = server.URL
+	client.ghCommand = fakeGhCommand(t, `{"headRefName":"feature","baseRefName":"main"}`)
 
 	items, err := client.ListPullRequests(context.Background(), config.WatchRule{
 		Target:    string(domain.TargetPullRequest),
@@ -398,6 +407,7 @@ func TestClientListPullRequestReviewsIncludesRequestedReviewersWithoutComments(t
 
 	client := NewClient(stubTokenProvider{}, nil)
 	client.baseURL = server.URL
+	client.ghCommand = fakeGhCommand(t, `{"headRefName":"feature","baseRefName":"main"}`)
 
 	items, err := client.ListPullRequestReviews(context.Background(), config.WatchRule{Reviewers: []string{"carol"}}, "owner/repo", time.Time{})
 	if err != nil {
@@ -425,4 +435,16 @@ func mustURLQuery(t *testing.T, raw string) url.Values {
 		t.Fatalf("ParseQuery() error = %v", err)
 	}
 	return values
+}
+
+func fakeGhCommand(t *testing.T, output string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gh")
+	script := "#!/bin/sh\nif [ \"$1\" = \"pr\" ] && [ \"$2\" = \"view\" ]; then\n  printf '%s\\n' '" + strings.ReplaceAll(output, "'", "'\\''") + "'\n  exit 0\nfi\nexit 1\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("WriteFile(fake gh) error = %v", err)
+	}
+	return path
 }
