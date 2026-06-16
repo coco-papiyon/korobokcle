@@ -209,6 +209,114 @@ func TestPurgeJobRejectsActiveJobWithoutDeletingIt(t *testing.T) {
 	}
 }
 
+func TestFindJobBySourceReturnsSavedJob(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	job := domain.Job{
+		ID:           "job-source",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 99,
+		State:        domain.StateDetected,
+		Title:        "source",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+
+	got, err := store.FindJobBySource(context.Background(), "owner/repo", 99, domain.JobTypeIssue)
+	if err != nil {
+		t.Fatalf("FindJobBySource() error = %v", err)
+	}
+	if got.ID != job.ID {
+		t.Fatalf("FindJobBySource() = %q, want %q", got.ID, job.ID)
+	}
+}
+
+func TestFindJobBySourceReturnsNotFoundError(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	if _, err := store.FindJobBySource(context.Background(), "owner/repo", 1, domain.JobTypeIssue); !errors.Is(err, domain.ErrJobNotFound) {
+		t.Fatalf("expected ErrJobNotFound, got %v", err)
+	}
+}
+
+func TestGetEventReturnsInsertedEvent(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	job := domain.Job{
+		ID:           "job-event",
+		Type:         domain.JobTypeIssue,
+		Repository:   "owner/repo",
+		GitHubNumber: 1,
+		State:        domain.StateDetected,
+		Title:        "event",
+		CreatedAt:    nowUTC(),
+		UpdatedAt:    nowUTC(),
+	}
+	if err := store.UpsertJob(context.Background(), job); err != nil {
+		t.Fatalf("UpsertJob() error = %v", err)
+	}
+	event := domain.Event{
+		JobID:     job.ID,
+		EventType: "job_created",
+		StateTo:   string(domain.StateDetected),
+		Payload:   `{"body":"hello"}`,
+		CreatedAt: nowUTC(),
+	}
+	if err := store.AppendEvent(context.Background(), event); err != nil {
+		t.Fatalf("AppendEvent() error = %v", err)
+	}
+	events, err := store.ListEvents(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("ListEvents() error = %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	got, err := store.GetEvent(context.Background(), events[0].ID)
+	if err != nil {
+		t.Fatalf("GetEvent() error = %v", err)
+	}
+	if got.ID != events[0].ID || got.EventType != event.EventType {
+		t.Fatalf("unexpected event: %#v", got)
+	}
+}
+
+func TestGetEventReturnsNotFoundError(t *testing.T) {
+	t.Parallel()
+
+	store, err := Open(filepath.Join(t.TempDir(), "korobokcle.db"))
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer store.Close()
+
+	if _, err := store.GetEvent(context.Background(), 999); err == nil || err.Error() != "event 999 not found" {
+		t.Fatalf("expected not found error, got %v", err)
+	}
+}
+
 func nowUTC() time.Time {
 	return time.Now().UTC().Truncate(time.Second)
 }

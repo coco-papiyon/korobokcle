@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,5 +121,130 @@ func TestProcessPRCommentAnalysisWithDepsWritesAnalysisArtifacts(t *testing.T) {
 	workingPath := artifacts.RepositoryWorkerWorkArtifactPath(workDir, artifacts.WorkerReview, job.GitHubNumber, job.Title)
 	if _, err := os.Stat(workingPath); err != nil {
 		t.Fatalf("expected workdir copy at %s: %v", workingPath, err)
+	}
+}
+
+func TestBuildPRCommentAnalysisContextLoadsSourceDataAndImplementationArtifact(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := config.NewService(root, config.Files{
+		App: config.App{
+			ArtifactsDir: "artifacts",
+			MonitoredRepositories: []config.MonitoredRepository{{
+				Repository:            "owner/repository",
+				WorkDir:               "workspace/owner-repository",
+				ImplementationWorkers: 1,
+			}},
+		},
+	})
+
+	job := domain.Job{
+		ID:           "job-1",
+		Repository:   "owner/repository",
+		GitHubNumber: 42,
+		Title:        "PR comment analysis",
+		WatchRuleID:  "rule-1",
+		BranchName:   "feature/analysis",
+	}
+	events := []domain.Event{
+		{
+			EventType: string(domain.DomainEventIssueMatched),
+			Payload:   `{"body":"issue body","author":"alice","labels":["bug"],"assignees":["bob"]}`,
+		},
+		{
+			EventType: "pr_created",
+			Payload:   `{"url":"https://github.com/owner/repository/pull/42"}`,
+		},
+	}
+
+	workDir := artifacts.RepositoryWorkerWorkDir(root, cfg.App().ArtifactsDir, job.Repository, "")
+	artifactPath := artifacts.RepositoryWorkerWorkArtifactPath(workDir, artifacts.WorkerImplementation, job.GitHubNumber, job.Title)
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(artifactPath dir) error = %v", err)
+	}
+	if err := os.WriteFile(artifactPath, []byte("implementation content"), 0o644); err != nil {
+		t.Fatalf("WriteFile(artifactPath) error = %v", err)
+	}
+
+	got, err := buildPRCommentAnalysisContext(cfg, workDir, job, events, PRComment{
+		Author:    "reviewer",
+		Body:      "please fix the edge case",
+		URL:       "https://github.com/owner/repository/pull/42#discussion_r1",
+		CreatedAt: "2026-05-19T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatalf("buildPRCommentAnalysisContext() error = %v", err)
+	}
+	if got.JobID != job.ID || got.Repository != job.Repository || got.IssueNumber != job.GitHubNumber {
+		t.Fatalf("unexpected context job fields: %#v", got)
+	}
+	if got.Body != "issue body" || got.Author != "alice" {
+		t.Fatalf("unexpected issue fields: %#v", got)
+	}
+	if got.SourceURL != "https://github.com/owner/repository/pull/42" {
+		t.Fatalf("unexpected source url: %#v", got.SourceURL)
+	}
+	if got.ImplementationArtifact != "implementation content" {
+		t.Fatalf("expected implementation artifact to be loaded, got %#v", got.ImplementationArtifact)
+	}
+	if len(got.ReviewComments) != 1 || got.ReviewComments[0].Author != "reviewer" {
+		t.Fatalf("unexpected review comments: %#v", got.ReviewComments)
+	}
+}
+
+func TestResolveRepositoryWorkerPullNumberUsesJobEventsAndArtifactFallback(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	cfg := config.NewService(root, config.Files{
+		App: config.App{
+			ArtifactsDir: "artifacts",
+			MonitoredRepositories: []config.MonitoredRepository{{
+				Repository:            "owner/repository",
+				WorkDir:               "workspace/owner-repository",
+				ImplementationWorkers: 1,
+			}},
+		},
+	})
+
+	issueJob := domain.Job{ID: "job-issue", Repository: "owner/repository", GitHubNumber: 7, Title: "issue", WatchRuleID: "rule-1"}
+	events := []domain.Event{
+		{
+			EventType: "pr_created",
+			Payload:   `{"pullNumber":42}`,
+		},
+	}
+	got, err := resolveRepositoryWorkerPullNumber(cfg, issueJob, events)
+	if err != nil {
+		t.Fatalf("resolveRepositoryWorkerPullNumber() error = %v", err)
+	}
+	if got != 42 {
+		t.Fatalf("resolveRepositoryWorkerPullNumber() = %d, want 42", got)
+	}
+
+	prFeedbackJob := domain.Job{ID: "job-pr", Type: domain.JobTypePRFeedback, Repository: "owner/repository", GitHubNumber: 33}
+	got, err = resolveRepositoryWorkerPullNumber(cfg, prFeedbackJob, nil)
+	if err != nil {
+		t.Fatalf("resolveRepositoryWorkerPullNumber(PR feedback) error = %v", err)
+	}
+	if got != 33 {
+		t.Fatalf("resolveRepositoryWorkerPullNumber(PR feedback) = %d, want 33", got)
+	}
+
+	artifactDir := repositoryWorkerArtifactDir(cfg, issueJob.Repository, issueJob.GitHubNumber, artifacts.WorkerPR)
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(artifactDir) error = %v", err)
+	}
+	raw, _ := json.Marshal(map[string]any{"pullNumber": 55})
+	if err := os.WriteFile(filepath.Join(artifactDir, "result.json"), raw, 0o644); err != nil {
+		t.Fatalf("WriteFile(result.json) error = %v", err)
+	}
+	got, err = resolveRepositoryWorkerPullNumber(cfg, issueJob, nil)
+	if err != nil {
+		t.Fatalf("resolveRepositoryWorkerPullNumber(artifact fallback) error = %v", err)
+	}
+	if got != 55 {
+		t.Fatalf("resolveRepositoryWorkerPullNumber(artifact fallback) = %d, want 55", got)
 	}
 }

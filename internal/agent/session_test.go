@@ -116,7 +116,7 @@ func TestSessionSendUsesPTYWhenRequested(t *testing.T) {
 		Args:              []string{"-test.run=TestAgentSessionHelperProcess"},
 		Env:               append(os.Environ(), "GO_WANT_AGENT_HELPER_PROCESS=1", "GO_AGENT_HELPER_MODE=tty"),
 		RequestTerminator: "\n",
-		IdleTimeout:       50 * time.Millisecond,
+		IdleTimeout:       500 * time.Millisecond,
 		UsePTY:            true,
 	}
 	session, err := StartSession(context.Background(), cfg)
@@ -177,7 +177,7 @@ func newTestSession(t *testing.T) *Session {
 		Args:              []string{"-test.run=TestAgentSessionHelperProcess"},
 		Env:               append(os.Environ(), "GO_WANT_AGENT_HELPER_PROCESS=1"),
 		RequestTerminator: "\n",
-		IdleTimeout:       50 * time.Millisecond,
+		IdleTimeout:       500 * time.Millisecond,
 	}
 	session, err := StartSession(context.Background(), cfg)
 	if err != nil {

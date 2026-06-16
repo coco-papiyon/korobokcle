@@ -68,3 +68,45 @@ func TestReadPreferredWorkingArtifactPrefersWorkingCopy(t *testing.T) {
 		t.Fatalf("expected working copy to win, got %q", string(raw))
 	}
 }
+
+func TestCopyAIResultToWorkDirSkipsMissingArtifacts(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	workDir := filepath.Join(root, "work")
+	artifactDir := filepath.Join(root, "artifacts", "workers", "owner-repository", "jobs", "issue_42", artifacts.WorkerDesign)
+	job := domain.Job{Repository: "owner/repository", GitHubNumber: 42, Title: "設計結果 / draft"}
+
+	if err := copyAIResultToWorkDir(workDir, artifacts.WorkerDesign, job, artifactDir); err != nil {
+		t.Fatalf("copyAIResultToWorkDir() error = %v", err)
+	}
+
+	gotPath := artifacts.RepositoryWorkerWorkArtifactPath(workDir, artifacts.WorkerDesign, job.GitHubNumber, job.Title)
+	if _, err := os.Stat(gotPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no working file to be created, got err=%v", err)
+	}
+}
+
+func TestReadPreferredWorkingArtifactFallsBackToArtifactDir(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	workDir := filepath.Join(root, "work")
+	phase := artifacts.WorkerImplementation
+	job := domain.Job{Repository: "owner/repository", GitHubNumber: 42, Title: "実装済み"}
+	fallbackDir := filepath.Join(root, "artifacts", "workers", "owner-repository", "jobs", "issue_42", phase)
+	if err := os.MkdirAll(fallbackDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(fallbackDir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(fallbackDir, "result.md"), []byte("fallback"), 0o644); err != nil {
+		t.Fatalf("WriteFile(result.md) error = %v", err)
+	}
+
+	raw, err := readPreferredWorkingArtifact(workDir, phase, job, fallbackDir, "result.md")
+	if err != nil {
+		t.Fatalf("readPreferredWorkingArtifact() error = %v", err)
+	}
+	if string(raw) != "fallback" {
+		t.Fatalf("expected fallback artifact to be returned, got %q", string(raw))
+	}
+}

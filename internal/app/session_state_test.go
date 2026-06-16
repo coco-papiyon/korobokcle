@@ -53,3 +53,22 @@ func TestSaveAndLoadJobSessionIDUseRepositorySessionFile(t *testing.T) {
 		t.Fatalf("loadJobSessionID() after clear = %q, want empty", got)
 	}
 }
+
+func TestLoadJobSessionIDReturnsEmptyForInvalidJSON(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	artifactsDir := "artifacts"
+	repository := "owner/repository"
+	path := repositorySessionPath(root, artifactsDir, repository)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(session dir) error = %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{"sessionId":`), 0o644); err != nil {
+		t.Fatalf("WriteFile(session.json) error = %v", err)
+	}
+
+	if got := loadJobSessionID(root, artifactsDir, repository); got != "" {
+		t.Fatalf("loadJobSessionID() = %q, want empty on invalid json", got)
+	}
+}

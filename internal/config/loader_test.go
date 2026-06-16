@@ -56,3 +56,47 @@ func TestLoadOrInitCreatesDefaults(t *testing.T) {
 		t.Fatalf("expected default app config to omit providers, got %s", string(raw))
 	}
 }
+
+func TestEnsureDefaultsPreservesExistingFiles(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "config"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(config) error = %v", err)
+	}
+	existing := []byte("httpPort: 9090\n")
+	if err := os.WriteFile(filepath.Join(root, "config", "app.yaml"), existing, 0o644); err != nil {
+		t.Fatalf("WriteFile(app.yaml) error = %v", err)
+	}
+
+	if err := ensureDefaults(root, DefaultFiles()); err != nil {
+		t.Fatalf("ensureDefaults() error = %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(root, "config", "app.yaml"))
+	if err != nil {
+		t.Fatalf("ReadFile(app.yaml) error = %v", err)
+	}
+	if !bytes.Equal(raw, existing) {
+		t.Fatalf("expected existing app.yaml to remain unchanged, got %s", string(raw))
+	}
+	if _, err := os.Stat(filepath.Join(root, "config", "watch-rules.yaml")); err != nil {
+		t.Fatalf("expected missing defaults to be created: %v", err)
+	}
+}
+
+func TestLoadOrInitReturnsErrorForInvalidAppConfig(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "config"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(config) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "config", "app.yaml"), []byte("invalid: ["), 0o644); err != nil {
+		t.Fatalf("WriteFile(app.yaml) error = %v", err)
+	}
+
+	if _, err := LoadOrInit(root); err == nil {
+		t.Fatal("expected LoadOrInit() to fail for invalid yaml")
+	}
+}
