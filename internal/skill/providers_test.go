@@ -9,7 +9,75 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestExternalCLIProviderStreamsLogsToFilesDuringRun(t *testing.T) {
+	dir := t.TempDir()
+	scriptPath := writeProviderScript(
+		t,
+		dir,
+		"streaming-provider",
+		"@echo off\r\necho partial stdout\r\necho partial stderr 1>&2\r\npowershell -NoProfile -Command \"Start-Sleep -Milliseconds 500\"\r\necho final stdout\r\necho final stderr 1>&2\r\n>\"%1\" echo streamed result\r\n",
+		"#!/usr/bin/env sh\nprintf '%s\\n' 'partial stdout'\nprintf '%s\\n' 'partial stderr' >&2\nsleep 1\nprintf '%s\\n' 'final stdout'\nprintf '%s\\n' 'final stderr' >&2\nprintf '%s\\n' 'streamed result' > \"$1\"\n",
+	)
+
+	stdoutPath := filepath.Join(dir, "stdout.log")
+	stderrPath := filepath.Join(dir, "stderr.log")
+	outputPath := filepath.Join(dir, "result.md")
+	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
+	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `["{{output_path}}"]`)
+
+	provider := NewCodexCLIProvider()
+	resultCh := make(chan struct {
+		result AIResult
+		err    error
+	}, 1)
+	go func() {
+		result, err := provider.Run(context.Background(), AIRequest{
+			Prompt:        "streaming prompt",
+			WorkDir:       dir,
+			ArtifactDir:   dir,
+			OutputPath:    outputPath,
+			StdoutLogPath: stdoutPath,
+			StderrLogPath: stderrPath,
+		})
+		resultCh <- struct {
+			result AIResult
+			err    error
+		}{result: result, err: err}
+	}()
+
+	if !waitForFileContains(stdoutPath, "partial stdout", 2*time.Second) {
+		t.Fatalf("expected stdout log to contain partial output during execution")
+	}
+	if !waitForFileContains(stderrPath, "partial stderr", 2*time.Second) {
+		t.Fatalf("expected stderr log to contain partial output during execution")
+	}
+
+	outcome := <-resultCh
+	if outcome.err != nil {
+		t.Fatalf("Run() error = %v", outcome.err)
+	}
+	if strings.TrimSpace(outcome.result.Output) != "streamed result" {
+		t.Fatalf("expected output file contents, got %q", outcome.result.Output)
+	}
+
+	stdoutRaw, err := os.ReadFile(stdoutPath)
+	if err != nil {
+		t.Fatalf("ReadFile(stdout.log) error = %v", err)
+	}
+	stderrRaw, err := os.ReadFile(stderrPath)
+	if err != nil {
+		t.Fatalf("ReadFile(stderr.log) error = %v", err)
+	}
+	if !strings.Contains(string(stdoutRaw), "final stdout") {
+		t.Fatalf("expected stdout log to contain final output, got %q", string(stdoutRaw))
+	}
+	if !strings.Contains(string(stderrRaw), "final stderr") {
+		t.Fatalf("expected stderr log to contain final output, got %q", string(stderrRaw))
+	}
+}
 
 func TestExternalCLIProviderReadsStdout(t *testing.T) {
 	dir := t.TempDir()
@@ -500,6 +568,18 @@ func writeProviderScript(t *testing.T, dir string, baseName string, windowsBody 
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 	return scriptPath
+}
+
+func waitForFileContains(path string, needle string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		raw, err := os.ReadFile(path)
+		if err == nil && strings.Contains(string(raw), needle) {
+			return true
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return false
 }
 
 func TestCopilotCLIProviderRunsGoTestCommandWithRealCopilot(t *testing.T) {
