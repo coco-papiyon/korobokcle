@@ -171,6 +171,9 @@ const prCreateInfo = computed(() => {
 })
 const prCreateRawContent = computed(() => data.value?.prCreateArtifact?.content ?? '')
 const prCommentAnalysisRawContent = computed(() => data.value?.prCommentAnalysisArtifact?.content ?? '')
+const hasPRCommentAnalysis = computed(() => {
+  return Boolean(data.value?.prCommentAnalysisArtifact) && (data.value?.events ?? []).some((event) => event.eventType === 'pr_comment_analysis_ready')
+})
 const hasPRCommentsArtifact = computed(() => {
   if (prCreateInfo.value?.pullNumber) {
     return true
@@ -223,8 +226,6 @@ const flowRerunEvent = computed<JobEvent | null>(() => {
   }
   return null
 })
-
-const hasPRCommentAnalysis = computed(() => (data.value?.prCommentAnalysisArtifact?.content ?? '').trim().length > 0)
 const currentRepositoryConfig = computed(() => {
   const repository = data.value?.job.repository
   if (!repository) {
@@ -1558,7 +1559,7 @@ function openPRCreateModal() {
           </div>
         </div>
 
-        <div v-if="prCommentAnalysisModalOpen && data.prCommentAnalysisArtifact" class="modal-backdrop" @click.self="prCommentAnalysisModalOpen = false">
+        <div v-if="prCommentAnalysisModalOpen && hasPRCommentAnalysis && data.prCommentAnalysisArtifact" class="modal-backdrop" @click.self="prCommentAnalysisModalOpen = false">
           <div class="modal-panel">
               <div class="modal-panel__header">
                 <div>

@@ -190,6 +190,120 @@ describe('JobDetailPage', () => {
     expect(markdown.find('pre code').text()).toContain('const value = 1')
   })
 
+  it('does not show PR comment analysis results without the analysis event', async () => {
+    apiMocks.fetchJobDetail.mockResolvedValueOnce({
+      job: {
+        id: 'job-1',
+        type: 'issue',
+        repository: 'owner/repository',
+        githubNumber: 42,
+        state: 'waiting_design_approval',
+        title: 'Improve prompts',
+        branchName: 'issue_42',
+        watchRuleId: 'rule-1',
+        createdAt: '2026-06-08T00:00:00Z',
+        updatedAt: '2026-06-08T00:00:00Z',
+      },
+      events: [
+        {
+          id: 1,
+          jobId: 'job-1',
+          eventType: 'design_rejected',
+          stateFrom: 'design_ready',
+          stateTo: 'waiting_design_approval',
+          payload: '{}',
+          createdAt: '2026-06-08T00:00:00Z',
+          availableActions: [],
+        },
+      ],
+      reviewArtifact: {
+        path: 'review/result.md',
+        content: 'review result body',
+      },
+      prCommentAnalysisArtifact: {
+        path: 'review/result.md',
+        content: 'review result body',
+      },
+      logs: [],
+    })
+
+    const wrapper = mount(JobDetailPage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="typeof to === \'string\' ? to : String(to)"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('PR コメント分析結果')
+    expect(wrapper.findAll('button').find((candidate) => candidate.text() === '分析結果を開く')).toBeUndefined()
+  })
+
+  it('shows PR comment analysis results when the analysis event exists', async () => {
+    apiMocks.fetchJobDetail.mockResolvedValueOnce({
+      job: {
+        id: 'job-1',
+        type: 'issue',
+        repository: 'owner/repository',
+        githubNumber: 42,
+        state: 'waiting_design_approval',
+        title: 'Improve prompts',
+        branchName: 'issue_42',
+        watchRuleId: 'rule-1',
+        createdAt: '2026-06-08T00:00:00Z',
+        updatedAt: '2026-06-08T00:00:00Z',
+      },
+      events: [
+        {
+          id: 1,
+          jobId: 'job-1',
+          eventType: 'pr_comment_analysis_ready',
+          stateFrom: 'design_running',
+          stateTo: 'waiting_design_approval',
+          payload: '{"artifactDir":"review"}',
+          createdAt: '2026-06-08T00:00:00Z',
+          availableActions: [],
+        },
+      ],
+      reviewArtifact: {
+        path: 'review/result.md',
+        content: 'review result body',
+      },
+      prCommentAnalysisArtifact: {
+        path: 'review/result.md',
+        content: 'analysis result body',
+      },
+      logs: [],
+    })
+
+    const wrapper = mount(JobDetailPage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="typeof to === \'string\' ? to : String(to)"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const openButton = wrapper.findAll('button').find((candidate) => candidate.text() === '分析結果を開く')
+    expect(openButton).toBeDefined()
+    await openButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('PR コメント分析結果')
+    expect(wrapper.text()).toContain('analysis result body')
+    expect(wrapper.text()).not.toContain('review result body')
+  })
+
   it('shows interrupted job errors prominently', async () => {
     apiMocks.fetchJobDetail.mockResolvedValueOnce({
       job: {
