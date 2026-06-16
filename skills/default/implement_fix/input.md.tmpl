@@ -42,6 +42,17 @@ Watch Rule: {{ .WatchRuleID }}
 
 Follow the approved design and incorporate the design approval comment if it exists.
 
+{{- $commands := .TestProfile.Commands }}
+## Test Profile
+{{- if $commands }}
+### Test Commands
+{{- range $commands }}
+- `{{ . }}`
+{{- end }}
+
+テスト時はこの commands を参考にして、同じ確認手順を優先してください。
+{{- end }}
+
 {{- if .ImplementationArtifact }}
 ## Existing Implementation
 ```

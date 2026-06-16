@@ -244,7 +244,7 @@ func TestRunDesignInjectsManagedInstructionsForCodex(t *testing.T) {
 		t.Fatalf("WriteFile(prompt) error = %v", err)
 	}
 
-	scriptPath := writeProviderScript(t, root, "echo-stdin", "@echo off\r\nset /p INPUT=\r\necho %INPUT%\r\n", "#!/usr/bin/env sh\ncat\n")
+	scriptPath := writeProviderScript(t, root, "echo-stdin", "@echo off\r\npowershell -NoProfile -Command \"$text = [Console]::In.ReadToEnd(); [Console]::Out.Write($text)\"\r\n", "#!/usr/bin/env sh\ncat\n")
 	t.Setenv("KOROBOKCLE_CODEX_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_CODEX_ARGS_JSON", `[]`)
 
@@ -294,7 +294,7 @@ func TestRunDesignWritesAgentsFileForCopilot(t *testing.T) {
 		t.Fatalf("WriteFile(prompt) error = %v", err)
 	}
 
-	scriptPath := writeProviderScript(t, root, "echo-args", "@echo off\r\n>\"%1\" echo %2\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$2\" > \"$1\"\ncat \"$1\"\n")
+	scriptPath := writeProviderScript(t, root, "echo-args", "@echo off\r\n>\"%1\" echo %2\r\ntype \"%1\"\r\n", "#!/usr/bin/env sh\nprintf '%s\\n' \"$2\" > \"$1\"\ncat \"$1\"\n")
 	t.Setenv("KOROBOKCLE_COPILOT_BIN", scriptPath)
 	t.Setenv("KOROBOKCLE_COPILOT_ARGS_JSON", `["{{output_path}}","{{prompt}}"]`)
 

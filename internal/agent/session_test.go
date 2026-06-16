@@ -251,6 +251,9 @@ func writeJSONLEvent(event JSONLEvent) {
 }
 
 func runTTYHelper() {
+	// Emit the TTY state before reading input so PTY/ConPTY output can be asserted
+	// even when the terminal injects control sequences around the stream.
+	fmt.Fprintf(os.Stdout, "tty=%t\n", isCharDevice(os.Stdout))
 	for {
 		var input string
 		_, err := fmt.Fscanln(os.Stdin, &input)

@@ -80,7 +80,7 @@ func TestCodexCLIProviderRespectsProvidedSessionID(t *testing.T) {
 		t,
 		dir,
 		"resume-codex",
-		"@echo off\r\necho resume check\r\n>\"%3\" echo resumed result\r\n",
+		"@echo off\r\necho resume check\r\necho %4 %5 1>&2\r\n>\"%3\" echo resumed result\r\n",
 		"#!/usr/bin/env sh\nprintf 'resume check\\n'\nprintf '%s\\n' 'resumed result' > \"$3\"\nprintf '%s\\n' \"$*\" >&2\n",
 	)
 
@@ -138,7 +138,7 @@ func TestCopilotCLIProviderAssignsAndReturnsSessionID(t *testing.T) {
 		t,
 		dir,
 		"json-copilot",
-		"@echo off\r\necho {\"type\":\"message\",\"data\":\"progress\"}\r\necho {\"type\":\"end\"}\r\n>\"%4\" echo final copilot result\r\n",
+		"@echo off\r\necho {\"type\":\"message\",\"data\":\"progress\"}\r\necho {\"type\":\"end\"}\r\n>\"%5\" echo final copilot result\r\necho %* 1>&2\r\n",
 		"#!/usr/bin/env sh\nprintf '%s\\n' '{\"type\":\"message\",\"data\":\"progress\"}'\nprintf '%s\\n' '{\"type\":\"end\"}'\nprintf '%s\\n' 'final copilot result' > \"$5\"\nprintf '%s\\n' \"$*\" >&2\n",
 	)
 

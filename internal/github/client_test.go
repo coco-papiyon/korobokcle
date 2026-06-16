@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -441,9 +442,16 @@ func fakeGhCommand(t *testing.T, output string) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	path := filepath.Join(dir, "gh")
+	name := "gh"
 	script := "#!/bin/sh\nif [ \"$1\" = \"pr\" ] && [ \"$2\" = \"view\" ]; then\n  printf '%s\\n' '" + strings.ReplaceAll(output, "'", "'\\''") + "'\n  exit 0\nfi\nexit 1\n"
-	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+	mode := os.FileMode(0o755)
+	if runtime.GOOS == "windows" {
+		name = "gh.cmd"
+		script = "@echo off\r\nif \"%1\"==\"pr\" if \"%2\"==\"view\" (\r\n  echo " + strings.ReplaceAll(output, "\r", "") + "\r\n  exit /b 0\r\n)\r\nexit /b 1\r\n"
+		mode = 0o644
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(script), mode); err != nil {
 		t.Fatalf("WriteFile(fake gh) error = %v", err)
 	}
 	return path

@@ -40,7 +40,12 @@ type ImplementationContext struct {
 	PreviousTestReport     string               `json:"previousTestReport,omitempty"`
 	SourceURL              string               `json:"sourceUrl,omitempty"`
 	ReviewComments         []ReviewComment      `json:"reviewComments,omitempty"`
+	TestProfile            TestProfileContext   `json:"testProfile"`
 	ManagedInstructions    []ManagedInstruction `json:"managedInstructions,omitempty"`
+}
+
+type TestProfileContext struct {
+	Commands []string `json:"commands,omitempty"`
 }
 
 type ReviewComment struct {

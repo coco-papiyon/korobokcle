@@ -76,7 +76,16 @@ describe('WorkerSettingsPage', () => {
   })
 
   it('shows repository setting labels and success message', async () => {
-    const wrapper = mount(WorkerSettingsPage)
+    const wrapper = mount(WorkerSettingsPage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="typeof to === \'string\' ? to : String(to)"><slot /></a>',
+          },
+        },
+      },
+    })
 
     await flushPromises()
 

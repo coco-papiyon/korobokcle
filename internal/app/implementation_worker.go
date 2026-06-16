@@ -171,6 +171,7 @@ func buildImplementationContext(cfg *config.Service, workDir string, job domain.
 		ArtifactDir:       runSpec.ArtifactDir,
 		SessionID:         loadJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.Repository),
 	}
+	ctxData.TestProfile = loadJobTestProfileContext(cfg, job)
 
 	ctxData.DesignApprovalComment, err = loadDesignApprovalComment(events)
 	if err != nil {
@@ -309,6 +310,7 @@ func buildPRFeedbackImplementationContext(cfg *config.Service, workDir string, j
 		ArtifactDir: runSpec.ArtifactDir,
 		SessionID:   loadJobSessionID(cfg.Root(), cfg.App().ArtifactsDir, job.Repository),
 	}
+	ctxData.TestProfile = loadJobTestProfileContext(cfg, job)
 
 	implementationArtifact, err := readPreferredWorkingArtifact(workDir, artifacts.WorkerImplementation, job, artifacts.RepositoryWorkerJobPhaseDir(cfg.Root(), cfg.App().ArtifactsDir, job.Repository, job.GitHubNumber, artifacts.WorkerImplementation), "result.md", "review_fix.md", "implement.md", "summary.md", "stdout.log")
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -506,4 +508,14 @@ func resolveJobTestProfile(cfg *config.Service, job domain.Job) (executor.TestPr
 	}
 
 	return executor.TestProfile{}, false, os.ErrNotExist
+}
+
+func loadJobTestProfileContext(cfg *config.Service, job domain.Job) skill.TestProfileContext {
+	profile, shouldRun, err := resolveJobTestProfile(cfg, job)
+	if err != nil || !shouldRun {
+		return skill.TestProfileContext{}
+	}
+	return skill.TestProfileContext{
+		Commands: append([]string(nil), profile.Commands...),
+	}
 }
