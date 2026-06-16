@@ -9,8 +9,28 @@
 
 .markdown-content h1,
 .markdown-content h2,
-.markdown-content h3 {
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
   margin: 0 0 var(--space-4);
+}
+
+.markdown-content {
+  color: var(--ink-primary);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.markdown-content--surface {
+  padding: var(--space-4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.markdown-content > :first-child {
+  margin-top: 0;
 }
 
 .guide-layout {
@@ -37,11 +57,15 @@
 
 .markdown-content p,
 .markdown-content ul,
-.markdown-content pre {
+.markdown-content ol,
+.markdown-content pre,
+.markdown-content blockquote,
+.markdown-content .markdown-table {
   margin: 0 0 var(--space-4);
 }
 
-.markdown-content ul {
+.markdown-content ul,
+.markdown-content ol {
   padding-left: 1.4rem;
 }
 
@@ -55,6 +79,60 @@
   border-radius: var(--radius-md);
   background: #fff6ee;
   border: 1px solid var(--line-soft);
+}
+
+.markdown-content code {
+  padding: 0.12rem 0.35rem;
+  border-radius: 0.35rem;
+  background: rgba(188, 90, 34, 0.09);
+  font-size: 0.94em;
+}
+
+.markdown-content pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+}
+
+.markdown-content a {
+  color: var(--accent-deep);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.16em;
+}
+
+.markdown-content a:hover {
+  text-decoration: underline;
+}
+
+.markdown-content blockquote {
+  margin-inline: 0;
+  padding: 0.1rem 0 0.1rem 1rem;
+  border-left: 3px solid rgba(188, 90, 34, 0.28);
+  color: var(--ink-muted);
+}
+
+.markdown-content .markdown-table {
+  overflow-x: auto;
+}
+
+.markdown-content table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line-soft);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown-content th {
+  background: rgba(188, 90, 34, 0.08);
+  font-weight: 700;
 }
 
 @media (max-width: 900px) {

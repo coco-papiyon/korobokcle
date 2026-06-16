@@ -102,7 +102,17 @@ vi.mock('@/composables/useAsyncData', () => ({
             availableActions: [],
           },
         ],
-        issueBody: 'body',
+        issueBody: [
+          '# Issue title',
+          '',
+          '| Name | Value |',
+          '| --- | --- |',
+          '| Example | `code` |',
+          '',
+          '```ts',
+          'const value = 1',
+          '```',
+        ].join('\n'),
         designArtifact: {
           path: 'result.md',
           content: 'design',
@@ -147,5 +157,31 @@ describe('JobDetailPage', () => {
 
     expect(apiMocks.generateImprovement).toHaveBeenCalledWith('job-1', 'design_rejected')
     expect(wrapper.text()).toContain('改善案を生成しました。改善一覧から確認できます。')
+  })
+
+  it('renders issue body as markdown inside the modal', async () => {
+    const wrapper = mount(JobDetailPage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="typeof to === \'string\' ? to : String(to)"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const openButton = wrapper.findAll('button').find((candidate) => candidate.text() === 'Issue 本文を開く')
+    expect(openButton).toBeDefined()
+    await openButton!.trigger('click')
+    await flushPromises()
+
+    const markdown = wrapper.find('.markdown-content')
+    expect(markdown.exists()).toBe(true)
+    expect(markdown.find('h1').text()).toBe('Issue title')
+    expect(markdown.find('table').exists()).toBe(true)
+    expect(markdown.find('pre code').text()).toContain('const value = 1')
   })
 })

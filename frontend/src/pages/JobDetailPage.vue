@@ -38,6 +38,7 @@ import {
   formatStateLabel,
   formatToolExecutionStatusLabel,
 } from '@/lib/format'
+import { renderMarkdown } from '@/lib/markdown'
 import { rerunActionFromEvent, rerunButtonLabel, type RerunAction } from '@/lib/rerun-actions'
 import { UNKNOWN_ERROR_MESSAGE } from '@/lib/ui-text'
 import type { JobEvent, JobLog, ReviewComment } from '@/types'
@@ -208,6 +209,7 @@ const currentRepositoryConfig = computed(() => {
   }
   return appConfig.value?.monitoredRepositories.find((entry) => entry.repository === repository) ?? null
 })
+const issueBodyHtml = computed(() => renderMarkdown(formatIssueBody(data.value?.issueBody)))
 const improvementEnabledForJob = computed(() => Boolean(currentRepositoryConfig.value?.improvementEnabled))
 const availableImprovementSource = computed(() => {
   if (hasPRCommentAnalysis.value) {
@@ -1312,7 +1314,7 @@ function openPRCreateModal() {
               <button class="button button-secondary" type="button" @click="issueBodyModalOpen = false">閉じる</button>
             </div>
             <div class="stack-sm">
-              <pre class="artifact-view">{{ formatIssueBody(data.issueBody) }}</pre>
+              <div class="markdown-content markdown-content--surface" v-html="issueBodyHtml"></div>
               <div class="button-row">
                 <button
                   class="button button-primary"
