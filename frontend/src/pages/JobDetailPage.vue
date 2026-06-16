@@ -120,12 +120,14 @@ const testReportComment = ref('')
 const reviewArtifactComment = ref('')
 const designRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const implementationRerunState = ref<'idle' | 'saving' | 'error'>('idle')
+const testReportRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const prRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const reviewRerunState = ref<'idle' | 'saving' | 'error'>('idle')
 const reviewSubmitState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const reviewApproveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const designRerunError = ref<string | null>(null)
 const implementationRerunError = ref<string | null>(null)
+const testReportRerunError = ref<string | null>(null)
 const prRerunError = ref<string | null>(null)
 const reviewRerunError = ref<string | null>(null)
 const reviewSubmitError = ref<string | null>(null)
@@ -560,20 +562,20 @@ async function submitImplementationArtifactRerun() {
 }
 
 async function submitTestReportRerun() {
-  implementationRerunState.value = 'saving'
-  implementationRerunError.value = null
+  testReportRerunState.value = 'saving'
+  testReportRerunError.value = null
   try {
     const comment = testReportComment.value.trim().length > 0
       ? testReportComment.value
       : defaultRerunCommentForEvent('retry_implementation', latestEvent.value)
     data.value = await submitImplementationRerun(jobID.value, comment)
-    implementationRerunState.value = 'idle'
+    testReportRerunState.value = 'idle'
     testReportComment.value = ''
     testReportModalOpen.value = false
     await reload()
   } catch (err) {
-    implementationRerunState.value = 'error'
-    implementationRerunError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
+    testReportRerunState.value = 'error'
+    testReportRerunError.value = err instanceof Error ? err.message : UNKNOWN_ERROR_MESSAGE
   }
 }
 
@@ -1447,8 +1449,8 @@ function openPRCreateModal() {
                   <button v-if="canReviewImplementation" class="button button-primary" type="button" :disabled="finalApprovalState === 'saving'" @click="sendFinalApproval('approved', testReportComment, 'test-report')">
                     {{ finalApprovalState === 'saving' ? '承認中...' : '承認' }}
                   </button>
-                  <button class="button button-secondary" type="button" :disabled="implementationRerunState === 'saving'" @click="submitTestReportRerun">
-                    {{ implementationRerunState === 'saving' ? '再実行中...' : '再実行' }}
+                  <button class="button button-secondary" type="button" :disabled="testReportRerunState === 'saving'" @click="submitTestReportRerun">
+                    {{ testReportRerunState === 'saving' ? 'テストを再実行中...' : 'テストを再実行' }}
                   </button>
                 </div>
                 <div v-if="canReviewImplementation" class="modal-actions__right">
@@ -1457,7 +1459,7 @@ function openPRCreateModal() {
                   </button>
                 </div>
               </div>
-              <p v-if="implementationRerunState === 'error'" class="notice notice-danger">{{ rerunErrorLabel('retry_implementation') }}: {{ implementationRerunError }}</p>
+              <p v-if="testReportRerunState === 'error'" class="notice notice-danger">テストの再実行: {{ testReportRerunError }}</p>
               <p v-if="finalApprovalWarning && canReviewImplementation" class="notice notice-danger">{{ finalApprovalWarning }}</p>
               <p v-if="finalApprovalState === 'error'" class="notice notice-danger">{{ finalApprovalError }}</p>
             </div>

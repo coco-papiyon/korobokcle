@@ -10,6 +10,7 @@ const apiMocks = vi.hoisted(() => ({
   fetchWatchRules: vi.fn(),
   fetchJobDetail: vi.fn(),
   generateImprovement: vi.fn(),
+  submitImplementationRerun: vi.fn(),
 }))
 
 vi.mock('@/lib/api', async () => {
@@ -21,6 +22,7 @@ vi.mock('@/lib/api', async () => {
     fetchWatchRules: apiMocks.fetchWatchRules,
     fetchJobDetail: apiMocks.fetchJobDetail,
     generateImprovement: apiMocks.generateImprovement,
+    submitImplementationRerun: apiMocks.submitImplementationRerun,
   }
 })
 
@@ -83,7 +85,7 @@ vi.mock('@/composables/useAsyncData', () => ({
           type: 'issue',
           repository: 'owner/repository',
           githubNumber: 42,
-          state: 'waiting_design_approval',
+          state: 'failed',
           title: 'Improve prompts',
           branchName: 'issue_42',
           watchRuleId: 'rule-1',
@@ -94,10 +96,10 @@ vi.mock('@/composables/useAsyncData', () => ({
           {
             id: 1,
             jobId: 'job-1',
-            eventType: 'design_rejected',
-            stateFrom: 'design_ready',
-            stateTo: 'waiting_design_approval',
-            payload: '{}',
+            eventType: 'test_failed',
+            stateFrom: 'test_running',
+            stateTo: 'failed',
+            payload: '{"error":"tests failed"}',
             createdAt: '2026-06-08T00:00:00Z',
             availableActions: [],
           },
@@ -117,6 +119,25 @@ vi.mock('@/composables/useAsyncData', () => ({
           path: 'result.md',
           content: 'design',
         },
+        testReport: {
+          path: 'test-report.json',
+          content: JSON.stringify({
+            profile: 'default',
+            success: false,
+            startedAt: '2026-06-08T00:00:00Z',
+            finishedAt: '2026-06-08T00:05:00Z',
+            results: [
+              {
+                command: 'npm test',
+                exitCode: 1,
+                durationMs: 1000,
+                stdout: 'running tests',
+                stderr: 'failed tests',
+                success: false,
+              },
+            ],
+          }),
+        },
         logs: [],
       }),
       isLoading: ref(false),
@@ -131,6 +152,61 @@ describe('JobDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.generateImprovement.mockResolvedValue({})
+    apiMocks.submitImplementationRerun.mockResolvedValue({
+      job: {
+        id: 'job-1',
+        type: 'issue',
+        repository: 'owner/repository',
+        githubNumber: 42,
+        state: 'implementation_running',
+        title: 'Improve prompts',
+        branchName: 'issue_42',
+        watchRuleId: 'rule-1',
+        createdAt: '2026-06-08T00:00:00Z',
+        updatedAt: '2026-06-08T00:06:00Z',
+      },
+      events: [
+        {
+          id: 1,
+          jobId: 'job-1',
+          eventType: 'test_failed',
+          stateFrom: 'test_running',
+          stateTo: 'failed',
+          payload: '{"error":"tests failed"}',
+          createdAt: '2026-06-08T00:00:00Z',
+          availableActions: [],
+        },
+        {
+          id: 2,
+          jobId: 'job-1',
+          eventType: 'implementation_rerun_requested',
+          stateFrom: 'failed',
+          stateTo: 'implementation_running',
+          payload: '{"comment":"tests failed"}',
+          createdAt: '2026-06-08T00:06:00Z',
+          availableActions: [],
+        },
+      ],
+      testReport: {
+        path: 'test-report.json',
+        content: JSON.stringify({
+          profile: 'default',
+          success: true,
+          startedAt: '2026-06-08T00:06:00Z',
+          finishedAt: '2026-06-08T00:10:00Z',
+          results: [
+            {
+              command: 'npm test',
+              exitCode: 0,
+              durationMs: 1000,
+              stdout: 'running tests',
+              stderr: '',
+              success: true,
+            },
+          ],
+        }),
+      },
+    })
   })
 
   it('shows improvement panel and starts generation from job detail', async () => {
@@ -183,5 +259,95 @@ describe('JobDetailPage', () => {
     expect(markdown.find('h1').text()).toBe('Issue title')
     expect(markdown.find('table').exists()).toBe(true)
     expect(markdown.find('pre code').text()).toContain('const value = 1')
+  })
+
+  it('reloads before opening the test report modal', async () => {
+    const wrapper = mount(JobDetailPage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="typeof to === \'string\' ? to : String(to)"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const openButton = wrapper.findAll('button').find((candidate) => candidate.text() === 'テスト結果を開く')
+    expect(openButton).toBeDefined()
+    await openButton!.trigger('click')
+    await flushPromises()
+
+    expect(reloadMock).toHaveBeenCalledWith({ silent: true })
+    expect(wrapper.text()).toContain('テスト結果')
+    expect(wrapper.text()).toContain('テストを再実行')
+    expect(wrapper.text()).toContain('npm test')
+  })
+
+  it('reruns the test report and refreshes the detail view', async () => {
+    const wrapper = mount(JobDetailPage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="typeof to === \'string\' ? to : String(to)"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const openButton = wrapper.findAll('button').find((candidate) => candidate.text() === 'テスト結果を開く')
+    expect(openButton).toBeDefined()
+    await openButton!.trigger('click')
+    await flushPromises()
+
+    const rerunButton = wrapper.findAll('button').find((candidate) => candidate.text() === 'テストを再実行')
+    expect(rerunButton).toBeDefined()
+    await rerunButton!.trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.submitImplementationRerun).toHaveBeenCalledWith('job-1', 'tests failed')
+    expect(reloadMock).toHaveBeenCalledWith({ silent: true })
+    expect(reloadMock).toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('テストの再実行:')
+
+    await wrapper.findAll('button').find((candidate) => candidate.text() === 'テスト結果を開く')!.trigger('click')
+    await flushPromises()
+
+    expect(reloadMock).toHaveBeenCalledWith({ silent: true })
+    expect(wrapper.text()).toContain('成功: はい')
+  })
+
+  it('shows rerun errors in the test report modal', async () => {
+    apiMocks.submitImplementationRerun.mockRejectedValueOnce(new Error('rerun failed'))
+
+    const wrapper = mount(JobDetailPage, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="typeof to === \'string\' ? to : String(to)"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const openButton = wrapper.findAll('button').find((candidate) => candidate.text() === 'テスト結果を開く')
+    expect(openButton).toBeDefined()
+    await openButton!.trigger('click')
+    await flushPromises()
+
+    const rerunButton = wrapper.findAll('button').find((candidate) => candidate.text() === 'テストを再実行')
+    expect(rerunButton).toBeDefined()
+    await rerunButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('テストの再実行: rerun failed')
   })
 })
