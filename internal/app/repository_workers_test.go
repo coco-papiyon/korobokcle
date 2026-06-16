@@ -518,6 +518,102 @@ func TestSyncRepositoryWorkspaceUsesPullRequestBranchForPRFeedback(t *testing.T)
 	}
 }
 
+func TestCloneRepositoryWorkspaceForBranchIsIdempotentWhenWorktreeExists(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	baseDir, err := prepareRepositoryWorkspace(context.Background(), cfg, source, "")
+	if err != nil {
+		t.Fatalf("prepareRepositoryWorkspace() error = %v", err)
+	}
+
+	worktreeDir, err := cloneRepositoryWorkspaceForBranch(context.Background(), cfg, source, "main", baseDir)
+	if err != nil {
+		t.Fatalf("first cloneRepositoryWorkspaceForBranch() error = %v", err)
+	}
+
+	again, err := cloneRepositoryWorkspaceForBranch(context.Background(), cfg, source, "main", baseDir)
+	if err != nil {
+		t.Fatalf("second cloneRepositoryWorkspaceForBranch() error = %v", err)
+	}
+	if again != worktreeDir {
+		t.Fatalf("expected reused worktree dir %q, got %q", worktreeDir, again)
+	}
+}
+
+func TestCloneRepositoryWorkspaceForBranchRepairsMissingWorktree(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	baseDir, err := prepareRepositoryWorkspace(context.Background(), cfg, source, "")
+	if err != nil {
+		t.Fatalf("prepareRepositoryWorkspace() error = %v", err)
+	}
+
+	worktreeDir, err := cloneRepositoryWorkspaceForBranch(context.Background(), cfg, source, "main", baseDir)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspaceForBranch() error = %v", err)
+	}
+	if err := os.RemoveAll(worktreeDir); err != nil {
+		t.Fatalf("RemoveAll(worktreeDir) error = %v", err)
+	}
+
+	repairedDir, err := cloneRepositoryWorkspaceForBranch(context.Background(), cfg, source, "main", baseDir)
+	if err != nil {
+		t.Fatalf("repair cloneRepositoryWorkspaceForBranch() error = %v", err)
+	}
+	if repairedDir != worktreeDir {
+		t.Fatalf("expected repaired worktree dir %q, got %q", worktreeDir, repairedDir)
+	}
+	if _, err := os.Stat(repairedDir); err != nil {
+		t.Fatalf("expected repaired worktree to exist: %v", err)
+	}
+}
+
 func TestSyncRepositoryWorkspaceUsesConfiguredMonitoredRepositoryBranch(t *testing.T) {
 	t.Parallel()
 
@@ -958,7 +1054,7 @@ func TestRepositoryWorkerSourceAndLogPaths(t *testing.T) {
 	}
 }
 
-func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
+func TestNewRepositoryWorkerLoggerMirrorsErrorLinesToFallback(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
@@ -980,6 +1076,12 @@ func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
 		t.Fatalf("expected no fallback log output, got %q", fallback.String())
 	}
 
+	logger.Printf("repository worker cycle failed repository=owner/repo worker=2 kind=review error=boom")
+
+	if !strings.Contains(fallback.String(), "repository worker cycle failed repository=owner/repo worker=2 kind=review error=boom") {
+		t.Fatalf("expected fallback logger to receive error line, got %q", fallback.String())
+	}
+
 	logPath := artifacts.RepositoryWorkerLogPath(root, cfg.App().ArtifactsDir, repository, 2, startedAt)
 	if _, err := os.Stat(filepath.Dir(logPath)); err != nil {
 		t.Fatalf("expected log directory to exist: %v", err)
@@ -991,6 +1093,9 @@ func TestNewRepositoryWorkerLoggerDoesNotWriteToFallback(t *testing.T) {
 	}
 	if !bytes.Contains(data, []byte("worker only log")) {
 		t.Fatalf("expected worker log file to contain message, got %q", string(data))
+	}
+	if !bytes.Contains(data, []byte("repository worker cycle failed repository=owner/repo worker=2 kind=review error=boom")) {
+		t.Fatalf("expected worker log file to contain error message, got %q", string(data))
 	}
 }
 
@@ -1706,4 +1811,112 @@ func countJobsOfType(jobs []domain.Job, jobType domain.JobType) int {
 		}
 	}
 	return count
+}
+
+func TestWithRepositoryWorkspaceLockSerializesSameRepository(t *testing.T) {
+	t.Parallel()
+
+	repository := "owner/repo"
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- withRepositoryWorkspaceLock(repository, func() error {
+			close(firstEntered)
+			<-releaseFirst
+			return nil
+		})
+	}()
+
+	select {
+	case <-firstEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first lock holder did not start")
+	}
+
+	secondEntered := make(chan struct{})
+	secondDone := make(chan error, 1)
+	go func() {
+		secondDone <- withRepositoryWorkspaceLock(repository, func() error {
+			close(secondEntered)
+			return nil
+		})
+	}()
+
+	select {
+	case <-secondEntered:
+		t.Fatal("second lock holder entered before the first released the lock")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseFirst)
+
+	select {
+	case err := <-firstDone:
+		if err != nil {
+			t.Fatalf("first lock holder returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first lock holder did not finish")
+	}
+
+	select {
+	case <-secondEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("second lock holder did not start after release")
+	}
+
+	select {
+	case err := <-secondDone:
+		if err != nil {
+			t.Fatalf("second lock holder returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("second lock holder did not finish")
+	}
+}
+
+func TestRepositoryWorkerWorktreeExistsDetectsRegisteredWorktree(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatalf("MkdirAll(source) error = %v", err)
+	}
+	if err := runGit(t, source, "init", "--initial-branch=main"); err != nil {
+		t.Fatalf("git init error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("main\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile error = %v", err)
+	}
+	if err := runGit(t, source, "add", "README.md"); err != nil {
+		t.Fatalf("git add error = %v", err)
+	}
+	if err := runGit(t, source, "-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-m", "main"); err != nil {
+		t.Fatalf("git commit error = %v", err)
+	}
+
+	cfg := config.NewService(root, config.DefaultFiles())
+	baseDir, err := prepareRepositoryWorkspace(context.Background(), cfg, source, "")
+	if err != nil {
+		t.Fatalf("prepareRepositoryWorkspace() error = %v", err)
+	}
+
+	worktreeDir, err := cloneRepositoryWorkspaceForBranch(context.Background(), cfg, source, "main", baseDir)
+	if err != nil {
+		t.Fatalf("cloneRepositoryWorkspaceForBranch() error = %v", err)
+	}
+
+	exists, err := repositoryWorkerWorktreeExists(context.Background(), baseDir, worktreeDir)
+	if err != nil {
+		t.Fatalf("repositoryWorkerWorktreeExists() error = %v", err)
+	}
+	if !exists {
+		t.Fatal("expected worktree to be reported as existing")
+	}
 }

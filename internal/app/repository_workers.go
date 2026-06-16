@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/artifacts"
@@ -28,6 +29,8 @@ const (
 	repositoryWorkerKindImplementation repositoryWorkerKind = "implementation"
 	repositoryWorkerKindReview         repositoryWorkerKind = "review"
 )
+
+var repositoryWorkspaceLocks sync.Map
 
 func startRepositoryWorkers(ctx context.Context, cfg *config.Service, orch *orchestrator.Orchestrator, logger *log.Logger) error {
 	repositories := append([]config.MonitoredRepository(nil), cfg.App().MonitoredRepositories...)
@@ -727,31 +730,35 @@ func prepareRepositoryWorkspaces(ctx context.Context, cfg *config.Service) error
 }
 
 func prepareRepositoryWorkspace(ctx context.Context, cfg *config.Service, repository string, workDirSetting string) (string, error) {
-	workDir := artifacts.RepositoryWorkerWorkDir(cfg.Root(), cfg.App().ArtifactsDir, repository, workDirSetting)
-	if err := os.MkdirAll(filepath.Dir(workDir), 0o755); err != nil {
-		return "", err
-	}
-	if domain.IsDummyRepository(repository) {
-		if err := os.MkdirAll(workDir, 0o755); err != nil {
-			return "", err
+	var workDir string
+	err := withRepositoryWorkspaceLock(repository, func() error {
+		workDir = artifacts.RepositoryWorkerWorkDir(cfg.Root(), cfg.App().ArtifactsDir, repository, workDirSetting)
+		if err := os.MkdirAll(filepath.Dir(workDir), 0o755); err != nil {
+			return err
 		}
-		if _, err := os.Stat(filepath.Join(workDir, ".git")); errors.Is(err, os.ErrNotExist) {
-			if err := initializeRepositoryWorkerGitDir(ctx, workDir); err != nil {
-				return "", err
+		if domain.IsDummyRepository(repository) {
+			if err := os.MkdirAll(workDir, 0o755); err != nil {
+				return err
 			}
+			if _, err := os.Stat(filepath.Join(workDir, ".git")); errors.Is(err, os.ErrNotExist) {
+				if err := initializeRepositoryWorkerGitDir(ctx, workDir); err != nil {
+					return err
+				}
+			}
+			if err := removeRepositoryWorkerWorkspace(workDir, cfg.App().WorkspaceDir); err != nil {
+				return err
+			}
+			return nil
 		}
-		if err := removeRepositoryWorkerWorkspace(workDir, cfg.App().WorkspaceDir); err != nil {
-			return "", err
+		if err := ensureRepositoryWorkerClone(ctx, workDir, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
+			return err
 		}
-		return workDir, nil
-	}
-	if err := ensureRepositoryWorkerClone(ctx, workDir, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
-		return "", err
-	}
-	if err := ensureRepositoryWorkerRemote(ctx, workDir, repositoryCloneSource(repository)); err != nil {
-		return "", err
-	}
-	return workDir, nil
+		if err := ensureRepositoryWorkerRemote(ctx, workDir, repositoryCloneSource(repository)); err != nil {
+			return err
+		}
+		return nil
+	})
+	return workDir, err
 }
 
 func cloneRepositoryWorkspace(ctx context.Context, cfg *config.Service, repository string, workerIndex int, workDir ...string) (string, error) {
@@ -797,14 +804,31 @@ func cloneRepositoryWorkspaceForBranch(ctx context.Context, cfg *config.Service,
 	if branchName == "" {
 		branchName = "main"
 	}
-	sourceDir := artifacts.RepositoryWorkerBranchDir(baseDir, branchName)
-	if err := ensureRepositoryWorkerWorktree(ctx, baseDir, sourceDir, branchName, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
-		return "", err
-	}
-	return sourceDir, nil
+	var sourceDir string
+	err := withRepositoryWorkspaceLock(repository, func() error {
+		sourceDir = artifacts.RepositoryWorkerBranchDir(baseDir, branchName)
+		if err := ensureRepositoryWorkerWorktree(ctx, baseDir, sourceDir, branchName, repositoryCloneSource(repository), cfg.App().WorkspaceDir); err != nil {
+			return err
+		}
+		return nil
+	})
+	return sourceDir, err
 }
 
 func prepareRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service, repository config.MonitoredRepository) (string, error) {
+	var improvementDir string
+	err := withRepositoryWorkspaceLock(repository.Repository, func() error {
+		preparedDir, err := prepareRepositoryImprovementWorkspaceLocked(ctx, cfg, repository)
+		if err != nil {
+			return err
+		}
+		improvementDir = preparedDir
+		return nil
+	})
+	return improvementDir, err
+}
+
+func prepareRepositoryImprovementWorkspaceLocked(ctx context.Context, cfg *config.Service, repository config.MonitoredRepository) (string, error) {
 	improvementBranch := config.ResolveImprovementBranch(repository)
 	improvementDir := artifacts.RepositoryWorkerImprovementWorkspaceDir(cfg.Root(), cfg.App().ArtifactsDir, repository.Repository, improvementBranch)
 	baseDir := artifacts.RepositoryWorkerWorkDir(cfg.Root(), cfg.App().ArtifactsDir, repository.Repository, repository.WorkDir)
@@ -878,6 +902,16 @@ func ensureRepositoryWorkerClone(ctx context.Context, targetDir string, source s
 }
 
 func ensureRepositoryWorkerWorktree(ctx context.Context, baseDir string, worktreeDir string, branch string, source string, workspaceDir string) error {
+	if exists, stale, err := repositoryWorkerWorktreeStatus(ctx, baseDir, worktreeDir); err != nil {
+		return err
+	} else if exists {
+		return nil
+	} else if stale {
+		if _, err := runGitCommand(ctx, baseDir, "git", "worktree", "prune", "--expire", "now"); err != nil {
+			return err
+		}
+	}
+
 	if info, err := os.Stat(filepath.Join(worktreeDir, ".git")); err == nil {
 		if info.IsDir() {
 			return removeRepositoryWorkerWorkspace(worktreeDir, workspaceDir)
@@ -932,6 +966,42 @@ func ensureRepositoryWorkerWorktree(ctx context.Context, baseDir string, worktre
 	return nil
 }
 
+func repositoryWorkerWorktreeStatus(ctx context.Context, baseDir string, worktreeDir string) (bool, bool, error) {
+	output, err := runGitCommand(ctx, baseDir, "git", "worktree", "list", "--porcelain")
+	if err != nil {
+		return false, false, err
+	}
+
+	var currentWorktree string
+	var listed bool
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			currentWorktree = ""
+			continue
+		}
+		if strings.HasPrefix(line, "worktree ") {
+			currentWorktree = strings.TrimSpace(strings.TrimPrefix(line, "worktree "))
+			if currentWorktree == worktreeDir {
+				listed = true
+				if _, err := os.Stat(worktreeDir); err == nil {
+					return true, false, nil
+				} else if os.IsNotExist(err) {
+					return false, true, nil
+				} else {
+					return false, false, err
+				}
+			}
+		}
+	}
+	return false, listed, nil
+}
+
+func repositoryWorkerWorktreeExists(ctx context.Context, baseDir string, worktreeDir string) (bool, error) {
+	exists, _, err := repositoryWorkerWorktreeStatus(ctx, baseDir, worktreeDir)
+	return exists, err
+}
+
 func removeRepositoryWorkerWorkspace(targetDir string, workspaceDir string) error {
 	trimmed := strings.TrimSpace(workspaceDir)
 	if trimmed == "" {
@@ -947,24 +1017,71 @@ func removeRepositoryWorkerWorkspace(targetDir string, workspaceDir string) erro
 }
 
 func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domain.Job, repoDir string, logger *log.Logger) error {
-	if domain.IsDummyRepository(job.Repository) {
-		if logger != nil {
-			logger.Printf("syncing repository source checkout skipped job_id=%s repo_dir=%s reason=dummy_repository", job.ID, repoDir)
+	return withRepositoryWorkspaceLock(job.Repository, func() error {
+		if domain.IsDummyRepository(job.Repository) {
+			if logger != nil {
+				logger.Printf("syncing repository source checkout skipped job_id=%s repo_dir=%s reason=dummy_repository", job.ID, repoDir)
+			}
+			return nil
 		}
-		return nil
-	}
-	if job.Type == domain.JobTypePRFeedback {
+		if job.Type == domain.JobTypePRFeedback {
+			branchName := strings.TrimSpace(job.BranchName)
+			if branchName == "" {
+				return fmt.Errorf("resolve pull request branch: branch is empty")
+			}
+			if logger != nil {
+				logger.Printf("syncing repository source checkout job_id=%s repo_dir=%s pull_request_branch=%s", job.ID, repoDir, branchName)
+			}
+			commands := [][]string{
+				{"git", "fetch", "--prune", "origin"},
+				{"git", "checkout", "-f", "-B", branchName, "origin/" + branchName},
+				{"git", "reset", "--hard", "origin/" + branchName},
+				{"git", "clean", "-fd"},
+			}
+			for _, command := range commands {
+				if _, err := runGitCommand(ctx, repoDir, command...); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+
 		branchName := strings.TrimSpace(job.BranchName)
 		if branchName == "" {
-			return fmt.Errorf("resolve pull request branch: branch is empty")
+			branchName = resolveMonitoredRepositoryBranch(cfg, job.Repository)
 		}
+		if branchName == "" {
+			branchName = "main"
+		}
+
+		baseBranch := strings.TrimSpace(resolveMonitoredRepositoryBranch(cfg, job.Repository))
+		var err error
+		if baseBranch == "" {
+			baseBranch, err = resolveRepositoryBaseBranch(ctx, repoDir, "")
+			if err != nil {
+				return err
+			}
+		}
+		if baseBranch == "" {
+			baseBranch = "main"
+		}
+
 		if logger != nil {
-			logger.Printf("syncing repository source checkout job_id=%s repo_dir=%s pull_request_branch=%s", job.ID, repoDir, branchName)
+			logger.Printf("syncing repository source checkout job_id=%s repo_dir=%s branch=%s base_branch=%s", job.ID, repoDir, branchName, baseBranch)
 		}
+
+		if _, err := runGitCommand(ctx, repoDir, "git", "fetch", "--prune", "origin"); err != nil {
+			return err
+		}
+
+		syncBranch := branchName
+		if job.Type == domain.JobTypeIssue && !gitRemoteBranchExists(ctx, repoDir, branchName) {
+			syncBranch = baseBranch
+		}
+
 		commands := [][]string{
-			{"git", "fetch", "--prune", "origin"},
-			{"git", "checkout", "-f", "-B", branchName, "origin/" + branchName},
-			{"git", "reset", "--hard", "origin/" + branchName},
+			{"git", "checkout", "-f", "-B", branchName, "origin/" + syncBranch},
+			{"git", "reset", "--hard", "origin/" + syncBranch},
 			{"git", "clean", "-fd"},
 		}
 		for _, command := range commands {
@@ -973,129 +1090,86 @@ func syncRepositoryWorkspace(ctx context.Context, cfg *config.Service, job domai
 			}
 		}
 		return nil
-	}
-
-	branchName := strings.TrimSpace(job.BranchName)
-	if branchName == "" {
-		branchName = resolveMonitoredRepositoryBranch(cfg, job.Repository)
-	}
-	if branchName == "" {
-		branchName = "main"
-	}
-
-	baseBranch := strings.TrimSpace(resolveMonitoredRepositoryBranch(cfg, job.Repository))
-	var err error
-	if baseBranch == "" {
-		baseBranch, err = resolveRepositoryBaseBranch(ctx, repoDir, "")
-		if err != nil {
-			return err
-		}
-	}
-	if baseBranch == "" {
-		baseBranch = "main"
-	}
-
-	if logger != nil {
-		logger.Printf("syncing repository source checkout job_id=%s repo_dir=%s branch=%s base_branch=%s", job.ID, repoDir, branchName, baseBranch)
-	}
-
-	if _, err := runGitCommand(ctx, repoDir, "git", "fetch", "--prune", "origin"); err != nil {
-		return err
-	}
-
-	syncBranch := branchName
-	if job.Type == domain.JobTypeIssue && !gitRemoteBranchExists(ctx, repoDir, branchName) {
-		syncBranch = baseBranch
-	}
-
-	commands := [][]string{
-		{"git", "checkout", "-f", "-B", branchName, "origin/" + syncBranch},
-		{"git", "reset", "--hard", "origin/" + syncBranch},
-		{"git", "clean", "-fd"},
-	}
-	for _, command := range commands {
-		if _, err := runGitCommand(ctx, repoDir, command...); err != nil {
-			return err
-		}
-	}
-	return nil
+	})
 }
 
 func syncRepositoryImprovementWorkspace(ctx context.Context, cfg *config.Service, repository config.MonitoredRepository, improvementDir string, logger *log.Logger) error {
-	if !repository.ImprovementEnabled {
-		return nil
-	}
-	if domain.IsDummyRepository(repository.Repository) {
-		if logger != nil {
-			logger.Printf("syncing repository improvement checkout skipped repository=%s work_dir=%s reason=dummy_repository", repository.Repository, improvementDir)
+	return withRepositoryWorkspaceLock(repository.Repository, func() error {
+		if !repository.ImprovementEnabled {
+			return nil
 		}
-		return nil
-	}
+		if domain.IsDummyRepository(repository.Repository) {
+			if logger != nil {
+				logger.Printf("syncing repository improvement checkout skipped repository=%s work_dir=%s reason=dummy_repository", repository.Repository, improvementDir)
+			}
+			return nil
+		}
 
-	if cfg == nil {
-		return fmt.Errorf("repository improvement workspace sync requires config")
-	}
-	if _, err := os.Stat(filepath.Join(improvementDir, ".git")); errors.Is(err, os.ErrNotExist) {
-		preparedDir, err := prepareRepositoryImprovementWorkspace(ctx, cfg, repository)
-		if err != nil {
+		if cfg == nil {
+			return fmt.Errorf("repository improvement workspace sync requires config")
+		}
+		if _, err := os.Stat(filepath.Join(improvementDir, ".git")); errors.Is(err, os.ErrNotExist) {
+			preparedDir, err := prepareRepositoryImprovementWorkspaceLocked(ctx, cfg, repository)
+			if err != nil {
+				return err
+			}
+			improvementDir = preparedDir
+		}
+
+		improvementBranch := config.ResolveImprovementBranch(repository)
+		improvementWorkDir := artifacts.RepositoryWorkerImprovementWorkDir(improvementDir, repository.ImprovementDir)
+		if err := os.MkdirAll(improvementWorkDir, 0o755); err != nil {
 			return err
 		}
-		improvementDir = preparedDir
-	}
 
-	improvementBranch := config.ResolveImprovementBranch(repository)
-	improvementWorkDir := artifacts.RepositoryWorkerImprovementWorkDir(improvementDir, repository.ImprovementDir)
-	if err := os.MkdirAll(improvementWorkDir, 0o755); err != nil {
-		return err
-	}
-
-	if logger != nil {
-		logger.Printf("syncing repository improvement checkout repository=%s work_dir=%s branch=%s", repository.Repository, improvementDir, improvementBranch)
-	}
-
-	if _, err := runGitCommand(ctx, improvementDir, "git", "fetch", "--prune", "origin"); err != nil {
-		return err
-	}
-
-	if gitRemoteBranchExists(ctx, improvementDir, improvementBranch) {
-		commands := [][]string{
-			{"git", "checkout", "-f", "-B", improvementBranch, "origin/" + improvementBranch},
-			{"git", "reset", "--hard", "origin/" + improvementBranch},
+		if logger != nil {
+			logger.Printf("syncing repository improvement checkout repository=%s work_dir=%s branch=%s", repository.Repository, improvementDir, improvementBranch)
 		}
-		for _, command := range commands {
-			if _, err := runGitCommand(ctx, improvementDir, command...); err != nil {
+
+		if _, err := runGitCommand(ctx, improvementDir, "git", "fetch", "--prune", "origin"); err != nil {
+			return err
+		}
+
+		if gitRemoteBranchExists(ctx, improvementDir, improvementBranch) {
+			commands := [][]string{
+				{"git", "checkout", "-f", "-B", improvementBranch, "origin/" + improvementBranch},
+				{"git", "reset", "--hard", "origin/" + improvementBranch},
+			}
+			for _, command := range commands {
+				if _, err := runGitCommand(ctx, improvementDir, command...); err != nil {
+					return err
+				}
+			}
+		} else {
+			baseBranch, err := resolveRepositoryBaseBranch(ctx, improvementDir, strings.TrimSpace(repository.Branch))
+			if err != nil {
+				return err
+			}
+			if !gitRemoteBranchExists(ctx, improvementDir, baseBranch) {
+				for _, fallback := range []string{"main", "master", "develop"} {
+					if gitRemoteBranchExists(ctx, improvementDir, fallback) {
+						baseBranch = fallback
+						break
+					}
+				}
+			}
+			if !gitRemoteBranchExists(ctx, improvementDir, baseBranch) {
+				return fmt.Errorf("repository improvement workspace base branch not found")
+			}
+			if _, err := runGitCommand(ctx, improvementDir, "git", "checkout", "-f", "-B", improvementBranch, "origin/"+baseBranch); err != nil {
 				return err
 			}
 		}
-	} else {
-		baseBranch, err := resolveRepositoryBaseBranch(ctx, improvementDir, strings.TrimSpace(repository.Branch))
-		if err != nil {
-			return err
-		}
-		if !gitRemoteBranchExists(ctx, improvementDir, baseBranch) {
-			for _, fallback := range []string{"main", "master", "develop"} {
-				if gitRemoteBranchExists(ctx, improvementDir, fallback) {
-					baseBranch = fallback
-					break
-				}
-			}
-		}
-		if !gitRemoteBranchExists(ctx, improvementDir, baseBranch) {
-			return fmt.Errorf("repository improvement workspace base branch not found")
-		}
-		if _, err := runGitCommand(ctx, improvementDir, "git", "checkout", "-f", "-B", improvementBranch, "origin/"+baseBranch); err != nil {
-			return err
-		}
-	}
 
-	cleanArgs := []string{"git", "clean", "-fd"}
-	if relativeWorkDir, ok := repositoryImprovementWorkDirPattern(improvementDir, improvementWorkDir); ok {
-		cleanArgs = append(cleanArgs, "-e", relativeWorkDir)
-	}
-	if _, err := runGitCommand(ctx, improvementDir, cleanArgs...); err != nil {
-		return err
-	}
-	return nil
+		cleanArgs := []string{"git", "clean", "-fd"}
+		if relativeWorkDir, ok := repositoryImprovementWorkDirPattern(improvementDir, improvementWorkDir); ok {
+			cleanArgs = append(cleanArgs, "-e", relativeWorkDir)
+		}
+		if _, err := runGitCommand(ctx, improvementDir, cleanArgs...); err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 func ensureRepositoryImprovementWorktree(ctx context.Context, repoDir string, worktreeDir string, repository config.MonitoredRepository, branch string) error {
@@ -1175,7 +1249,6 @@ func runGitCommand(ctx context.Context, repoDir string, args ...string) (string,
 }
 
 func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, repository string, workerIndex int, startedAt time.Time) (*log.Logger, func(), error) {
-	_ = fallback
 	logPath := artifacts.RepositoryWorkerLogPath(cfg.Root(), cfg.App().ArtifactsDir, repository, workerIndex, startedAt)
 	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
 		return nil, func() {}, err
@@ -1184,8 +1257,39 @@ func newRepositoryWorkerLogger(cfg *config.Service, fallback *log.Logger, reposi
 	if err != nil {
 		return nil, func() {}, err
 	}
-	logger := log.New(file, "", log.LstdFlags)
+	writer := &repositoryWorkerLogWriter{
+		file:     file,
+		fallback: fallback,
+	}
+	logger := log.New(writer, "", log.LstdFlags)
 	return logger, func() { _ = file.Close() }, nil
+}
+
+type repositoryWorkerLogWriter struct {
+	file     *os.File
+	fallback *log.Logger
+}
+
+func (w *repositoryWorkerLogWriter) Write(p []byte) (int, error) {
+	if w == nil || w.file == nil {
+		return len(p), nil
+	}
+	n, err := w.file.Write(p)
+	if err != nil {
+		return n, err
+	}
+	if w.fallback != nil && repositoryWorkerLogLineIsError(p) {
+		w.fallback.Print(strings.TrimSpace(string(p)))
+	}
+	return n, nil
+}
+
+func repositoryWorkerLogLineIsError(p []byte) bool {
+	line := strings.TrimSpace(string(p))
+	if line == "" {
+		return false
+	}
+	return strings.Contains(line, " error=") || strings.Contains(line, "error=") || strings.Contains(line, " failed") || strings.Contains(line, "failed:")
 }
 
 func repositoryWorkerSourceDir(cfg *config.Service, repository string, workerIndex int) string {
@@ -1322,4 +1426,20 @@ func canonicalRepositoryID(repository string) string {
 		candidate = strings.Join(parts[len(parts)-2:], "/")
 	}
 	return strings.ToLower(candidate)
+}
+
+func withRepositoryWorkspaceLock(repository string, fn func() error) error {
+	key := canonicalRepositoryID(repository)
+	if key == "" {
+		key = strings.TrimSpace(repository)
+	}
+	if key == "" {
+		return fn()
+	}
+
+	lockValue, _ := repositoryWorkspaceLocks.LoadOrStore(key, &sync.Mutex{})
+	lock := lockValue.(*sync.Mutex)
+	lock.Lock()
+	defer lock.Unlock()
+	return fn()
 }
