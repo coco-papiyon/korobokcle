@@ -61,6 +61,11 @@ func runPendingReviews(ctx context.Context, repoRoot string, cfg *config.Service
 			continue
 		}
 
+		if err := syncRepositoryWorkspace(ctx, cfg, jobDetail, repoRoot, logger); err != nil {
+			_ = orch.UpdateJobState(ctx, job.ID, domain.StateFailed, "review_failed", map[string]any{"error": err.Error()})
+			continue
+		}
+
 		if err := orch.UpdateJobState(ctx, job.ID, domain.StateReviewRunning, "review_started", map[string]any{
 			"provider": execution.Provider,
 			"model":    execution.Model,
