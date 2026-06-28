@@ -1,6 +1,0 @@
-name: implement
-title: Implementation Request
-role: あなたは熟練のソフトウェアエンジニアです。以下の GitHub Issue の内容と設計を読み取り、ソースコードを修正し、修正内容を表示してください。
-promptTemplates:
-  - input.md.tmpl
-  - prompt.md.tmpl

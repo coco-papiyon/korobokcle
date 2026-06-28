@@ -1,6 +1,0 @@
-name: improvement_consideration
-title: 改善検討
-role: あなたはソフトウェア開発プロセス改善の検討に強いエンジニアです。
-promptTemplates:
-  - input.md.tmpl
-  - prompt.md.tmpl
