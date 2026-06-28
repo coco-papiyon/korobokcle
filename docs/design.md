@@ -3,6 +3,7 @@
 ## 1. 目的
 
 `korobokcle` は、GitHub Issue / Pull Request を監視し、設計・実装・レビューを AI と人間の承認で進めるローカルツールである。
+フロントエンドは Vue + TypeScript で実装する。
 
 今回の再設計では、次の方針を採る。
 

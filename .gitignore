@@ -1,20 +1,19 @@
 .gocache/
-gocache-local/
-gocache-notify/
 .gocache-*/
 .cache/
+.agents/
 
-data/
-/artifacts/
+/db/
+/workspace/
+/logs/
+/.workspace/
+/config/
+
 frontend/node_modules/
 frontend/dist/
 frontend/.npm-cache/
 frontend/.vite-dist-temp/
 frontend/coverage
 
-release/
-exec/
-tests/
-
 *.exe
-korobokcle
+/korobokcle

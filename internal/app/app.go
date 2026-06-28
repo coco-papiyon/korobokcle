@@ -1,0 +1,177 @@
+package app
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/coco-papiyon/korobokcle/internal/config"
+	"github.com/coco-papiyon/korobokcle/internal/domain"
+	"github.com/coco-papiyon/korobokcle/internal/web"
+)
+
+type Options struct {
+	BaseDir string
+	ToolDir string
+	Addr    string
+}
+
+func Run(ctx context.Context, opts Options) error {
+	cfg := config.Default()
+	if opts.BaseDir != "" {
+		cfg.BaseDir = opts.BaseDir
+	}
+	if opts.ToolDir != "" {
+		cfg.ToolDir = opts.ToolDir
+	}
+	if opts.Addr != "" {
+		cfg.Addr = opts.Addr
+	}
+	if cfg.Repository == "" {
+		if repo, err := inferRepository(cfg.BaseDir); err == nil {
+			cfg.Repository = repo
+		}
+	}
+
+	if err := ensureDirs(cfg); err != nil {
+		return err
+	}
+
+	infoLogger := log.New(os.Stdout, "INFO ", log.LstdFlags|log.Lmicroseconds)
+	debugLogger, logFile, err := newDebugLogger(filepath.Join(cfg.ToolDir, "logs", "korobokcle.log"))
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	logger := &appLogger{
+		info:  infoLogger,
+		debug: debugLogger,
+	}
+
+	store, err := NewFileJobStore(filepath.Join(cfg.ToolDir, "db", "jobs.json"))
+	if err != nil {
+		return err
+	}
+
+	settingsStore, err := NewFileSettingsStore(filepath.Join(cfg.ToolDir, "config", "settings.json"), domain.WatchSettings{
+		Repository: cfg.Repository,
+		AIProvider: domain.AIProviderCodex,
+		Models: domain.AIModels{
+			Codex:         domain.ModelSelection{Mode: domain.ModelModeDefault},
+			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeDefault},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	if settings, err := settingsStore.Load(ctx); err == nil {
+		if strings.TrimSpace(settings.Repository) != "" {
+			cfg.Repository = settings.Repository
+		}
+		cfg.PollInterval = settings.PollIntervalDuration()
+	}
+
+	processor := NewWorkflowProcessor(store, settingsStore, cfg.BaseDir, cfg.ToolDir, logger)
+	manager := NewWorkerManager(cfg, infoLogger, processor)
+	if err := manager.Start(ctx); err != nil {
+		return err
+	}
+
+	poller := NewPoller(cfg, NewGitHubSource(settingsStore, cfg.Repository, logger), store, settingsStore, manager)
+	go func() {
+		if err := poller.Run(ctx); err != nil && ctx.Err() == nil {
+			infoLogger.Printf("poller error: %v", err)
+		}
+	}()
+
+	srv := web.NewServer(cfg, store, settingsStore)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- srv.ListenAndServe()
+	}()
+
+	select {
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		shutdownErr := srv.Shutdown(shutdownCtx)
+		manager.Wait()
+		return shutdownErr
+	case err := <-errCh:
+		if err == nil || err == http.ErrServerClosed {
+			return nil
+		}
+		return err
+	}
+}
+
+type appLogger struct {
+	info  *log.Logger
+	debug *log.Logger
+}
+
+func (l *appLogger) Infof(format string, args ...any) {
+	if l == nil || l.info == nil {
+		return
+	}
+	l.info.Printf(format, args...)
+}
+
+func (l *appLogger) Debugf(format string, args ...any) {
+	if l == nil || l.debug == nil {
+		return
+	}
+	l.debug.Printf(format, args...)
+}
+
+func newDebugLogger(path string) (*log.Logger, *os.File, error) {
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open debug log: %w", err)
+	}
+	return log.New(file, "DEBUG ", log.LstdFlags|log.Lmicroseconds), file, nil
+}
+
+func inferRepository(baseDir string) (string, error) {
+	cmd := exec.Command("git", "-C", baseDir, "remote", "get-url", "origin")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	url := strings.TrimSpace(string(out))
+	switch {
+	case strings.HasPrefix(url, "git@github.com:"):
+		return strings.TrimSuffix(strings.TrimPrefix(url, "git@github.com:"), ".git"), nil
+	case strings.HasPrefix(url, "https://github.com/"):
+		return strings.TrimSuffix(strings.TrimPrefix(url, "https://github.com/"), ".git"), nil
+	default:
+		return "", fmt.Errorf("unsupported repository url: %s", url)
+	}
+}
+
+func ensureDirs(cfg config.Config) error {
+	dirs := []string{
+		cfg.BaseDir,
+		cfg.ToolDir,
+		filepath.Join(cfg.BaseDir, ".workspace"),
+		filepath.Join(cfg.ToolDir, "config"),
+		filepath.Join(cfg.ToolDir, "db"),
+		filepath.Join(cfg.ToolDir, "workspace"),
+		filepath.Join(cfg.ToolDir, "logs"),
+	}
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create dir %q: %w", dir, err)
+		}
+	}
+	return nil
+}
