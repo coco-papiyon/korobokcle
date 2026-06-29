@@ -542,7 +542,7 @@ h1 {
 
 .detail {
   display: grid;
-  gap: 18px;
+  gap: 8px;
 }
 
 .detail__header {
@@ -550,6 +550,7 @@ h1 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 0;
 }
 
 .detail__header-actions {
@@ -563,19 +564,65 @@ h1 {
 .detail__header h3 {
   margin: 0;
   font-size: 1.2rem;
+  line-height: 1.2;
 }
 
 .detail__meta {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.detail__meta-item {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+  padding: 12px 12px 10px;
+  border: 1px solid rgba(18, 32, 51, 0.08);
+  border-radius: 14px;
+  background: rgba(248, 250, 253, 0.78);
+}
+
+.detail__meta-item dt {
+  font-size: 0.74rem;
+  letter-spacing: 0.03em;
+  color: rgba(18, 32, 51, 0.56);
+  text-transform: uppercase;
+}
+
+.detail__meta-item dd {
+  margin: 0;
+  min-width: 0;
+  font-size: 0.92rem;
+  color: #122033;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.detail__meta-item code {
+  font-family:
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    Menlo,
+    monospace;
+  font-size: 0.86rem;
+  color: #243b64;
+}
+
+.detail__meta-value--number {
+  color: rgba(18, 32, 51, 0.76);
+  font-size: 0.94rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .detail-artifact {
   display: grid;
-  gap: 18px;
-  margin-top: 6px;
-  padding-top: 18px;
+  gap: 14px;
+  margin-top: 0;
+  padding-top: 8px;
   border-top: 1px solid rgba(18, 32, 51, 0.1);
 }
 
@@ -661,6 +708,10 @@ h1 {
 
   .detail__meta {
     grid-template-columns: 1fr;
+  }
+
+  .detail__meta-item {
+    padding: 10px 10px 9px;
   }
 
   .detail__actions {

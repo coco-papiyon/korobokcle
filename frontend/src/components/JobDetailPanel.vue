@@ -87,7 +87,7 @@ function artifactTitle(job: Job | null) {
 }
 
 async function loadJobDetail(id: string) {
-	const requestSequence = ++detailRequestSequence
+  const requestSequence = ++detailRequestSequence
   if (!id) {
     detailJob.value = null
     return
@@ -232,25 +232,17 @@ watch(
       </div>
 
       <dl class="detail__meta">
-        <div>
-          <dt>ID</dt>
-          <dd>{{ detailJob.id }}</dd>
-        </div>
-        <div>
+        <div class="detail__meta-item">
           <dt>Kind</dt>
-          <dd>{{ detailJob.kind }}</dd>
+          <dd><code>{{ detailJob.kind }}</code></dd>
         </div>
-        <div>
-          <dt>State</dt>
-          <dd>{{ detailJob.state }}</dd>
+        <div class="detail__meta-item">
+          <dt>ID</dt>
+          <dd><code>{{ detailJob.id }}</code></dd>
         </div>
-        <div>
-          <dt>Repository</dt>
-          <dd>{{ detailJob.repository }}</dd>
-        </div>
-        <div>
+        <div class="detail__meta-item">
           <dt>Number</dt>
-          <dd>#{{ detailJob.number }}</dd>
+          <dd class="detail__meta-value--number">#{{ detailJob.number }}</dd>
         </div>
       </dl>
 
