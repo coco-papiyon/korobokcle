@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -149,6 +150,15 @@ func (w *CodexWorker) SendPromptAt(ctx context.Context, prompt, dir, model strin
 		case <-w.rpc.done:
 			return "", w.rpc.processError()
 		}
+	}
+}
+
+func (w *CodexWorker) SetOutputWriters(stdout, stderr io.Writer) {
+	w.mu.RLock()
+	p := w.rpc
+	w.mu.RUnlock()
+	if p != nil {
+		p.setOutputWriters(stdout, stderr)
 	}
 }
 

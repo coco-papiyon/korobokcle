@@ -50,6 +50,9 @@ type rpcProcess struct {
 	waitErr        error
 	serverResponse func(string) any
 	includeJSONRPC bool
+	outputMu       sync.RWMutex
+	stdoutWriter   io.Writer
+	stderrWriter   io.Writer
 }
 
 func startRPC(ctx context.Context, command string, args, env []string, dir string) (*rpcProcess, error) {
@@ -64,7 +67,10 @@ func startRPC(ctx context.Context, command string, args, env []string, dir strin
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stderr = os.Stderr
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -77,6 +83,7 @@ func startRPC(ctx context.Context, command string, args, env []string, dir strin
 		includeJSONRPC: true,
 	}
 	go p.read(stdout)
+	go p.readRaw(stderr, true)
 	go func() {
 		err := cmd.Wait()
 		p.waitErrMu.Lock()
@@ -91,6 +98,7 @@ func (p *rpcProcess) read(r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for scanner.Scan() {
+		p.writeRaw(scanner.Bytes(), false)
 		var msg rpcMessage
 		if err := json.Unmarshal(scanner.Bytes(), &msg); err != nil {
 			continue
@@ -123,6 +131,39 @@ func (p *rpcProcess) read(r io.Reader) {
 		p.waitErr = err
 		p.waitErrMu.Unlock()
 	}
+}
+
+func (p *rpcProcess) readRaw(r io.Reader, stderr bool) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		p.writeRaw(scanner.Bytes(), stderr)
+	}
+	if err := scanner.Err(); err != nil {
+		p.waitErrMu.Lock()
+		p.waitErr = err
+		p.waitErrMu.Unlock()
+	}
+}
+
+func (p *rpcProcess) setOutputWriters(stdout, stderr io.Writer) {
+	p.outputMu.Lock()
+	defer p.outputMu.Unlock()
+	p.stdoutWriter = stdout
+	p.stderrWriter = stderr
+}
+
+func (p *rpcProcess) writeRaw(line []byte, stderr bool) {
+	p.outputMu.RLock()
+	writer := p.stdoutWriter
+	if stderr {
+		writer = p.stderrWriter
+	}
+	p.outputMu.RUnlock()
+	if writer == nil {
+		return
+	}
+	_, _ = writer.Write(append(append([]byte(nil), line...), '\n'))
 }
 
 func (p *rpcProcess) call(ctx context.Context, method string, params, result any) error {

@@ -72,6 +72,21 @@ func TestWorkflowProcessorProcessesDesignJob(t *testing.T) {
 	if content != want {
 		t.Fatalf("artifact content = %q, want %q", content, want)
 	}
+
+	stdoutRaw, err := os.ReadFile(filepath.Join(toolDir, "logs", "114", "design_stdout.log"))
+	if err != nil {
+		t.Fatalf("ReadFile stdout log error = %v", err)
+	}
+	if !strings.Contains(string(stdoutRaw), "fake stdout") {
+		t.Fatalf("stdout log = %q, want fake stdout", string(stdoutRaw))
+	}
+	stderrRaw, err := os.ReadFile(filepath.Join(toolDir, "logs", "114", "design_stderr.log"))
+	if err != nil {
+		t.Fatalf("ReadFile stderr log error = %v", err)
+	}
+	if !strings.Contains(string(stderrRaw), "fake stderr") {
+		t.Fatalf("stderr log = %q, want fake stderr", string(stderrRaw))
+	}
 }
 
 func TestWorkflowProcessorProcessesImplementationJob(t *testing.T) {
@@ -159,6 +174,54 @@ func TestWorkflowProcessorProcessesImplementationJob(t *testing.T) {
 	}
 }
 
+func TestWorkDirForJobPrunesMissingRegisteredWorktree(t *testing.T) {
+	baseDir := t.TempDir()
+	toolDir := t.TempDir()
+	settings := domain.NormalizeWatchSettings(domain.WatchSettings{
+		BranchNamePattern: "issue_#<issue番号>",
+	})
+	job := domain.Job{
+		ID:         "issue-114",
+		Kind:       domain.JobKindIssueImplementation,
+		State:      domain.StateDesignApproved,
+		Repository: "owner/repo",
+		Number:     114,
+		Title:      "画面構成変更",
+	}
+
+	runGitTestCommand(t, baseDir, "init", "-b", "main")
+	runGitTestCommand(t, baseDir, "config", "user.email", "test@example.com")
+	runGitTestCommand(t, baseDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(baseDir, "README.md"), []byte("before\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGitTestCommand(t, baseDir, "add", "README.md")
+	runGitTestCommand(t, baseDir, "commit", "-m", "initial")
+
+	processor := &WorkflowProcessor{baseDir: baseDir, toolDir: toolDir}
+	worktreePath := implementationWorktreePath(toolDir, job)
+	if _, _, err := processor.workDirForJob(context.Background(), job, settings); err != nil {
+		t.Fatalf("initial workDirForJob() error = %v", err)
+	}
+	if err := os.RemoveAll(worktreePath); err != nil {
+		t.Fatalf("RemoveAll() error = %v", err)
+	}
+
+	workDir, branch, err := processor.workDirForJob(context.Background(), job, settings)
+	if err != nil {
+		t.Fatalf("workDirForJob() error = %v", err)
+	}
+	if workDir != worktreePath {
+		t.Fatalf("workDir = %q, want %q", workDir, worktreePath)
+	}
+	if branch != "issue_#114" {
+		t.Fatalf("branch = %q, want issue_#114", branch)
+	}
+	if _, err := os.Stat(filepath.Join(worktreePath, ".git")); err != nil {
+		t.Fatalf("worktree was not recreated: %v", err)
+	}
+}
+
 func TestAppendIssueAILog(t *testing.T) {
 	toolDir := t.TempDir()
 	processor := &WorkflowProcessor{toolDir: toolDir}
@@ -208,7 +271,13 @@ type fakeAIRunner struct {
 	err      error
 }
 
-func (r fakeAIRunner) Run(context.Context, AIRequest) (AIResponse, error) {
+func (r fakeAIRunner) Run(_ context.Context, req AIRequest) (AIResponse, error) {
+	if req.Stdout != nil {
+		_, _ = req.Stdout.Write([]byte("fake stdout\n"))
+	}
+	if req.Stderr != nil {
+		_, _ = req.Stderr.Write([]byte("fake stderr\n"))
+	}
 	return r.response, r.err
 }
 

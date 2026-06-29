@@ -3,6 +3,7 @@ package agentworker
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 )
 
@@ -15,6 +16,7 @@ var (
 // RequestWorker is the subset of worker behavior used by the application.
 type RequestWorker interface {
 	Start(context.Context) error
+	SetOutputWriters(io.Writer, io.Writer)
 	SendPromptAt(context.Context, string, string, string) (string, error)
 	GetStatus() Status
 	Stop(context.Context) error

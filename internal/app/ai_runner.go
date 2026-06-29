@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,8 @@ type AIRequest struct {
 	Prompt      string
 	WorkingDir  string
 	ExpectPatch bool
+	Stdout      io.Writer
+	Stderr      io.Writer
 }
 
 type AIResponse struct {
@@ -115,6 +118,8 @@ func (r *CLIAIRunner) Run(ctx context.Context, req AIRequest) (AIResponse, error
 		r.mu.Unlock()
 	}
 	prompt := strings.TrimSpace(req.System + "\n\n" + req.Prompt)
+	w.SetOutputWriters(req.Stdout, req.Stderr)
+	defer w.SetOutputWriters(nil, nil)
 	out, err := w.SendPromptAt(ctx, prompt, req.WorkingDir, req.Model)
 	if err != nil {
 		return AIResponse{}, fmt.Errorf("%s prompt: %w", req.Provider, err)

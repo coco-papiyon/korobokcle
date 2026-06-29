@@ -203,6 +203,13 @@ func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings 
 	if p.runner == nil {
 		return "", fmt.Errorf("AI runner is not configured")
 	}
+	stdoutLog, stderrLog, err := p.openAIProcessLogs(job)
+	if err != nil {
+		return "", err
+	}
+	defer stdoutLog.Close()
+	defer stderrLog.Close()
+
 	model := selectedModel(settings, providerKey(settings.AIProvider))
 	prompt := p.buildPrompt(job, settings, feedback, contextText, workDir, branch, runningState, readyState)
 	req := AIRequest{
@@ -212,6 +219,8 @@ func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings 
 		Prompt:      prompt,
 		WorkingDir:  workDir,
 		ExpectPatch: implementationJob(job),
+		Stdout:      stdoutLog,
+		Stderr:      stderrLog,
 	}
 	p.appendIssueAILog(job, "request", strings.Join([]string{
 		fmt.Sprintf("provider: %s", settings.AIProvider),
@@ -256,6 +265,27 @@ func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings 
 		}
 	}
 	return p.decorateArtifact(job, response.ArtifactMarkdown), nil
+}
+
+func (p *WorkflowProcessor) openAIProcessLogs(job domain.Job) (*os.File, *os.File, error) {
+	logDir := filepath.Join(p.toolDir, "logs", fmt.Sprintf("%d", job.Number))
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return nil, nil, fmt.Errorf("create AI process log dir: %w", err)
+	}
+	prefix := artifactSubdir(job)
+	if strings.TrimSpace(prefix) == "" {
+		prefix = "job"
+	}
+	stdoutLog, err := os.OpenFile(filepath.Join(logDir, prefix+"_stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open AI stdout log: %w", err)
+	}
+	stderrLog, err := os.OpenFile(filepath.Join(logDir, prefix+"_stderr.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		_ = stdoutLog.Close()
+		return nil, nil, fmt.Errorf("open AI stderr log: %w", err)
+	}
+	return stdoutLog, stderrLog, nil
 }
 
 func (p *WorkflowProcessor) buildPrompt(job domain.Job, settings domain.WatchSettings, feedback string, contextText string, workDir string, branch string, runningState, readyState domain.JobState) string {
@@ -357,16 +387,35 @@ func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, s
 		}
 		return worktreePath, worktreeBranch, nil
 	}
-	if err := runGit(ctx, p.baseDir, "worktree", "add", "-B", worktreeBranch, worktreePath, "HEAD"); err != nil {
+	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
+		if pruneErr := runGit(ctx, p.baseDir, "worktree", "prune"); pruneErr != nil {
+			return "", "", fmt.Errorf("prune stale worktrees: %w", pruneErr)
+		}
+	}
+	if err := addImplementationWorktree(ctx, p.baseDir, worktreeBranch, worktreePath); err != nil {
 		if !strings.Contains(err.Error(), "already used by worktree") {
 			return "", "", fmt.Errorf("create worktree: %w", err)
 		}
 		worktreeBranch = implementationWorktreeBranchName(branch, job)
-		if retryErr := runGit(ctx, p.baseDir, "worktree", "add", "-B", worktreeBranch, worktreePath, "HEAD"); retryErr != nil {
+		if retryErr := addImplementationWorktree(ctx, p.baseDir, worktreeBranch, worktreePath); retryErr != nil {
 			return "", "", fmt.Errorf("create worktree: %w", retryErr)
 		}
 	}
 	return worktreePath, worktreeBranch, nil
+}
+
+func addImplementationWorktree(ctx context.Context, baseDir, branch, worktreePath string) error {
+	err := runGit(ctx, baseDir, "worktree", "add", "-B", branch, worktreePath, "HEAD")
+	if err == nil {
+		return nil
+	}
+	if !strings.Contains(err.Error(), "missing but already registered worktree") {
+		return err
+	}
+	if pruneErr := runGit(ctx, baseDir, "worktree", "prune"); pruneErr != nil {
+		return fmt.Errorf("%w; prune stale worktree: %v", err, pruneErr)
+	}
+	return runGit(ctx, baseDir, "worktree", "add", "-B", branch, worktreePath, "HEAD")
 }
 
 func (p *WorkflowProcessor) applyGitDiff(ctx context.Context, workDir string, diff string) error {

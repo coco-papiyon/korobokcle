@@ -3,6 +3,7 @@ package agentworker
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -160,6 +161,15 @@ func (w *CopilotWorker) startSession(ctx context.Context, dir string) (string, e
 	w.sessionID = session.SessionID
 	w.mu.Unlock()
 	return session.SessionID, nil
+}
+
+func (w *CopilotWorker) SetOutputWriters(stdout, stderr io.Writer) {
+	w.mu.RLock()
+	p := w.rpc
+	w.mu.RUnlock()
+	if p != nil {
+		p.setOutputWriters(stdout, stderr)
+	}
 }
 
 func (w *CopilotWorker) GetStatus() Status {
