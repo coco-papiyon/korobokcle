@@ -167,6 +167,31 @@ h1 {
   font-size: 0.88rem;
 }
 
+.job-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.job-list-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(18, 32, 51, 0.78);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.job-list-filter input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #2f5bea;
+}
+
 .skill-select-all,
 .skill-status-card__select {
   display: inline-flex;
