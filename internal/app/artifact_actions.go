@@ -187,9 +187,20 @@ func (s *ArtifactActionService) createPullRequest(ctx context.Context, job domai
 	if err := ensureBranchHasCommit(ctx, repoDir, branch); err != nil {
 		return err
 	}
+	baseBranch := "main"
+	if s.settings != nil {
+		settings, err := s.settings.Load(ctx)
+		if err == nil && strings.TrimSpace(settings.BaseBranch) != "" {
+			baseBranch = strings.TrimSpace(settings.BaseBranch)
+		}
+	}
+	if err := publishBranch(ctx, repoDir, branch); err != nil {
+		return err
+	}
 	args := []string{
 		"pr", "create",
 		"--repo", job.Repository,
+		"--base", baseBranch,
 		"--title", job.Title,
 		"--body", body,
 		"--head", branch,
@@ -302,6 +313,13 @@ func ensureBranchHasCommit(ctx context.Context, baseDir, branch string) error {
 		return nil
 	}
 	return runGit(ctx, baseDir, "commit", "--allow-empty", "-m", "chore: prepare PR for "+branch)
+}
+
+func publishBranch(ctx context.Context, baseDir, branch string) error {
+	if branch == "" {
+		return fmt.Errorf("branch name is required")
+	}
+	return runGit(ctx, baseDir, "push", "-u", "origin", branch)
 }
 
 func stageAndCommitIfNeeded(ctx context.Context, repoDir string, message string) error {

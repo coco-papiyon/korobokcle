@@ -38,6 +38,7 @@ export type WatchSettings = {
   repository: string
   aiProvider: AIProvider
   pollIntervalSeconds: number
+  baseBranch: string
   branchNamePattern: string
   models: AIModels
   issue: SearchCondition

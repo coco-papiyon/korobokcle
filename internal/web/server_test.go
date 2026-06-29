@@ -202,6 +202,7 @@ func (a *testSkillActions) GenerateSkills(_ context.Context, _ domain.SkillGener
 func TestSettingsAPI(t *testing.T) {
 	store := newTestSettingsStore(domain.WatchSettings{
 		Repository: "owner/repo",
+		BaseBranch: "develop",
 		AIProvider: domain.AIProviderGitHubCopilot,
 		Models: domain.AIModels{
 			Codex:         domain.ModelSelection{Mode: domain.ModelModeDefault},
@@ -227,6 +228,9 @@ func TestSettingsAPI(t *testing.T) {
 	if settings.PollIntervalSeconds != 120 {
 		t.Fatalf("poll interval = %d, want 120", settings.PollIntervalSeconds)
 	}
+	if settings.BaseBranch != "develop" {
+		t.Fatalf("base branch = %q, want develop", settings.BaseBranch)
+	}
 	if settings.BranchNamePattern != "issue_#<issue番号>" {
 		t.Fatalf("branch name pattern = %q, want issue_#<issue番号>", settings.BranchNamePattern)
 	}
@@ -241,6 +245,7 @@ func TestSettingsAPI(t *testing.T) {
 		Repository:          "owner/updated",
 		AIProvider:          domain.AIProviderCodex,
 		PollIntervalSeconds: 240,
+		BaseBranch:          "release",
 		BranchNamePattern:   "feature/<issue番号>",
 		Models: domain.AIModels{
 			Codex: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "codex-1"},
@@ -271,6 +276,9 @@ func TestSettingsAPI(t *testing.T) {
 	}
 	if updated.PollIntervalSeconds != 240 {
 		t.Fatalf("updated poll interval = %d, want 240", updated.PollIntervalSeconds)
+	}
+	if updated.BaseBranch != "release" {
+		t.Fatalf("updated base branch = %q, want release", updated.BaseBranch)
 	}
 	if updated.BranchNamePattern != "feature/<issue番号>" {
 		t.Fatalf("updated branch name pattern = %q, want feature/<issue番号>", updated.BranchNamePattern)

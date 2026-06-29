@@ -10,6 +10,7 @@ const settingsForm = ref({
   repository: '',
   aiProvider: 'codex' as AIProvider,
   pollIntervalSeconds: 120,
+  baseBranch: 'main',
   branchNamePattern: 'issue_#<issue番号>',
   codexModelSelection: 'default',
   githubCopilotModelSelection: 'default',
@@ -84,6 +85,7 @@ function settingsToForm(settings: WatchSettings) {
   settingsForm.value.repository = settings.repository ?? ''
   settingsForm.value.aiProvider = settings.aiProvider ?? 'codex'
   settingsForm.value.pollIntervalSeconds = settings.pollIntervalSeconds ?? 120
+  settingsForm.value.baseBranch = settings.baseBranch?.trim() || 'main'
   settingsForm.value.branchNamePattern = settings.branchNamePattern?.trim() || 'issue_#<issue番号>'
   settingsForm.value.codexModelSelection = codexModel?.mode === 'custom' && codexModel.value ? codexModel.value : 'default'
   settingsForm.value.githubCopilotModelSelection =
@@ -110,6 +112,7 @@ function formToSettings(): WatchSettings {
       Number.isFinite(settingsForm.value.pollIntervalSeconds) && settingsForm.value.pollIntervalSeconds > 0
         ? Math.floor(settingsForm.value.pollIntervalSeconds)
         : 120,
+    baseBranch: settingsForm.value.baseBranch.trim() || 'main',
     branchNamePattern: settingsForm.value.branchNamePattern.trim() || 'issue_#<issue番号>',
     models: {
       codex: codexSelection === 'default' ? { mode: 'default', value: '' } : { mode: 'custom', value: codexSelection },
@@ -224,6 +227,12 @@ onMounted(() => {
     <label class="field field--full">
       <span>監視間隔（秒）</span>
       <input v-model.number="settingsForm.pollIntervalSeconds" class="control" type="number" min="1" step="1" />
+    </label>
+
+    <label class="field field--full">
+      <span>ベースブランチ</span>
+      <input v-model="settingsForm.baseBranch" class="control" type="text" placeholder="main" />
+      <span class="field-note">PR 作成時に `gh pr create --base` へ渡すブランチ名。</span>
     </label>
 
     <label class="field field--full">

@@ -122,6 +122,32 @@ func TestEnsureBranchHasCommitAddsEmptyCommit(t *testing.T) {
 	}
 }
 
+func TestPublishBranchPushesToOrigin(t *testing.T) {
+	baseDir := t.TempDir()
+	remoteDir := filepath.Join(baseDir, "remote.git")
+	repoDir := filepath.Join(baseDir, "repo")
+
+	runGitTestCommand(t, baseDir, "init", "--bare", remoteDir)
+	runGitTestCommand(t, baseDir, "clone", remoteDir, repoDir)
+	runGitTestCommand(t, repoDir, "config", "user.email", "test@example.com")
+	runGitTestCommand(t, repoDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(repoDir, "README.md"), []byte("hello"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGitTestCommand(t, repoDir, "add", "README.md")
+	runGitTestCommand(t, repoDir, "commit", "-m", "initial")
+	runGitTestCommand(t, repoDir, "checkout", "-b", "issue_#114")
+
+	if err := publishBranch(context.Background(), repoDir, "issue_#114"); err != nil {
+		t.Fatalf("publishBranch() error = %v", err)
+	}
+
+	remoteBranch := strings.TrimSpace(runGitTestOutput(t, remoteDir, "rev-parse", "--verify", "refs/heads/issue_#114"))
+	if remoteBranch == "" {
+		t.Fatal("remote branch was not created")
+	}
+}
+
 func runGitTestCommand(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)

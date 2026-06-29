@@ -62,6 +62,7 @@ func Run(ctx context.Context, opts Options) error {
 	settingsStore, err := NewFileSettingsStore(filepath.Join(cfg.ToolDir, "config", "settings.json"), domain.WatchSettings{
 		Repository:        cfg.Repository,
 		AIProvider:        domain.AIProviderCodex,
+		BaseBranch:        "main",
 		BranchNamePattern: "issue_#<issue番号>",
 		Models: domain.AIModels{
 			Codex:         domain.ModelSelection{Mode: domain.ModelModeDefault},
