@@ -14,3 +14,6 @@ description: Issueをもとに設計をまとめる。Issue起点で要件整理
 ## 変更対象ファイル
 ## テスト計画
 ## リスク
+
+`テスト計画` には、テスト方法を明記する。
+Go言語を修正した場合は、 `go test ./...` 、npm(Vue.js)を修正した場合は `cd frontend && npm test` を記載する。

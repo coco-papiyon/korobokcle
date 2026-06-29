@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	agentworker "github.com/coco-papiyon/agent-worker"
+	"github.com/coco-papiyon/korobokcle/internal/agentworker"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
 
