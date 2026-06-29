@@ -83,3 +83,49 @@ func TestWorkerManagerRequiresStart(t *testing.T) {
 		t.Fatal("expected error before start")
 	}
 }
+
+func TestWorkerManagerOwnsProcessorLifecycle(t *testing.T) {
+	cfg := config.Default()
+	cfg.DesignWorkers = 1
+	cfg.ImplementationWorkers = 1
+	cfg.ReviewWorkers = 1
+
+	ctx, cancel := context.WithCancel(context.Background())
+	var mu sync.Mutex
+	starts, stops := 0, 0
+	manager := NewWorkerManagerWithFactory(cfg, nil, func() WorkerProcessor {
+		return &lifecycleTestProcessor{mu: &mu, starts: &starts, stops: &stops}
+	})
+	if err := manager.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	cancel()
+	manager.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
+	if starts != 4 || stops != 4 {
+		t.Fatalf("processor lifecycle starts=%d stops=%d, want 4/4", starts, stops)
+	}
+}
+
+type lifecycleTestProcessor struct {
+	mu            *sync.Mutex
+	starts, stops *int
+}
+
+func (p *lifecycleTestProcessor) Start(context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	*p.starts++
+	return nil
+}
+
+func (p *lifecycleTestProcessor) Process(context.Context, domain.Job) error { return nil }
+
+func (p *lifecycleTestProcessor) Stop(context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	*p.stops++
+	return nil
+}

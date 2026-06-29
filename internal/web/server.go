@@ -24,12 +24,34 @@ type SettingsStore interface {
 	Save(context.Context, domain.WatchSettings) error
 }
 
-type Server struct {
-	httpServer *http.Server
+type ArtifactActions interface {
+	GetArtifact(context.Context, string) (DesignArtifact, error)
+	ApproveArtifact(context.Context, string, string) (domain.Job, error)
+	RerunArtifact(context.Context, string, string) (domain.Job, error)
 }
 
-func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore) *Server {
+type SkillActions interface {
+	SkillStatus(context.Context) ([]domain.SkillStatus, error)
+	GenerateSkills(context.Context, domain.SkillGenerationRequest) (domain.SkillGenerationResult, error)
+}
+
+type DesignArtifact struct {
+	Content string `json:"content"`
+	Path    string `json:"path"`
+}
+
+type Server struct {
+	httpServer      *http.Server
+	artifactActions ArtifactActions
+	skillActions    SkillActions
+}
+
+func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, artifactActions ArtifactActions, optionalSkillActions ...SkillActions) *Server {
 	mux := http.NewServeMux()
+	var skillActions SkillActions
+	if len(optionalSkillActions) > 0 {
+		skillActions = optionalSkillActions[0]
+	}
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -101,6 +123,57 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore) *
 		}
 
 		id := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
+		if strings.HasSuffix(id, "/artifact") {
+			id = strings.TrimSuffix(id, "/artifact")
+			if id == "" {
+				http.NotFound(w, r)
+				return
+			}
+			if artifactActions == nil {
+				http.Error(w, "artifact actions not configured", http.StatusServiceUnavailable)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				artifact, err := artifactActions.GetArtifact(r.Context(), id)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusNotFound)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(artifact)
+			case http.MethodPost:
+				var req struct {
+					Comment string `json:"comment"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				job, err := artifactActions.ApproveArtifact(r.Context(), id, req.Comment)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(job)
+			case http.MethodPatch:
+				var req struct {
+					Comment string `json:"comment"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				job, err := artifactActions.RerunArtifact(r.Context(), id, req.Comment)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(job)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
 		if strings.HasSuffix(id, "/state") {
 			id = strings.TrimSuffix(id, "/state")
 			if id == "" {
@@ -197,6 +270,37 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore) *
 		}
 	})
 
+	mux.HandleFunc("/api/skills", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		if skillActions == nil {
+			http.Error(w, "skill generator not configured", http.StatusServiceUnavailable)
+			return
+		}
+		switch r.Method {
+		case http.MethodGet:
+			statuses, err := skillActions.SkillStatus(r.Context())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"skills": statuses})
+		case http.MethodPost:
+			var req domain.SkillGenerationRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			result, err := skillActions.GenerateSkills(r.Context(), req)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(result)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			http.NotFound(w, r)
@@ -232,6 +336,8 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore) *
 			Addr:    cfg.Addr,
 			Handler: mux,
 		},
+		artifactActions: artifactActions,
+		skillActions:    skillActions,
 	}
 }
 

@@ -60,8 +60,9 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	settingsStore, err := NewFileSettingsStore(filepath.Join(cfg.ToolDir, "config", "settings.json"), domain.WatchSettings{
-		Repository: cfg.Repository,
-		AIProvider: domain.AIProviderCodex,
+		Repository:        cfg.Repository,
+		AIProvider:        domain.AIProviderCodex,
+		BranchNamePattern: "issue_#<issue番号>",
 		Models: domain.AIModels{
 			Codex:         domain.ModelSelection{Mode: domain.ModelModeDefault},
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeDefault},
@@ -77,20 +78,23 @@ func Run(ctx context.Context, opts Options) error {
 		cfg.PollInterval = settings.PollIntervalDuration()
 	}
 
-	processor := NewWorkflowProcessor(store, settingsStore, cfg.BaseDir, cfg.ToolDir, logger)
-	manager := NewWorkerManager(cfg, infoLogger, processor)
+	feedbackStore := NewFileDesignFeedbackStore(filepath.Join(cfg.ToolDir, "workspace", "design_feedback"))
+	processorFactory := NewWorkflowProcessorFactory(store, settingsStore, feedbackStore, cfg.BaseDir, cfg.ToolDir, logger)
+	manager := NewWorkerManagerWithFactory(cfg, infoLogger, processorFactory)
 	if err := manager.Start(ctx); err != nil {
 		return err
 	}
 
 	poller := NewPoller(cfg, NewGitHubSource(settingsStore, cfg.Repository, logger), store, settingsStore, manager)
+	artifactActions := NewArtifactActionService(store, settingsStore, manager, feedbackStore, cfg.BaseDir, cfg.ToolDir, logger, poller)
+	skillGenerator := NewSkillGenerator(cfg.BaseDir, cfg.ToolDir, settingsStore, logger)
 	go func() {
 		if err := poller.Run(ctx); err != nil && ctx.Err() == nil {
 			infoLogger.Printf("poller error: %v", err)
 		}
 	}()
 
-	srv := web.NewServer(cfg, store, settingsStore)
+	srv := web.NewServer(cfg, store, settingsStore, artifactActions, skillGenerator)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- srv.ListenAndServe()
@@ -131,6 +135,9 @@ func (l *appLogger) Debugf(format string, args ...any) {
 }
 
 func newDebugLogger(path string) (*log.Logger, *os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, nil, fmt.Errorf("create debug log dir: %w", err)
+	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open debug log: %w", err)
@@ -162,8 +169,10 @@ func ensureDirs(cfg config.Config) error {
 		filepath.Join(cfg.BaseDir, ".workspace"),
 		filepath.Join(cfg.ToolDir, "config"),
 		filepath.Join(cfg.ToolDir, "db"),
+		filepath.Join(cfg.ToolDir, "prompt"),
 		filepath.Join(cfg.ToolDir, "workspace"),
 		filepath.Join(cfg.ToolDir, "logs"),
+		filepath.Join(cfg.ToolDir, "logs", "skill"),
 	}
 	for _, dir := range dirs {
 		if dir == "" {

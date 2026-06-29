@@ -117,6 +117,7 @@ base_dir/
 tool_dir/
   config/
   db/
+  prompt/
   workspace/
   logs/
   static/
@@ -130,6 +131,10 @@ tool_dir/
   - 監視設定
 - `db/`
   - SQLite
+- `prompt/`
+  - AIへ渡す編集可能なプロンプトテンプレート
+  - `*.tmpl` はスキル生成のたびに読み込むため、変更時の再ビルドは不要
+  - Goの `text/template` 形式で、既存のテンプレート変数は維持する
 - `workspace/`
   - 実装時の worktree
 - `logs/`

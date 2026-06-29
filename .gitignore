@@ -1,13 +1,13 @@
 .gocache/
 .gocache-*/
 .cache/
-.agents/
 
 /db/
 /workspace/
 /logs/
 /.workspace/
 /config/
+/state/
 
 frontend/node_modules/
 frontend/dist/

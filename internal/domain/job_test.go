@@ -11,6 +11,7 @@ func TestJobStateDisplayNameAndLabel(t *testing.T) {
 		{StateDesignApproved, "設計承認済み", "state:design_approved"},
 		{StateReviewFixed, "レビュー指摘修正済み", "state:review_fixed"},
 		{StatePRReviewComment, "PRレビューコメント状態", "state:pr_review_comment"},
+		{StateCompleted, "完了", "state:completed"},
 		{StateReviewFixDesignRunning, "レビュー指摘検討中", "state:review_fix_design_running"},
 	}
 
@@ -40,11 +41,17 @@ func TestJobStateTransitions(t *testing.T) {
 	if !StateDesignApproved.CanTransitionTo(StateImplementationRunning) {
 		t.Fatal("expected design_approved -> implementation_running to be allowed")
 	}
+	if !StateDesignReady.CanTransitionTo(StateCompleted) {
+		t.Fatal("expected design_ready -> completed to be allowed")
+	}
 	if !StatePRReviewComment.CanTransitionTo(StateReviewFixDesignRunning) {
 		t.Fatal("expected pr_review_comment -> review_fix_design_running to be allowed")
 	}
 	if !StateImplementationApproved.CanTransitionTo(StatePRCreated) {
 		t.Fatal("expected implementation_approved -> pr_created to be allowed")
+	}
+	if StateImplementationReady.CanTransitionTo(StateCompleted) {
+		t.Fatal("expected implementation_ready -> completed to be disallowed")
 	}
 	if StateDesignRunning.CanTransitionTo(StatePRCreated) {
 		t.Fatal("expected design_running -> pr_created to be disallowed")

@@ -24,7 +24,7 @@ func TestJobsAPI(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, store, settingsStore)
+	server := NewServer(cfg, store, settingsStore, nil)
 
 	body := map[string]any{
 		"kind":       string(domain.JobKindIssueDesign),
@@ -111,7 +111,7 @@ func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, store, settingsStore)
+	server := NewServer(cfg, store, settingsStore, nil)
 
 	job := domain.Job{
 		ID:         "job-1",
@@ -140,13 +140,63 @@ func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 }
 
 func TestHealthz(t *testing.T) {
-	server := NewServer(config.Default(), nil, nil)
+	server := NewServer(config.Default(), nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
+}
+
+func TestSkillsAPI(t *testing.T) {
+	actions := &testSkillActions{statuses: []domain.SkillStatus{{Purpose: domain.SkillPurposeIssueDesign, Name: "design-from-issue"}}}
+	server := NewServer(config.Default(), nil, nil, nil, actions)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
+	getRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/skills status = %d", getRec.Code)
+	}
+
+	body := bytes.NewBufferString(`{"testCommand":"go test ./...","maxFixLoops":3}`)
+	postReq := httptest.NewRequest(http.MethodPost, "/api/skills", body)
+	postRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(postRec, postReq)
+	if postRec.Code != http.StatusOK || actions.generateCalls != 1 {
+		t.Fatalf("POST /api/skills status=%d calls=%d", postRec.Code, actions.generateCalls)
+	}
+
+	objectBody := bytes.NewBufferString(`{"testCommand":"go test ./...","maxFixLoops":3,"forcePurposes":{"purpose":"issue_design"}}`)
+	objectReq := httptest.NewRequest(http.MethodPost, "/api/skills", objectBody)
+	objectRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(objectRec, objectReq)
+	if objectRec.Code != http.StatusOK || actions.generateCalls != 2 {
+		t.Fatalf("POST object /api/skills status=%d calls=%d", objectRec.Code, actions.generateCalls)
+	}
+
+	mapBody := bytes.NewBufferString(`{"testCommand":"go test ./...","maxFixLoops":3,"forcePurposes":{"issue_design":true}}`)
+	mapReq := httptest.NewRequest(http.MethodPost, "/api/skills", mapBody)
+	mapRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(mapRec, mapReq)
+	if mapRec.Code != http.StatusOK || actions.generateCalls != 3 {
+		t.Fatalf("POST map /api/skills status=%d calls=%d", mapRec.Code, actions.generateCalls)
+	}
+}
+
+type testSkillActions struct {
+	statuses      []domain.SkillStatus
+	generateCalls int
+}
+
+func (a *testSkillActions) SkillStatus(context.Context) ([]domain.SkillStatus, error) {
+	return a.statuses, nil
+}
+
+func (a *testSkillActions) GenerateSkills(_ context.Context, _ domain.SkillGenerationRequest) (domain.SkillGenerationResult, error) {
+	a.generateCalls++
+	return domain.SkillGenerationResult{Provider: domain.AIProviderCodex, Skills: a.statuses}, nil
 }
 
 func TestSettingsAPI(t *testing.T) {
@@ -158,7 +208,7 @@ func TestSettingsAPI(t *testing.T) {
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-4.1"},
 		},
 	})
-	server := NewServer(config.Default(), nil, store)
+	server := NewServer(config.Default(), nil, store, nil)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
 	getRec := httptest.NewRecorder()
@@ -177,6 +227,9 @@ func TestSettingsAPI(t *testing.T) {
 	if settings.PollIntervalSeconds != 120 {
 		t.Fatalf("poll interval = %d, want 120", settings.PollIntervalSeconds)
 	}
+	if settings.BranchNamePattern != "issue_#<issue番号>" {
+		t.Fatalf("branch name pattern = %q, want issue_#<issue番号>", settings.BranchNamePattern)
+	}
 	if settings.AIProvider != domain.AIProviderGitHubCopilot {
 		t.Fatalf("ai provider = %q, want %q", settings.AIProvider, domain.AIProviderGitHubCopilot)
 	}
@@ -188,6 +241,7 @@ func TestSettingsAPI(t *testing.T) {
 		Repository:          "owner/updated",
 		AIProvider:          domain.AIProviderCodex,
 		PollIntervalSeconds: 240,
+		BranchNamePattern:   "feature/<issue番号>",
 		Models: domain.AIModels{
 			Codex: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "codex-1"},
 		},
@@ -218,6 +272,9 @@ func TestSettingsAPI(t *testing.T) {
 	if updated.PollIntervalSeconds != 240 {
 		t.Fatalf("updated poll interval = %d, want 240", updated.PollIntervalSeconds)
 	}
+	if updated.BranchNamePattern != "feature/<issue番号>" {
+		t.Fatalf("updated branch name pattern = %q, want feature/<issue番号>", updated.BranchNamePattern)
+	}
 	if updated.Models.Codex.Mode != domain.ModelModeCustom || updated.Models.Codex.Value != "codex-1" {
 		t.Fatalf("updated codex model = %+v, want custom codex-1", updated.Models.Codex)
 	}
@@ -241,7 +298,7 @@ func TestStaticAssetsAndSPAFallback(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, nil, nil)
+	server := NewServer(cfg, nil, nil, nil)
 
 	assetReq := httptest.NewRequest(http.MethodGet, "/assets/index-test.js", nil)
 	assetRec := httptest.NewRecorder()
