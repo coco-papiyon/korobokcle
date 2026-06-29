@@ -201,9 +201,10 @@ func (a *testSkillActions) GenerateSkills(_ context.Context, _ domain.SkillGener
 
 func TestSettingsAPI(t *testing.T) {
 	store := newTestSettingsStore(domain.WatchSettings{
-		Repository: "owner/repo",
-		BaseBranch: "develop",
-		AIProvider: domain.AIProviderGitHubCopilot,
+		Repository:        "owner/repo",
+		BaseBranch:        "develop",
+		AIProvider:        domain.AIProviderGitHubCopilot,
+		AIAllowedCommands: []string{"npm ci"},
 		Models: domain.AIModels{
 			Codex:         domain.ModelSelection{Mode: domain.ModelModeDefault},
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-4.1"},
@@ -234,6 +235,9 @@ func TestSettingsAPI(t *testing.T) {
 	if settings.BranchNamePattern != "issue_#<issue番号>" {
 		t.Fatalf("branch name pattern = %q, want issue_#<issue番号>", settings.BranchNamePattern)
 	}
+	if len(settings.AIAllowedCommands) != 1 || settings.AIAllowedCommands[0] != "npm ci" {
+		t.Fatalf("ai allowed commands = %+v, want [npm ci]", settings.AIAllowedCommands)
+	}
 	if settings.AIProvider != domain.AIProviderGitHubCopilot {
 		t.Fatalf("ai provider = %q, want %q", settings.AIProvider, domain.AIProviderGitHubCopilot)
 	}
@@ -247,6 +251,7 @@ func TestSettingsAPI(t *testing.T) {
 		PollIntervalSeconds: 240,
 		BaseBranch:          "release",
 		BranchNamePattern:   "feature/<issue番号>",
+		AIAllowedCommands:   []string{"npm ci", "go test ./..."},
 		Models: domain.AIModels{
 			Codex: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "codex-1"},
 		},
@@ -282,6 +287,9 @@ func TestSettingsAPI(t *testing.T) {
 	}
 	if updated.BranchNamePattern != "feature/<issue番号>" {
 		t.Fatalf("updated branch name pattern = %q, want feature/<issue番号>", updated.BranchNamePattern)
+	}
+	if len(updated.AIAllowedCommands) != 2 || updated.AIAllowedCommands[0] != "npm ci" || updated.AIAllowedCommands[1] != "go test ./..." {
+		t.Fatalf("updated ai allowed commands = %+v, want [npm ci go test ./...]", updated.AIAllowedCommands)
 	}
 	if updated.Models.Codex.Mode != domain.ModelModeCustom || updated.Models.Codex.Value != "codex-1" {
 		t.Fatalf("updated codex model = %+v, want custom codex-1", updated.Models.Codex)

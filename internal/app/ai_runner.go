@@ -15,14 +15,15 @@ import (
 )
 
 type AIRequest struct {
-	Provider    domain.AIProvider
-	Model       string
-	System      string
-	Prompt      string
-	WorkingDir  string
-	ExpectPatch bool
-	Stdout      io.Writer
-	Stderr      io.Writer
+	Provider        domain.AIProvider
+	Model           string
+	System          string
+	Prompt          string
+	WorkingDir      string
+	ExpectPatch     bool
+	Stdout          io.Writer
+	Stderr          io.Writer
+	AllowedCommands []string
 }
 
 type AIResponse struct {
@@ -118,6 +119,9 @@ func (r *CLIAIRunner) Run(ctx context.Context, req AIRequest) (AIResponse, error
 		r.mu.Unlock()
 	}
 	prompt := strings.TrimSpace(req.System + "\n\n" + req.Prompt)
+	if configurable, ok := w.(interface{ SetAllowedCommands([]string) }); ok {
+		configurable.SetAllowedCommands(req.AllowedCommands)
+	}
 	w.SetOutputWriters(req.Stdout, req.Stderr)
 	defer w.SetOutputWriters(nil, nil)
 	out, err := w.SendPromptAt(ctx, prompt, req.WorkingDir, req.Model)

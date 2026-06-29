@@ -28,14 +28,16 @@ type SearchCondition struct {
 }
 
 type WatchSettings struct {
-	Repository          string          `json:"repository"`
-	AIProvider          AIProvider      `json:"aiProvider,omitempty"`
-	PollIntervalSeconds int             `json:"pollIntervalSeconds,omitempty"`
-	BaseBranch          string          `json:"baseBranch,omitempty"`
-	BranchNamePattern   string          `json:"branchNamePattern,omitempty"`
-	Models              AIModels        `json:"models,omitempty"`
-	Issue               SearchCondition `json:"issue"`
-	PullRequest         SearchCondition `json:"pullRequest"`
+	Repository           string          `json:"repository"`
+	AIProvider           AIProvider      `json:"aiProvider,omitempty"`
+	PollIntervalSeconds  int             `json:"pollIntervalSeconds,omitempty"`
+	BaseBranch           string          `json:"baseBranch,omitempty"`
+	BranchNamePattern    string          `json:"branchNamePattern,omitempty"`
+	AIAllowedCommands    []string        `json:"aiAllowedCommands,omitempty"`
+	CodexAllowedCommands []string        `json:"codexAllowedCommands,omitempty"`
+	Models               AIModels        `json:"models,omitempty"`
+	Issue                SearchCondition `json:"issue"`
+	PullRequest          SearchCondition `json:"pullRequest"`
 }
 
 type ModelSelection struct {
@@ -63,9 +65,32 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 		settings.BranchNamePattern = "issue_#<issue番号>"
 	}
 	settings.BranchNamePattern = strings.TrimSpace(settings.BranchNamePattern)
+	settings.AIAllowedCommands = normalizeStringList(append(settings.AIAllowedCommands, settings.CodexAllowedCommands...))
+	settings.CodexAllowedCommands = nil
 	settings.Models.Codex = normalizeModelSelection(settings.Models.Codex)
 	settings.Models.GitHubCopilot = normalizeModelSelection(settings.Models.GitHubCopilot)
 	return settings
+}
+
+func normalizeStringList(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func (s WatchSettings) PollIntervalDuration() time.Duration {

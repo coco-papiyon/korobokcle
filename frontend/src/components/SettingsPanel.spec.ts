@@ -33,6 +33,7 @@ describe('SettingsPanel', () => {
         pollIntervalSeconds: 120,
         baseBranch: 'main',
         branchNamePattern: 'issue_#<issue番号>',
+        aiAllowedCommands: ['npm ci', 'go test ./...'],
         models: {
           codex: { mode: 'custom', value: 'gpt-5.5' },
           githubCopilot: { mode: 'default', value: '' },
@@ -65,7 +66,10 @@ describe('SettingsPanel', () => {
 
     const inputs = wrapper.findAll('input')
     const selects = wrapper.findAll('select')
+    const headings = wrapper.findAll('h2').map((heading) => heading.text())
 
+    expect(headings).toContain('プロバイダー設定')
+    expect(headings).toContain('監視設定')
     expect(inputs[0].element).toHaveProperty('value', 'owner/repository')
     expect(inputs[1].element).toHaveProperty('value', '120')
     expect(inputs[2].element).toHaveProperty('value', 'main')
@@ -82,6 +86,8 @@ describe('SettingsPanel', () => {
     expect(inputs[13].element).toHaveProperty('value', 'dave')
     expect(selects[0].element).toHaveProperty('value', 'codex')
     expect(selects[1].element).toHaveProperty('value', 'gpt-5.5')
+    const textareas = wrapper.findAll('textarea')
+    expect(textareas[0].element).toHaveProperty('value', 'npm ci\ngo test ./...')
 
     await inputs[0].setValue(' owner/new-repository ')
     await inputs[1].setValue('59.7')
@@ -89,6 +95,7 @@ describe('SettingsPanel', () => {
     await inputs[3].setValue(' issue_#<issue番号> ')
     await inputs[4].setValue('bug, ai:design, docs')
     await inputs[9].setValue('ready, review')
+    await textareas[0].setValue('npm ci\nnpm test\n')
     await selects[0].setValue('github_copilot')
     await selects[1].setValue('claude-opus-4.6')
 
@@ -111,6 +118,7 @@ describe('SettingsPanel', () => {
       pollIntervalSeconds: 59,
       baseBranch: 'release',
       branchNamePattern: 'issue_#<issue番号>',
+      aiAllowedCommands: ['npm ci', 'npm test'],
       models: {
         codex: { mode: 'custom', value: 'gpt-5.5' },
         githubCopilot: { mode: 'custom', value: 'claude-opus-4.6' },

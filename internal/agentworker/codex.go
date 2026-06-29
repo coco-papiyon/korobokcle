@@ -12,12 +12,13 @@ import (
 )
 
 type CodexConfig struct {
-	Command     string
-	Args        []string
-	Dir         string
-	Env         []string
-	StopTimeout time.Duration
-	Ephemeral   bool
+	Command         string
+	Args            []string
+	Dir             string
+	Env             []string
+	StopTimeout     time.Duration
+	Ephemeral       bool
+	AllowedCommands []string
 }
 
 type CodexWorker struct {
@@ -28,6 +29,8 @@ type CodexWorker struct {
 	threadID string
 	turnID   string
 	promptMu sync.Mutex
+	allowMu  sync.RWMutex
+	allowed  []string
 }
 
 func NewCodex(cfg CodexConfig) *CodexWorker {
@@ -40,7 +43,7 @@ func NewCodex(cfg CodexConfig) *CodexWorker {
 	if cfg.StopTimeout <= 0 {
 		cfg.StopTimeout = 5 * time.Second
 	}
-	return &CodexWorker{cfg: cfg, status: Status{State: StateNew}}
+	return &CodexWorker{cfg: cfg, status: Status{State: StateNew}, allowed: normalizeAllowedCommands(cfg.AllowedCommands)}
 }
 
 func (w *CodexWorker) Start(ctx context.Context) error {
@@ -59,7 +62,12 @@ func (w *CodexWorker) Start(ctx context.Context) error {
 	}
 	w.rpc = p
 	p.includeJSONRPC = false
-	p.serverResponse = func(string) any { return map[string]any{"decision": "decline"} }
+	p.serverResponse = func(method string, params json.RawMessage) any {
+		w.allowMu.RLock()
+		allowed := append([]string(nil), w.allowed...)
+		w.allowMu.RUnlock()
+		return codexServerResponse(method, params, allowed)
+	}
 	var initialized struct{}
 	err = p.call(ctx, "initialize", map[string]any{
 		"clientInfo": map[string]any{"name": "korobokcle", "title": "korobokcle", "version": "0.1.0"},
@@ -160,6 +168,118 @@ func (w *CodexWorker) SetOutputWriters(stdout, stderr io.Writer) {
 	if p != nil {
 		p.setOutputWriters(stdout, stderr)
 	}
+}
+
+func (w *CodexWorker) SetAllowedCommands(commands []string) {
+	w.allowMu.Lock()
+	defer w.allowMu.Unlock()
+	w.allowed = normalizeAllowedCommands(commands)
+}
+
+func codexServerResponse(method string, params json.RawMessage, allowed []string) any {
+	if method != "item/commandExecution/requestApproval" || !commandRequestAllowed(params, allowed) {
+		return map[string]any{"decision": "decline"}
+	}
+	return map[string]any{"decision": "accept"}
+}
+
+func commandRequestAllowed(params json.RawMessage, allowed []string) bool {
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, command := range normalizeAllowedCommands(allowed) {
+		allowedSet[normalizeCommand(command)] = struct{}{}
+	}
+	if len(allowedSet) == 0 {
+		return false
+	}
+
+	var request struct {
+		Command                     string   `json:"command"`
+		ProposedExecpolicyAmendment []string `json:"proposedExecpolicyAmendment"`
+		CommandActions              []struct {
+			Command string `json:"command"`
+		} `json:"commandActions"`
+	}
+	if err := json.Unmarshal(params, &request); err != nil {
+		return false
+	}
+	if commandMatchesAllowed(request.Command, allowedSet) {
+		return true
+	}
+	if len(request.ProposedExecpolicyAmendment) > 0 {
+		if commandMatchesAllowed(strings.Join(request.ProposedExecpolicyAmendment, " "), allowedSet) {
+			return true
+		}
+	}
+	for _, action := range request.CommandActions {
+		if commandMatchesAllowed(action.Command, allowedSet) {
+			return true
+		}
+	}
+	return false
+}
+
+func commandMatchesAllowed(command string, allowedSet map[string]struct{}) bool {
+	for _, candidate := range commandCandidates(command) {
+		if _, ok := allowedSet[normalizeCommand(candidate)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func commandCandidates(command string) []string {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return nil
+	}
+	candidates := []string{command}
+	if stripped, ok := stripPowerShellEnvAssignments(command); ok {
+		candidates = append(candidates, stripped)
+	}
+	return candidates
+}
+
+func stripPowerShellEnvAssignments(command string) (string, bool) {
+	segments := strings.Split(command, ";")
+	remaining := make([]string, 0, len(segments))
+	stripped := false
+	for _, segment := range segments {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		if len(remaining) == 0 && strings.HasPrefix(strings.ToLower(segment), "$env:") && strings.Contains(segment, "=") {
+			stripped = true
+			continue
+		}
+		remaining = append(remaining, segment)
+	}
+	if !stripped || len(remaining) != 1 {
+		return "", false
+	}
+	return remaining[0], true
+}
+
+func normalizeAllowedCommands(commands []string) []string {
+	seen := make(map[string]struct{}, len(commands))
+	out := make([]string, 0, len(commands))
+	for _, command := range commands {
+		command = strings.TrimSpace(command)
+		if command == "" {
+			continue
+		}
+		key := normalizeCommand(command)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, command)
+	}
+	return out
+}
+
+func normalizeCommand(command string) string {
+	return strings.ToLower(strings.Join(strings.Fields(command), " "))
 }
 
 func (w *CodexWorker) startThread(ctx context.Context, dir, model string) (string, error) {

@@ -48,7 +48,7 @@ type rpcProcess struct {
 	doneOnce       sync.Once
 	waitErrMu      sync.RWMutex
 	waitErr        error
-	serverResponse func(string) any
+	serverResponse func(string, json.RawMessage) any
 	includeJSONRPC bool
 	outputMu       sync.RWMutex
 	stdoutWriter   io.Writer
@@ -115,7 +115,7 @@ func (p *rpcProcess) read(r io.Reader) {
 		if len(msg.ID) > 0 && msg.Method != "" {
 			response := any(map[string]any{"outcome": map[string]any{"outcome": "cancelled"}})
 			if p.serverResponse != nil {
-				response = p.serverResponse(msg.Method)
+				response = p.serverResponse(msg.Method, msg.Params)
 			}
 			_ = p.respond(msg.ID, response)
 			continue

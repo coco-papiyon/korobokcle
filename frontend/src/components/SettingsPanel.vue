@@ -12,6 +12,7 @@ const settingsForm = ref({
   pollIntervalSeconds: 120,
   baseBranch: 'main',
   branchNamePattern: 'issue_#<issue番号>',
+  aiAllowedCommandsText: '',
   codexModelSelection: 'default',
   githubCopilotModelSelection: 'default',
   issueLabelIncludesText: '',
@@ -79,6 +80,17 @@ function joinCSV(values: string[]) {
   return values.join(', ')
 }
 
+function splitLines(value: string) {
+  return value
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+}
+
+function joinLines(values: string[]) {
+  return values.join('\n')
+}
+
 function settingsToForm(settings: WatchSettings) {
   const codexModel = settings.models?.codex
   const githubCopilotModel = settings.models?.githubCopilot
@@ -87,6 +99,7 @@ function settingsToForm(settings: WatchSettings) {
   settingsForm.value.pollIntervalSeconds = settings.pollIntervalSeconds ?? 120
   settingsForm.value.baseBranch = settings.baseBranch?.trim() || 'main'
   settingsForm.value.branchNamePattern = settings.branchNamePattern?.trim() || 'issue_#<issue番号>'
+  settingsForm.value.aiAllowedCommandsText = joinLines(settings.aiAllowedCommands ?? settings.codexAllowedCommands ?? [])
   settingsForm.value.codexModelSelection = codexModel?.mode === 'custom' && codexModel.value ? codexModel.value : 'default'
   settingsForm.value.githubCopilotModelSelection =
     githubCopilotModel?.mode === 'custom' && githubCopilotModel.value ? githubCopilotModel.value : 'default'
@@ -114,6 +127,7 @@ function formToSettings(): WatchSettings {
         : 120,
     baseBranch: settingsForm.value.baseBranch.trim() || 'main',
     branchNamePattern: settingsForm.value.branchNamePattern.trim() || 'issue_#<issue番号>',
+    aiAllowedCommands: splitLines(settingsForm.value.aiAllowedCommandsText),
     models: {
       codex: codexSelection === 'default' ? { mode: 'default', value: '' } : { mode: 'custom', value: codexSelection },
       githubCopilot:
@@ -189,7 +203,7 @@ onMounted(() => {
     <p class="eyebrow">korobokcle</p>
     <div class="hero__header">
       <div>
-        <p class="lede">監視するリポジトリと、Issue / PR ごとの検索条件をここで設定する。</p>
+        <p class="lede">AI プロバイダーと監視条件をここで設定する。</p>
       </div>
       <div class="hero__actions">
         <button class="button button--ghost" type="button" @click="loadSettings" :disabled="settingsLoading">
@@ -205,16 +219,11 @@ onMounted(() => {
   </div>
 
   <div class="panel__title-row">
-    <h2>監視設定</h2>
+    <h2>プロバイダー設定</h2>
     <span class="panel__hint">GET / PUT /api/settings</span>
   </div>
 
   <div class="form settings-grid">
-    <label class="field field--full">
-      <span>監視リポジトリ</span>
-      <input v-model="settingsForm.repository" class="control" type="text" placeholder="owner/repository" />
-    </label>
-
     <label class="field field--full">
       <span>AI プロバイダー</span>
       <select v-model="settingsForm.aiProvider" class="control">
@@ -222,6 +231,45 @@ onMounted(() => {
           {{ label }} ({{ value }})
         </option>
       </select>
+    </label>
+
+    <div class="settings-section settings-section--full">
+      <h3>モデル</h3>
+      <label class="field">
+        <span>モデル選択</span>
+        <select v-model="activeModelSelection" class="control">
+          <option v-for="option in activeModelOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+      </label>
+      <p class="field-note">
+        プロバイダーに応じて候補が切り替わる。<template v-if="settingsForm.aiProvider === 'codex'">Codex</template><template v-else>GitHub Copilot</template>
+        の既定値もここに含まれる。
+      </p>
+    </div>
+
+    <label class="field field--full">
+      <span>AI 許可コマンド</span>
+      <textarea
+        v-model="settingsForm.aiAllowedCommandsText"
+        class="control"
+        rows="4"
+        placeholder="npm ci&#10;npm test&#10;go test ./..."
+      ></textarea>
+      <span class="field-note">Codex / Copilot CLI の承認要求を自動承認するコマンド。1行に1コマンドで指定する。</span>
+    </label>
+  </div>
+
+  <div class="panel__title-row">
+    <h2>監視設定</h2>
+    <span class="panel__hint">Issue / PR watch</span>
+  </div>
+
+  <div class="form settings-grid">
+    <label class="field field--full">
+      <span>監視リポジトリ</span>
+      <input v-model="settingsForm.repository" class="control" type="text" placeholder="owner/repository" />
     </label>
 
     <label class="field field--full">
@@ -240,22 +288,6 @@ onMounted(() => {
       <input v-model="settingsForm.branchNamePattern" class="control" type="text" placeholder="issue_#&lt;issue番号&gt;" />
       <span class="field-note">&lt;issue番号&gt; を issue 番号に置き換えてブランチを作成する。</span>
     </label>
-
-    <div class="settings-section settings-section--full">
-      <h3>モデル</h3>
-      <label class="field">
-        <span>モデル選択</span>
-        <select v-model="activeModelSelection" class="control">
-          <option v-for="option in activeModelOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
-      </label>
-      <p class="field-note">
-        プロバイダーに応じて候補が切り替わる。<template v-if="settingsForm.aiProvider === 'codex'">Codex</template><template v-else>GitHub Copilot</template>
-        の既定値もここに含まれる。
-      </p>
-    </div>
 
     <div class="settings-section">
       <h3>Issue 条件</h3>

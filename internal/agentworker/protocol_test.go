@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,65 @@ func TestCopilotWorkerSendPromptAt(t *testing.T) {
 		Dir:     ".",
 	})
 	testRequestWorker(t, w)
+}
+
+func TestCommandRequestAllowed(t *testing.T) {
+	params := json.RawMessage(`{
+		"command": "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command 'npm ci'",
+		"commandActions": [{"type": "unknown", "command": "npm ci"}],
+		"proposedExecpolicyAmendment": ["npm", "ci"]
+	}`)
+	if !commandRequestAllowed(params, []string{" npm   ci "}) {
+		t.Fatal("expected npm ci to be allowed")
+	}
+	if commandRequestAllowed(params, []string{"npm test"}) {
+		t.Fatal("expected npm test not to allow npm ci")
+	}
+}
+
+func TestCommandRequestAllowedWithPowerShellEnvAssignments(t *testing.T) {
+	params := json.RawMessage(`{
+		"commandActions": [{
+			"type": "unknown",
+			"command": "$env:npm_config_cache='C:\\repo\\frontend\\.tmp\\npm-cache'; $env:TEMP='C:\\repo\\frontend\\.tmp\\npm-tmp'; npm ci"
+		}]
+	}`)
+	if !commandRequestAllowed(params, []string{"npm ci"}) {
+		t.Fatal("expected npm ci with PowerShell env assignments to be allowed")
+	}
+
+	params = json.RawMessage(`{
+		"commandActions": [{
+			"type": "unknown",
+			"command": "Remove-Item -Recurse -Force .\\frontend\\.tmp; npm ci"
+		}]
+	}`)
+	if commandRequestAllowed(params, []string{"npm ci"}) {
+		t.Fatal("expected mixed command sequence not to be allowed by npm ci")
+	}
+}
+
+func TestCopilotServerResponseAllowsConfiguredCommand(t *testing.T) {
+	params := json.RawMessage(`{
+		"commandActions": [{"type": "unknown", "command": "npm ci"}],
+		"proposedExecpolicyAmendment": ["npm", "ci"]
+	}`)
+	got := copilotServerResponse("session/request_permission", params, []string{"npm ci"})
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "approved"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want approved", got)
+	}
+	got = copilotServerResponse("session/request_permission", params, []string{"npm test"})
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want cancelled", got)
+	}
+}
+
+func TestNormalizeAllowedCommands(t *testing.T) {
+	got := normalizeAllowedCommands([]string{" npm ci ", "", "NPM   CI", "go test ./..."})
+	want := []string{"npm ci", "go test ./..."}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalizeAllowedCommands() = %+v, want %+v", got, want)
+	}
 }
 
 func testRequestWorker(t *testing.T, worker RequestWorker) {

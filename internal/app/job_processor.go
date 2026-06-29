@@ -213,14 +213,15 @@ func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings 
 	model := selectedModel(settings, providerKey(settings.AIProvider))
 	prompt := p.buildPrompt(job, settings, feedback, contextText, workDir, branch, runningState, readyState)
 	req := AIRequest{
-		Provider:    settings.AIProvider,
-		Model:       model,
-		System:      systemPromptForJob(job),
-		Prompt:      prompt,
-		WorkingDir:  workDir,
-		ExpectPatch: implementationJob(job),
-		Stdout:      stdoutLog,
-		Stderr:      stderrLog,
+		Provider:        settings.AIProvider,
+		Model:           model,
+		System:          systemPromptForJob(job),
+		Prompt:          prompt,
+		WorkingDir:      workDir,
+		ExpectPatch:     implementationJob(job),
+		Stdout:          stdoutLog,
+		Stderr:          stderrLog,
+		AllowedCommands: settings.AIAllowedCommands,
 	}
 	p.appendIssueAILog(job, "request", strings.Join([]string{
 		fmt.Sprintf("provider: %s", settings.AIProvider),

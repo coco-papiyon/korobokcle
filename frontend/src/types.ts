@@ -40,6 +40,8 @@ export type WatchSettings = {
   pollIntervalSeconds: number
   baseBranch: string
   branchNamePattern: string
+  aiAllowedCommands: string[]
+  codexAllowedCommands?: string[]
   models: AIModels
   issue: SearchCondition
   pullRequest: SearchCondition

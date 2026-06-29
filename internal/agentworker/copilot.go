@@ -17,6 +17,7 @@ type CopilotConfig struct {
 	Env             []string
 	StopTimeout     time.Duration
 	ProtocolVersion int
+	AllowedCommands []string
 }
 
 type CopilotWorker struct {
@@ -26,6 +27,8 @@ type CopilotWorker struct {
 	rpc       *rpcProcess
 	sessionID string
 	promptMu  sync.Mutex
+	allowMu   sync.RWMutex
+	allowed   []string
 }
 
 func NewCopilot(cfg CopilotConfig) *CopilotWorker {
@@ -41,7 +44,7 @@ func NewCopilot(cfg CopilotConfig) *CopilotWorker {
 	if cfg.ProtocolVersion == 0 {
 		cfg.ProtocolVersion = 1
 	}
-	return &CopilotWorker{cfg: cfg, status: Status{State: StateNew}}
+	return &CopilotWorker{cfg: cfg, status: Status{State: StateNew}, allowed: normalizeAllowedCommands(cfg.AllowedCommands)}
 }
 
 func (w *CopilotWorker) Start(ctx context.Context) error {
@@ -63,6 +66,12 @@ func (w *CopilotWorker) Start(ctx context.Context) error {
 		return err
 	}
 	w.rpc = p
+	p.serverResponse = func(method string, params json.RawMessage) any {
+		w.allowMu.RLock()
+		allowed := append([]string(nil), w.allowed...)
+		w.allowMu.RUnlock()
+		return copilotServerResponse(method, params, allowed)
+	}
 	var initialized struct{}
 	err = p.call(ctx, "initialize", map[string]any{
 		"protocolVersion":    w.cfg.ProtocolVersion,
@@ -170,6 +179,24 @@ func (w *CopilotWorker) SetOutputWriters(stdout, stderr io.Writer) {
 	if p != nil {
 		p.setOutputWriters(stdout, stderr)
 	}
+}
+
+func (w *CopilotWorker) SetAllowedCommands(commands []string) {
+	w.allowMu.Lock()
+	defer w.allowMu.Unlock()
+	w.allowed = normalizeAllowedCommands(commands)
+}
+
+func copilotServerResponse(method string, params json.RawMessage, allowed []string) any {
+	if !copilotPermissionMethod(method) || !commandRequestAllowed(params, allowed) {
+		return map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}
+	}
+	return map[string]any{"outcome": map[string]any{"outcome": "approved"}}
+}
+
+func copilotPermissionMethod(method string) bool {
+	normalized := strings.ToLower(method)
+	return strings.Contains(normalized, "permission") || strings.Contains(normalized, "approval")
 }
 
 func (w *CopilotWorker) GetStatus() Status {
