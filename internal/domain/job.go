@@ -33,6 +33,7 @@ const (
 	StateReviewRunning                   JobState = "review_running"
 	StateReviewReady                     JobState = "review_ready"
 	StateReviewApproved                  JobState = "review_approved"
+	StateCompleted                       JobState = "completed"
 	StateFailed                          JobState = "failed"
 )
 
@@ -56,6 +57,7 @@ var stateDisplayNames = map[JobState]string{
 	StateReviewRunning:                   "レビュー中",
 	StateReviewReady:                     "レビュー完了",
 	StateReviewApproved:                  "レビュー承認済み",
+	StateCompleted:                       "完了",
 	StateFailed:                          "失敗",
 }
 
@@ -79,6 +81,7 @@ var stateLabels = map[JobState]string{
 	StateReviewRunning:                   "state:review_running",
 	StateReviewReady:                     "state:review_ready",
 	StateReviewApproved:                  "state:review_approved",
+	StateCompleted:                       "state:completed",
 	StateFailed:                          "state:failed",
 }
 
@@ -94,6 +97,7 @@ var allowedTransitions = map[JobState]map[JobState]struct{}{
 	},
 	StateDesignReady: {
 		StateDesignApproved: {},
+		StateCompleted:      {},
 		StateFailed:         {},
 	},
 	StateDesignApproved: {
@@ -125,6 +129,7 @@ var allowedTransitions = map[JobState]map[JobState]struct{}{
 	},
 	StateReviewFixDesignReady: {
 		StateReviewFixDesignApproved: {},
+		StateCompleted:               {},
 		StateFailed:                  {},
 	},
 	StateReviewFixDesignApproved: {
@@ -137,6 +142,7 @@ var allowedTransitions = map[JobState]map[JobState]struct{}{
 	},
 	StateReviewFixImplementationReady: {
 		StateReviewFixImplementationApproved: {},
+		StateCompleted:                       {},
 		StateFailed:                          {},
 	},
 	StateReviewFixImplementationApproved: {
@@ -152,6 +158,7 @@ var allowedTransitions = map[JobState]map[JobState]struct{}{
 	},
 	StateReviewReady: {
 		StateReviewApproved: {},
+		StateCompleted:      {},
 		StateFailed:         {},
 	},
 	StateReviewApproved: {
@@ -226,10 +233,12 @@ func RunningStateForKind(kind JobKind, state JobState) JobState {
 	case JobKindPRReview:
 		return StateReviewRunning
 	case JobKindPRFeedback:
-		if state == StatePRReviewComment {
+		switch state {
+		case StateReviewFixImplementationReady, StateReviewFixImplementationRunning, StateReviewFixImplementationApproved:
+			return StateReviewFixImplementationRunning
+		default:
 			return StateReviewFixDesignRunning
 		}
-		return StateReviewFixDesignRunning
 	default:
 		return StateFailed
 	}
@@ -244,8 +253,56 @@ func ReadyStateForKind(kind JobKind, state JobState) JobState {
 	case JobKindPRReview:
 		return StateReviewReady
 	case JobKindPRFeedback:
-		return StateReviewFixDesignReady
+		switch state {
+		case StateReviewFixImplementationRunning, StateReviewFixImplementationReady, StateReviewFixImplementationApproved:
+			return StateReviewFixImplementationReady
+		default:
+			return StateReviewFixDesignReady
+		}
 	default:
 		return StateFailed
+	}
+}
+
+func RunningStateForReadyState(state JobState) JobState {
+	switch state {
+	case StateDesignReady:
+		return StateDesignRunning
+	case StateImplementationReady:
+		return StateImplementationRunning
+	case StateReviewReady:
+		return StateReviewRunning
+	case StateReviewFixDesignReady:
+		return StateReviewFixDesignRunning
+	case StateReviewFixImplementationReady:
+		return StateReviewFixImplementationRunning
+	default:
+		return StateFailed
+	}
+}
+
+func ApprovedStateForReadyState(state JobState) JobState {
+	switch state {
+	case StateDesignReady:
+		return StateDesignApproved
+	case StateImplementationReady:
+		return StateImplementationApproved
+	case StateReviewReady:
+		return StateReviewApproved
+	case StateReviewFixDesignReady:
+		return StateReviewFixDesignApproved
+	case StateReviewFixImplementationReady:
+		return StateReviewFixImplementationApproved
+	default:
+		return StateFailed
+	}
+}
+
+func ResultCommentTarget(kind JobKind) string {
+	switch kind {
+	case JobKindPRReview, JobKindPRFeedback:
+		return "pr"
+	default:
+		return "issue"
 	}
 }

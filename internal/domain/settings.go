@@ -31,6 +31,7 @@ type WatchSettings struct {
 	Repository          string          `json:"repository"`
 	AIProvider          AIProvider      `json:"aiProvider,omitempty"`
 	PollIntervalSeconds int             `json:"pollIntervalSeconds,omitempty"`
+	BranchNamePattern   string          `json:"branchNamePattern,omitempty"`
 	Models              AIModels        `json:"models,omitempty"`
 	Issue               SearchCondition `json:"issue"`
 	PullRequest         SearchCondition `json:"pullRequest"`
@@ -53,6 +54,10 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 	if settings.PollIntervalSeconds <= 0 {
 		settings.PollIntervalSeconds = 120
 	}
+	if strings.TrimSpace(settings.BranchNamePattern) == "" {
+		settings.BranchNamePattern = "issue_#<issue番号>"
+	}
+	settings.BranchNamePattern = strings.TrimSpace(settings.BranchNamePattern)
 	settings.Models.Codex = normalizeModelSelection(settings.Models.Codex)
 	settings.Models.GitHubCopilot = normalizeModelSelection(settings.Models.GitHubCopilot)
 	return settings

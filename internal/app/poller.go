@@ -37,8 +37,9 @@ type Poller struct {
 	settings PollSettingsStore
 	manager  *WorkerManager
 
-	mu   sync.Mutex
-	seen map[string]struct{}
+	pollMu sync.Mutex
+	mu     sync.Mutex
+	seen   map[string]struct{}
 }
 
 func NewPoller(cfg config.Config, source JobSource, store JobStore, settings PollSettingsStore, manager *WorkerManager) *Poller {
@@ -53,7 +54,7 @@ func NewPoller(cfg config.Config, source JobSource, store JobStore, settings Pol
 }
 
 func (p *Poller) Run(ctx context.Context) error {
-	if err := p.poll(ctx); err != nil {
+	if err := p.PollNow(ctx); err != nil {
 		return err
 	}
 
@@ -67,11 +68,19 @@ func (p *Poller) Run(ctx context.Context) error {
 			}
 			return ctx.Err()
 		case <-timer.C:
-			if err := p.poll(ctx); err != nil {
+			if err := p.PollNow(ctx); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+// PollNow runs the same repository scan used by the periodic monitor.
+// Calls are serialized so approval-triggered scans cannot overlap timer scans.
+func (p *Poller) PollNow(ctx context.Context) error {
+	p.pollMu.Lock()
+	defer p.pollMu.Unlock()
+	return p.poll(ctx)
 }
 
 func (p *Poller) pollInterval(ctx context.Context) time.Duration {

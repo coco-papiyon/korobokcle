@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issueをもとに設計"
+  short_description: "Issue起点で要件・設計・テスト計画・リスクを整理する"
+  default_prompt: "Use $design-from-issue to Issueをもとに設計結果を日本語で簡潔にまとめてください。"

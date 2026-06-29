@@ -108,6 +108,9 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 		labels := labelNames(record.Labels)
 		assignees := loginNames(record.Assignees)
 		s.debugIssueRecord(repository, record.Number, record.Title, labels, record.Author.Login, assignees)
+		if hasLabel(labels, "state:pr_created") {
+			continue
+		}
 		if !rule.Matches(record.Title, labels, record.Author.Login, assignees) {
 			continue
 		}
@@ -179,6 +182,8 @@ func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, 
 
 func classifyIssue(labels []string) (domain.JobKind, domain.JobState) {
 	switch {
+	case hasLabel(labels, "state:implementation_approved"):
+		return domain.JobKindIssueImplementation, domain.StateImplementationApproved
 	case hasLabel(labels, "state:design_approved"):
 		return domain.JobKindIssueImplementation, domain.StateDesignApproved
 	case hasLabel(labels, "state:review_fix_design_approved"):
