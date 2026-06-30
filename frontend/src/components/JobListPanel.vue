@@ -13,7 +13,7 @@ const emit = defineEmits<{
 const jobs = ref<Job[]>([])
 const loadingJobs = ref(false)
 const error = ref('')
-const showCompletedJobs = ref(true)
+const showCompletedJobs = ref(false)
 let refreshTimer: number | undefined
 
 const stateLabels: Record<string, string> = {
