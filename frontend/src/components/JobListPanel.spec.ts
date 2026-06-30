@@ -24,7 +24,7 @@ async function flushPromises() {
 }
 
 describe('JobListPanel', () => {
-  it('shows completed jobs by default and filters them when toggled off', async () => {
+  it('hides completed jobs by default and shows them when toggled on', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
         jobs: [
@@ -64,16 +64,16 @@ describe('JobListPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.get('input[type="checkbox"]').element).toHaveProperty('checked', true)
-    expect(wrapper.findAll('tbody tr')).toHaveLength(3)
-    expect(wrapper.text()).toContain('完了ジョブ')
-
-    await wrapper.get('input[type="checkbox"]').setChecked(false)
-    await flushPromises()
-
     expect(wrapper.get('input[type="checkbox"]').element).toHaveProperty('checked', false)
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
     expect(wrapper.get('tbody').text()).not.toContain('完了ジョブ')
     expect(wrapper.get('tbody').text()).toContain('設計中ジョブ')
+
+    await wrapper.get('input[type="checkbox"]').setChecked(true)
+    await flushPromises()
+
+    expect(wrapper.get('input[type="checkbox"]').element).toHaveProperty('checked', true)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(3)
+    expect(wrapper.text()).toContain('完了ジョブ')
   })
 })
