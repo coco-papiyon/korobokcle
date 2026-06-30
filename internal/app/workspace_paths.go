@@ -7,9 +7,9 @@ import (
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
 
-func implementationWorktreePath(toolDir string, job domain.Job) string {
+func implementationWorktreePath(workDir string, job domain.Job) string {
 	repoDir := sanitizePart(strings.ReplaceAll(job.Repository, "/", "_"))
-	return filepath.Join(toolDir, "workspace", repoDir, job.ID, "worktree")
+	return filepath.Join(workDir, "workspace", repoDir, job.ID, "worktree")
 }
 
 func implementationWorktreeBranchName(branch string, job domain.Job) string {

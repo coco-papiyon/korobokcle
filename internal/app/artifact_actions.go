@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,6 +18,7 @@ import (
 type ArtifactActions interface {
 	GetArtifact(context.Context, string) (web.DesignArtifact, error)
 	ApproveArtifact(context.Context, string, string) (domain.Job, error)
+	RequestChanges(context.Context, string, string) (domain.Job, error)
 	RerunArtifact(context.Context, string, string) (domain.Job, error)
 }
 
@@ -87,22 +90,56 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		if err := s.prepareImplementationBranch(ctx, job); err != nil {
 			return domain.Job{}, err
 		}
-		if err := s.createPullRequest(ctx, job, buildResultBody(artifact.Content, userComment)); err != nil {
+		if err := s.createPullRequest(ctx, job, buildResultBody(job, artifact.Content, userComment)); err != nil {
 			return domain.Job{}, err
 		}
-		if err := s.updateTargetLabels(ctx, job, []string{
-			domain.MustLabel(domain.StateImplementationApproved),
-			domain.MustLabel(domain.StatePRCreated),
-		}, []string{domain.MustLabel(domain.StateDesignApproved)}); err != nil {
+		latestLabels := []string{domain.MustLabel(domain.StatePRCreated)}
+		if err := s.updateTargetLabels(ctx, job, latestLabels, stateLabelsExcept(latestLabels...)); err != nil {
 			return domain.Job{}, err
 		}
 	} else {
 		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
 			return domain.Job{}, err
 		}
-		if err := s.updateTargetLabels(ctx, job, []string{domain.MustLabel(domain.ApprovedStateForReadyState(job.State))}, nil); err != nil {
+		latestLabels := []string{domain.MustLabel(domain.ApprovedStateForReadyState(job.State))}
+		if err := s.updateTargetLabels(ctx, job, latestLabels, stateLabelsExcept(latestLabels...)); err != nil {
 			return domain.Job{}, err
 		}
+	}
+	if s.feedback != nil {
+		if err := s.feedback.Delete(ctx, job.ID); err != nil {
+			return domain.Job{}, err
+		}
+	}
+	job.State = domain.StateCompleted
+	if err := s.completeApproval(ctx, job); err != nil {
+		return domain.Job{}, err
+	}
+	return job, nil
+}
+
+func (s *ArtifactActionService) RequestChanges(ctx context.Context, id, userComment string) (domain.Job, error) {
+	job, ok, err := s.getJob(ctx, id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+	if !ok {
+		return domain.Job{}, fmt.Errorf("job not found")
+	}
+	if job.Kind != domain.JobKindPRReview || job.State != domain.StateReviewReady {
+		return domain.Job{}, fmt.Errorf("job is not ready for review feedback")
+	}
+
+	artifact, err := s.GetArtifact(ctx, id)
+	if err != nil {
+		return domain.Job{}, err
+	}
+	if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
+		return domain.Job{}, err
+	}
+	latestLabels := []string{domain.MustLabel(domain.StatePRReviewComment)}
+	if err := s.updateTargetLabels(ctx, job, latestLabels, stateLabelsExcept(latestLabels...)); err != nil {
+		return domain.Job{}, err
 	}
 	if s.feedback != nil {
 		if err := s.feedback.Delete(ctx, job.ID); err != nil {
@@ -172,7 +209,7 @@ func (s *ArtifactActionService) artifactPath(job domain.Job) (string, error) {
 }
 
 func (s *ArtifactActionService) postTargetComment(ctx context.Context, job domain.Job, artifact string, userComment string) error {
-	return runGH(ctx, append(githubCommentArgs(job), "--body", buildResultBody(artifact, userComment))...)
+	return runGH(ctx, append(githubCommentArgs(job), "--body", buildResultBody(job, artifact, userComment))...)
 }
 
 func (s *ArtifactActionService) createPullRequest(ctx context.Context, job domain.Job, body string) error {
@@ -249,6 +286,11 @@ func (s *ArtifactActionService) updateTargetLabels(ctx context.Context, job doma
 			return err
 		}
 	}
+	currentLabels, err := currentTargetLabels(ctx, job)
+	if err != nil {
+		return err
+	}
+	remove = existingLabelsOnly(remove, currentLabels, add)
 	args := githubEditArgs(job)
 	for _, label := range add {
 		args = append(args, "--add-label", label)
@@ -257,6 +299,77 @@ func (s *ArtifactActionService) updateTargetLabels(ctx context.Context, job doma
 		args = append(args, "--remove-label", label)
 	}
 	return runGH(ctx, args...)
+}
+
+func currentTargetLabels(ctx context.Context, job domain.Job) ([]string, error) {
+	args := []string{}
+	switch domain.ResultCommentTarget(job.Kind) {
+	case "pr":
+		args = append(args, "pr", "view")
+	default:
+		args = append(args, "issue", "view")
+	}
+	args = append(args, "--repo", job.Repository, fmt.Sprintf("%d", job.Number), "--json", "labels")
+	cmd := exec.CommandContext(ctx, "gh", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("gh %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	var payload struct {
+		Labels []ghLabel `json:"labels"`
+	}
+	if err := json.Unmarshal(out, &payload); err != nil {
+		return nil, fmt.Errorf("decode gh labels: %w", err)
+	}
+	return labelNames(payload.Labels), nil
+}
+
+func existingLabelsOnly(remove []string, current []string, add []string) []string {
+	currentSet := make(map[string]string, len(current))
+	for _, label := range current {
+		currentSet[strings.ToLower(strings.TrimSpace(label))] = label
+	}
+	addSet := make(map[string]struct{}, len(add))
+	for _, label := range add {
+		addSet[strings.ToLower(strings.TrimSpace(label))] = struct{}{}
+	}
+	out := make([]string, 0, len(remove))
+	seen := make(map[string]struct{}, len(remove))
+	for _, label := range remove {
+		key := strings.ToLower(strings.TrimSpace(label))
+		if key == "" {
+			continue
+		}
+		if _, ok := addSet[key]; ok {
+			continue
+		}
+		currentLabel, ok := currentSet[key]
+		if !ok {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, currentLabel)
+	}
+	return out
+}
+
+func stateLabelsExcept(keep ...string) []string {
+	keepSet := make(map[string]struct{}, len(keep))
+	for _, label := range keep {
+		keepSet[label] = struct{}{}
+	}
+	labels := domain.AllStateLabels()
+	out := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if _, ok := keepSet[label]; ok {
+			continue
+		}
+		out = append(out, label)
+	}
+	return out
 }
 
 func githubCommentArgs(job domain.Job) []string {
@@ -319,7 +432,29 @@ func publishBranch(ctx context.Context, baseDir, branch string) error {
 	if branch == "" {
 		return fmt.Errorf("branch name is required")
 	}
+	exists, err := remoteBranchExists(ctx, baseDir, branch)
+	if err != nil {
+		return err
+	}
+	if exists {
+		if err := runGit(ctx, baseDir, "pull", "--rebase", "origin", branch); err != nil {
+			return fmt.Errorf("rebase remote branch before push: %w", err)
+		}
+	}
 	return runGit(ctx, baseDir, "push", "-u", "origin", branch)
+}
+
+func remoteBranchExists(ctx context.Context, baseDir, branch string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", baseDir, "ls-remote", "--exit-code", "--heads", "origin", branch)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git ls-remote --heads origin %s: %w: %s", branch, err, strings.TrimSpace(string(out)))
 }
 
 func stageAndCommitIfNeeded(ctx context.Context, repoDir string, message string) error {
@@ -407,10 +542,11 @@ func isReadyState(state domain.JobState) bool {
 	}
 }
 
-func buildResultBody(artifact string, userComment string) string {
+func buildResultBody(job domain.Job, artifact string, userComment string) string {
 	lines := []string{
-		"### 結果",
-		strings.TrimSpace(artifact),
+		"# " + resultTitle(job),
+		"",
+		stripLeadingH1(artifact),
 	}
 	if comment := strings.TrimSpace(userComment); comment != "" {
 		lines = append(lines,
@@ -420,6 +556,26 @@ func buildResultBody(artifact string, userComment string) string {
 		)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func resultTitle(job domain.Job) string {
+	switch job.Kind {
+	case domain.JobKindIssueDesign:
+		return "設計結果"
+	case domain.JobKindIssueImplementation:
+		return "実装結果"
+	case domain.JobKindPRReview:
+		return "レビュー結果"
+	case domain.JobKindPRFeedback:
+		switch job.State {
+		case domain.StateReviewFixImplementationReady, domain.StateReviewFixImplementationApproved:
+			return "レビュー指摘修正結果"
+		default:
+			return "レビュー指摘検討結果"
+		}
+	default:
+		return "結果"
+	}
 }
 
 func currentBranch(ctx context.Context, baseDir string) (string, error) {

@@ -10,7 +10,7 @@ func TestJobStateDisplayNameAndLabel(t *testing.T) {
 	}{
 		{StateDesignApproved, "設計承認済み", "state:design_approved"},
 		{StateReviewFixed, "レビュー指摘修正済み", "state:review_fixed"},
-		{StatePRReviewComment, "PRレビューコメント状態", "state:pr_review_comment"},
+		{StatePRReviewComment, "レビュー指摘あり", "state:pr_review_comment"},
 		{StateCompleted, "完了", "state:completed"},
 		{StateReviewFixDesignRunning, "レビュー指摘検討中", "state:review_fix_design_running"},
 	}

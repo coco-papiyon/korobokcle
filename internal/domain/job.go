@@ -46,7 +46,7 @@ var stateDisplayNames = map[JobState]string{
 	StateImplementationReady:             "実装完了",
 	StateImplementationApproved:          "実装承認済み",
 	StatePRCreated:                       "PR済み",
-	StatePRReviewComment:                 "PRレビューコメント状態",
+	StatePRReviewComment:                 "レビュー指摘あり",
 	StateReviewFixDesignRunning:          "レビュー指摘検討中",
 	StateReviewFixDesignReady:            "レビュー指摘検討済み",
 	StateReviewFixDesignApproved:         "レビュー検討承認済み",
@@ -207,6 +207,14 @@ func MustLabel(state JobState) string {
 		return label
 	}
 	return fmt.Sprintf("state:%s", state)
+}
+
+func AllStateLabels() []string {
+	labels := make([]string, 0, len(stateLabels))
+	for _, label := range stateLabels {
+		labels = append(labels, label)
+	}
+	return labels
 }
 
 func InitialStateForKind(kind JobKind) JobState {

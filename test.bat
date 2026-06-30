@@ -23,8 +23,12 @@ echo Updating static files...
 powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path 'static') { Remove-Item -Recurse -Force 'static' }; New-Item -ItemType Directory -Path 'static' | Out-Null; Copy-Item -Recurse -Force 'frontend\dist\*' 'static\'"
 if errorlevel 1 goto :error
 
-echo Starting korobokcle...
-go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --work-dir "%ROOT_DIR%" %*
+echo Creating test data...
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\create_test_data.ps1" -Root ".\tests"
+if errorlevel 1 goto :error
+
+echo Starting korobokcle in mock mode...
+go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --base-dir "%ROOT_DIR%\tests" --work-dir "%ROOT_DIR%\tests" --mock-mode %*
 if errorlevel 1 goto :error
 
 popd

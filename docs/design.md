@@ -10,7 +10,7 @@
 - 設計と実装を別ジョブとして扱う
 - issue / PR の状態タグを見て、AI 実行の入口を決める
 - 設計やレビューの確認結果は人間が画面で承認する
-- 実装時だけ `tool_dir` 配下に worktree を作る
+- 実装時だけ `work_dir` 配下に worktree を作る
 - 状態の表示は日本語、内部管理は英語にする
 - 1 プロセスは 1 リポジトリのみを対象にする
 
@@ -25,7 +25,13 @@
   - 設計・レビューの参照元であり、設計結果の保存先でもある
 - `tool_dir`
   - `korobokcle` 本体の配置ディレクトリ
-  - 静的コンテンツ、設定、DB、作業用ディレクトリ、ログを持つ
+  - 実行バイナリである `korobokcle` が格納されているディレクトリを `tool_dir` とする。
+  - 実行バイナリ、静的コンテンツ、プロンプトを持つ
+- `work_dir`
+  - `korobokcle` が使用するデータを格納するディレクトリ  
+  - デフォルトでは、 `tool_dir` = `work_dir`
+  - 引数で指定可能
+  - 設定、DB、作業用ディレクトリ、ログを持つ
   - 実装時の worktree はここに作る
 
 ### 2.2 重要な制約
@@ -44,7 +50,7 @@
 | ジョブ | 1 回の AI 実行単位。設計、実装、レビュー、レビュー指摘対応を別々のジョブとして扱う |
 | ワーカー | 1 ジョブを処理する goroutine |
 | 状態タグ | GitHub Issue / PR に付与する状態表現のラベル |
-| 作業用 worktree | 実装時に `tool_dir` 配下へ作る git worktree |
+| 作業用 worktree | 実装時に `work_dir` 配下へ作る git worktree |
 | 成果物 | `base_dir/.workspace/...` に保存する Markdown や補助ファイル |
 
 ## 3. 全体構成
@@ -111,16 +117,35 @@ base_dir/
 
 ### 4.2 `tool_dir`
 
-`tool_dir` はアプリ本体の実行基盤であり、実装時の worktree はここに作る。
+`tool_dir` はアプリ本体の実行基盤（実行バイナリ、静的コンテンツ、プロンプト等）である。
+実行バイナリが格納されているディレクトリを `tool_dir` とする。
 
 ```text
 tool_dir/
+  prompt/
+  static/
+```
+
+役割は次の通り。
+
+- `prompt/`
+  - AIへ渡す編集可能なプロンプトテンプレート
+  - `*.tmpl` はスキル生成のたびに読み込むため、変更時の再ビルドは不要
+  - Goの `text/template` 形式で、既存のテンプレート変数は維持する
+- `static/`
+  - Web UI の静的ファイル
+
+### 4.3 `work_dir`
+
+`work_dir` はアプリが使用するデータの格納場所であり、実装時の worktree はここに作る。
+デフォルトでは、`work_dir` = `tool_dir`であり、起動引数で変更可能とする。
+
+```text
+work_dir/
   config/
   db/
-  prompt/
   workspace/
   logs/
-  static/
 ```
 
 役割は次の通り。
@@ -131,23 +156,17 @@ tool_dir/
   - 監視設定
 - `db/`
   - SQLite
-- `prompt/`
-  - AIへ渡す編集可能なプロンプトテンプレート
-  - `*.tmpl` はスキル生成のたびに読み込むため、変更時の再ビルドは不要
-  - Goの `text/template` 形式で、既存のテンプレート変数は維持する
 - `workspace/`
   - 実装時の worktree
 - `logs/`
   - ワーカー単位のログ
-- `static/`
-  - Web UI の静的ファイル
 
-### 4.3 実装時 worktree
+### 4.4 実装時 worktree
 
-実装ジョブだけは、`tool_dir/workspace/` 配下に worktree を作成する。
+実装ジョブだけは、`work_dir/workspace/` 配下に worktree を作成する。
 
 ```text
-tool_dir/workspace/<repo-id>/<job-id>/worktree/
+work_dir/workspace/<repo-id>/<job-id>/worktree/
 ```
 
 方針:
@@ -177,7 +196,7 @@ tool_dir/workspace/<repo-id>/<job-id>/worktree/
 | 実装完了 | `implementation_ready` |
 | 実装承認済み | `implementation_approved` |
 | PR済み | `pr_created` |
-| PRレビューコメント状態 | `pr_review_comment` |
+| レビュー指摘あり | `pr_review_comment` |
 | レビュー指摘検討済み | `review_fix_design_ready` |
 | レビュー検討承認済み | `review_fix_design_approved` |
 | レビュー指摘修正済み | `review_fixed` |
@@ -233,7 +252,7 @@ PR は次のジョブに分ける。
 処理:
 
 1. 設計に従い実装ジョブを起動する
-2. `tool_dir/workspace/` 配下に worktree を作る
+2. `work_dir/workspace/` 配下に worktree を作る
 3. 実装結果を `base_dir/.workspace/implementation/<issue番号>_<issueタイトル>.md` に保存する
 4. 状態タグを実装済みにする
 5. 画面に実装内容を表示する
@@ -443,7 +462,7 @@ Markdown は人間がレビューしやすい正本として扱う。
 
 ### 11.3 ログ
 
-ログは `tool_dir/logs/` に保存する。
+ログは `work_dir/logs/` に保存する。
 
 - ワーカー単位で分ける
 - job ID を含める
@@ -455,7 +474,7 @@ Markdown は人間がレビューしやすい正本として扱う。
 
 1. 設計と実装を分ける
 2. issue / PR の状態タグで処理を進める
-3. 実装時だけ `tool_dir` 配下に worktree を切る
+3. 実装時だけ `work_dir` 配下に worktree を切る
 4. AI はリポジトリ内スキルを最小指示で実行する
 
 これにより、設計結果のレビュー、実装結果のレビュー、PR コメント起点の再設計を独立に扱える。

@@ -17,9 +17,11 @@ import (
 )
 
 type Options struct {
-	BaseDir string
-	ToolDir string
-	Addr    string
+	BaseDir  string
+	ToolDir  string
+	WorkDir  string
+	MockMode bool
+	Addr     string
 }
 
 func Run(ctx context.Context, opts Options) error {
@@ -29,6 +31,12 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	if opts.ToolDir != "" {
 		cfg.ToolDir = opts.ToolDir
+		if opts.WorkDir == "" {
+			cfg.WorkDir = opts.ToolDir
+		}
+	}
+	if opts.WorkDir != "" {
+		cfg.WorkDir = opts.WorkDir
 	}
 	if opts.Addr != "" {
 		cfg.Addr = opts.Addr
@@ -44,7 +52,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	infoLogger := log.New(os.Stdout, "INFO ", log.LstdFlags|log.Lmicroseconds)
-	debugLogger, logFile, err := newDebugLogger(filepath.Join(cfg.ToolDir, "logs", "korobokcle.log"))
+	debugLogger, logFile, err := newDebugLogger(filepath.Join(cfg.WorkDir, "logs", "korobokcle.log"))
 	if err != nil {
 		return err
 	}
@@ -54,12 +62,12 @@ func Run(ctx context.Context, opts Options) error {
 		debug: debugLogger,
 	}
 
-	store, err := NewFileJobStore(filepath.Join(cfg.ToolDir, "db", "jobs.json"))
+	store, err := NewFileJobStore(filepath.Join(cfg.WorkDir, "db", "jobs.json"))
 	if err != nil {
 		return err
 	}
 
-	settingsStore, err := NewFileSettingsStore(filepath.Join(cfg.ToolDir, "config", "settings.json"), domain.WatchSettings{
+	settingsStore, err := NewFileSettingsStore(filepath.Join(cfg.WorkDir, "config", "settings.json"), domain.WatchSettings{
 		Repository:        cfg.Repository,
 		AIProvider:        domain.AIProviderCodex,
 		BaseBranch:        "main",
@@ -79,16 +87,31 @@ func Run(ctx context.Context, opts Options) error {
 		cfg.PollInterval = settings.PollIntervalDuration()
 	}
 
-	feedbackStore := NewFileDesignFeedbackStore(filepath.Join(cfg.ToolDir, "workspace", "design_feedback"))
-	processorFactory := NewWorkflowProcessorFactory(store, settingsStore, feedbackStore, cfg.BaseDir, cfg.ToolDir, logger)
+	feedbackStore := NewFileDesignFeedbackStore(filepath.Join(cfg.WorkDir, "workspace", "design_feedback"))
+	var processorFactory WorkerProcessorFactory
+	if opts.MockMode {
+		processorFactory = NewMockWorkflowProcessorFactory(store, feedbackStore, cfg.BaseDir, logger)
+	} else {
+		processorFactory = NewWorkflowProcessorFactory(store, settingsStore, feedbackStore, cfg.BaseDir, cfg.WorkDir, logger)
+	}
 	manager := NewWorkerManagerWithFactory(cfg, infoLogger, processorFactory)
 	if err := manager.Start(ctx); err != nil {
 		return err
 	}
 
-	poller := NewPoller(cfg, NewGitHubSource(settingsStore, cfg.Repository, logger), store, settingsStore, manager)
-	artifactActions := NewArtifactActionService(store, settingsStore, manager, feedbackStore, cfg.BaseDir, cfg.ToolDir, logger, poller)
-	skillGenerator := NewSkillGenerator(cfg.BaseDir, cfg.ToolDir, settingsStore, logger)
+	var source JobSource = NewGitHubSource(settingsStore, cfg.Repository, logger)
+	if opts.MockMode {
+		source = NewFileMockJobSource(filepath.Join(cfg.WorkDir, "db", "mock_jobs.json"), logger)
+	}
+	poller := NewPoller(cfg, source, store, settingsStore, manager)
+	var artifactActions ArtifactActions = NewArtifactActionService(store, settingsStore, manager, feedbackStore, cfg.BaseDir, cfg.WorkDir, logger, poller)
+	if opts.MockMode {
+		artifactActions = NewMockArtifactActionService(store, manager, feedbackStore, cfg.BaseDir, poller)
+	}
+	var skillGenerator web.SkillActions = NewSkillGenerator(cfg.BaseDir, cfg.ToolDir, cfg.WorkDir, settingsStore, logger)
+	if opts.MockMode {
+		skillGenerator = NewMockSkillGenerator(cfg.BaseDir)
+	}
 	go func() {
 		if err := poller.Run(ctx); err != nil && ctx.Err() == nil {
 			infoLogger.Printf("poller error: %v", err)
@@ -167,13 +190,16 @@ func ensureDirs(cfg config.Config) error {
 	dirs := []string{
 		cfg.BaseDir,
 		cfg.ToolDir,
+		cfg.WorkDir,
 		filepath.Join(cfg.BaseDir, ".workspace"),
-		filepath.Join(cfg.ToolDir, "config"),
-		filepath.Join(cfg.ToolDir, "db"),
 		filepath.Join(cfg.ToolDir, "prompt"),
-		filepath.Join(cfg.ToolDir, "workspace"),
-		filepath.Join(cfg.ToolDir, "logs"),
-		filepath.Join(cfg.ToolDir, "logs", "skill"),
+		filepath.Join(cfg.ToolDir, "static"),
+		filepath.Join(cfg.WorkDir, "config"),
+		filepath.Join(cfg.WorkDir, "db"),
+		filepath.Join(cfg.WorkDir, "workspace"),
+		filepath.Join(cfg.WorkDir, "state"),
+		filepath.Join(cfg.WorkDir, "logs"),
+		filepath.Join(cfg.WorkDir, "logs", "skill"),
 	}
 	for _, dir := range dirs {
 		if dir == "" {

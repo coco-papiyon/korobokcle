@@ -161,12 +161,7 @@ func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, 
 		if !rule.Matches(record.Title, labels, record.Author.Login, assignees) {
 			continue
 		}
-		kind := domain.JobKindPRReview
-		state := domain.StateReviewRunning
-		if hasLabel(labels, "state:pr_review_comment") {
-			kind = domain.JobKindPRFeedback
-			state = domain.StatePRReviewComment
-		}
+		kind, state := classifyPullRequest(labels)
 		jobs = append(jobs, domain.Job{
 			ID:         fmt.Sprintf("pr-%d", record.Number),
 			Kind:       kind,
@@ -193,6 +188,13 @@ func classifyIssue(labels []string) (domain.JobKind, domain.JobState) {
 	default:
 		return domain.JobKindIssueDesign, domain.StateDetected
 	}
+}
+
+func classifyPullRequest(labels []string) (domain.JobKind, domain.JobState) {
+	if hasLabel(labels, "state:pr_review_comment") {
+		return domain.JobKindPRFeedback, domain.StatePRReviewComment
+	}
+	return domain.JobKindPRReview, domain.StateReviewRunning
 }
 
 func labelNames(labels []ghLabel) []string {

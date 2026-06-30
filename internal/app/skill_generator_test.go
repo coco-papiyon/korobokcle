@@ -22,7 +22,7 @@ func TestSkillStatusUsesSimpleCheckOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	generator := NewSkillGeneratorWithFactory(baseDir, t.TempDir(), nil, nil, nil)
+	generator := NewSkillGeneratorWithFactory(baseDir, t.TempDir(), t.TempDir(), nil, nil, nil)
 	statuses, err := generator.SkillStatus(context.Background())
 	if err != nil {
 		t.Fatalf("SkillStatus() error = %v", err)
@@ -45,6 +45,7 @@ func TestSkillStatusUsesSimpleCheckOnly(t *testing.T) {
 func TestGenerateSkillsSkipsAIExistingSkill(t *testing.T) {
 	baseDir := t.TempDir()
 	toolDir := t.TempDir()
+	workDir := t.TempDir()
 	installSkillGenerationPrompt(t, toolDir)
 	path := filepath.Join(baseDir, ".github", "skills", "custom-issue-planner")
 	if err := os.MkdirAll(path, 0o755); err != nil {
@@ -55,7 +56,7 @@ func TestGenerateSkillsSkipsAIExistingSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	generator := NewSkillGeneratorWithFactory(baseDir, toolDir, staticSkillSettingsStore{
+	generator := NewSkillGeneratorWithFactory(baseDir, toolDir, workDir, staticSkillSettingsStore{
 		settings: domain.WatchSettings{AIProvider: domain.AIProviderCodex},
 	}, nil, func() SkillAgent {
 		return &fakeSkillAgent{
@@ -88,12 +89,12 @@ func TestGenerateSkillsSkipsAIExistingSkill(t *testing.T) {
 		t.Fatalf("design-from-issue should not be created, stat err=%v", err)
 	}
 
-	logFiles, err := filepath.Glob(filepath.Join(toolDir, "logs", "skill", "*.log"))
+	logFiles, err := filepath.Glob(filepath.Join(workDir, "logs", "skill", "*.log"))
 	if err != nil {
 		t.Fatalf("filepath.Glob() error = %v", err)
 	}
 	if len(logFiles) == 0 {
-		t.Fatalf("expected skill generation log file in %s", filepath.Join(toolDir, "logs", "skill"))
+		t.Fatalf("expected skill generation log file in %s", filepath.Join(workDir, "logs", "skill"))
 	}
 	logContent, err := os.ReadFile(logFiles[0])
 	if err != nil {
@@ -107,6 +108,7 @@ func TestGenerateSkillsSkipsAIExistingSkill(t *testing.T) {
 func TestGenerateSkillsCanForceAIExistingSkill(t *testing.T) {
 	baseDir := t.TempDir()
 	toolDir := t.TempDir()
+	workDir := t.TempDir()
 	installSkillGenerationPrompt(t, toolDir)
 	path := filepath.Join(baseDir, ".github", "skills", "custom-issue-planner")
 	if err := os.MkdirAll(path, 0o755); err != nil {
@@ -117,7 +119,7 @@ func TestGenerateSkillsCanForceAIExistingSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	generator := NewSkillGeneratorWithFactory(baseDir, toolDir, staticSkillSettingsStore{
+	generator := NewSkillGeneratorWithFactory(baseDir, toolDir, workDir, staticSkillSettingsStore{
 		settings: domain.WatchSettings{AIProvider: domain.AIProviderCodex},
 	}, nil, func() SkillAgent {
 		return &fakeSkillAgent{
@@ -155,6 +157,7 @@ func TestGenerateSkillsCanForceAIExistingSkill(t *testing.T) {
 func TestGenerateSkillsCanOverwriteExistingSkill(t *testing.T) {
 	baseDir := t.TempDir()
 	toolDir := t.TempDir()
+	workDir := t.TempDir()
 	installSkillGenerationPrompt(t, toolDir)
 	path := filepath.Join(baseDir, ".agents", "skills", "design-from-issue")
 	if err := os.MkdirAll(path, 0o755); err != nil {
@@ -165,7 +168,7 @@ func TestGenerateSkillsCanOverwriteExistingSkill(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	generator := NewSkillGeneratorWithFactory(baseDir, toolDir, staticSkillSettingsStore{
+	generator := NewSkillGeneratorWithFactory(baseDir, toolDir, workDir, staticSkillSettingsStore{
 		settings: domain.WatchSettings{AIProvider: domain.AIProviderCodex},
 	}, nil, func() SkillAgent {
 		return &fakeSkillAgent{

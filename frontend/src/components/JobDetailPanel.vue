@@ -27,7 +27,7 @@ const stateLabels: Record<string, string> = {
   implementation_ready: '実装完了',
   implementation_approved: '実装承認済み',
   pr_created: 'PR済み',
-  pr_review_comment: 'PRレビューコメント状態',
+  pr_review_comment: 'レビュー指摘あり',
   review_fix_design_running: 'レビュー指摘検討中',
   review_fix_design_ready: 'レビュー指摘検討済み',
   review_fix_design_approved: 'レビュー検討承認済み',
@@ -62,6 +62,10 @@ function jobStateLabel(state: string) {
 
 function canInspectArtifact(job: Job | null) {
   return job != null && inspectableStates.has(job.state)
+}
+
+function canRequestChanges(job: Job | null) {
+  return job?.kind === 'pr_review' && job.state === 'review_ready'
 }
 
 function artifactTitle(job: Job | null) {
@@ -144,6 +148,32 @@ async function approveArtifact() {
   artifactError.value = ''
   try {
     const res = await fetch(`/api/jobs/${encodeURIComponent(detailJob.value.id)}/artifact`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ comment: artifactUserComment.value }),
+    })
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || `HTTP ${res.status}`)
+    }
+    await loadJobDetail(detailJob.value.id)
+  } catch (err) {
+    artifactError.value = err instanceof Error ? err.message : 'unknown error'
+  } finally {
+    artifactActionLoading.value = false
+  }
+}
+
+async function requestChanges() {
+  if (!detailJob.value) {
+    return
+  }
+  artifactActionLoading.value = true
+  artifactError.value = ''
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(detailJob.value.id)}/artifact/request-changes`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -278,6 +308,15 @@ watch(
           <div class="modal__actions">
             <button class="button button--ghost" type="button" @click="rerunArtifact" :disabled="artifactActionLoading">
               再実行
+            </button>
+            <button
+              v-if="canRequestChanges(detailJob)"
+              class="button button--ghost"
+              type="button"
+              @click="requestChanges"
+              :disabled="artifactActionLoading"
+            >
+              修正依頼
             </button>
             <button class="button" type="button" @click="approveArtifact" :disabled="artifactActionLoading">
               承認

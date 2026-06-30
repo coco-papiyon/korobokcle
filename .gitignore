@@ -8,6 +8,8 @@
 /.workspace/
 /config/
 /state/
+/static/
+/tests/
 
 frontend/node_modules/
 frontend/dist/

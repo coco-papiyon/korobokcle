@@ -27,6 +27,13 @@ func TestClassifyIssue(t *testing.T) {
 	}
 }
 
+func TestClassifyPullRequestReviewComment(t *testing.T) {
+	kind, state := classifyPullRequest([]string{"state:pr_review_comment"})
+	if kind != domain.JobKindPRFeedback || state != domain.StatePRReviewComment {
+		t.Fatalf("classifyPullRequest() = (%s, %s), want (%s, %s)", kind, state, domain.JobKindPRFeedback, domain.StatePRReviewComment)
+	}
+}
+
 func TestGitHubSourceEmptyRepository(t *testing.T) {
 	src := NewGitHubSource(nil, "", nil)
 	jobs, err := src.List(context.Background())

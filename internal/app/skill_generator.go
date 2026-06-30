@@ -59,6 +59,7 @@ var issueDrivenSkillDefinitions = []skillDefinition{
 type SkillGenerator struct {
 	baseDir        string
 	toolDir        string
+	workDir        string
 	skillLogDir    string
 	settings       SettingsStore
 	logger         workflowLogger
@@ -67,21 +68,22 @@ type SkillGenerator struct {
 	mu             sync.Mutex
 }
 
-func NewSkillGenerator(baseDir, toolDir string, settings SettingsStore, logger workflowLogger) *SkillGenerator {
-	return NewSkillGeneratorWithFactory(baseDir, toolDir, settings, logger, func() SkillAgent {
+func NewSkillGenerator(baseDir, toolDir, workDir string, settings SettingsStore, logger workflowLogger) *SkillGenerator {
+	return NewSkillGeneratorWithFactory(baseDir, toolDir, workDir, settings, logger, func() SkillAgent {
 		return NewHTTPAIRunner(nil, logger)
 	})
 }
 
-func NewSkillGeneratorWithFactory(baseDir, toolDir string, settings SettingsStore, logger workflowLogger, factory SkillAgentFactory) *SkillGenerator {
+func NewSkillGeneratorWithFactory(baseDir, toolDir, workDir string, settings SettingsStore, logger workflowLogger, factory SkillAgentFactory) *SkillGenerator {
 	return &SkillGenerator{
 		baseDir:        baseDir,
 		toolDir:        toolDir,
-		skillLogDir:    filepath.Join(toolDir, "logs", "skill"),
+		workDir:        workDir,
+		skillLogDir:    filepath.Join(workDir, "logs", "skill"),
 		settings:       settings,
 		logger:         logger,
 		factory:        factory,
-		matchCachePath: filepath.Join(toolDir, "state", "skill-matches.json"),
+		matchCachePath: filepath.Join(workDir, "state", "skill-matches.json"),
 	}
 }
 
@@ -99,6 +101,7 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 	g.appendSkillGenerationLog(logRunID, "start", strings.Join([]string{
 		fmt.Sprintf("base_dir: %s", g.baseDir),
 		fmt.Sprintf("tool_dir: %s", g.toolDir),
+		fmt.Sprintf("work_dir: %s", g.workDir),
 		fmt.Sprintf("project_context: %s", strings.TrimSpace(req.ProjectContext)),
 		fmt.Sprintf("test_command: %s", strings.TrimSpace(req.TestCommand)),
 		fmt.Sprintf("max_fix_loops: %d", req.MaxFixLoops),
@@ -203,7 +206,7 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 		return domain.SkillGenerationResult{Provider: settings.AIProvider, Skills: statuses, Message: "同等のスキルがすでに存在します。"}, nil
 	}
 
-	stageDir := filepath.Join(g.toolDir, "workspace", "skill-generation", strconv.FormatInt(time.Now().UnixNano(), 10))
+	stageDir := filepath.Join(g.workDir, "workspace", "skill-generation", strconv.FormatInt(time.Now().UnixNano(), 10))
 	if err := os.MkdirAll(stageDir, 0o755); err != nil {
 		g.appendSkillGenerationLog(logRunID, "error", fmt.Sprintf("create skill staging directory: %v", err))
 		return domain.SkillGenerationResult{}, fmt.Errorf("create skill staging directory: %w", err)

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -384,7 +385,13 @@ func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, s
 	if _, err := os.Stat(filepath.Join(worktreePath, ".git")); err == nil {
 		currentBranchName, currentErr := currentBranch(ctx, worktreePath)
 		if currentErr == nil && strings.TrimSpace(currentBranchName) != "" {
+			if err := syncBranchFromRemote(ctx, worktreePath, currentBranchName); err != nil {
+				return "", "", err
+			}
 			return worktreePath, currentBranchName, nil
+		}
+		if err := syncBranchFromRemote(ctx, worktreePath, worktreeBranch); err != nil {
+			return "", "", err
 		}
 		return worktreePath, worktreeBranch, nil
 	}
@@ -402,7 +409,48 @@ func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, s
 			return "", "", fmt.Errorf("create worktree: %w", retryErr)
 		}
 	}
+	if err := syncBranchFromRemote(ctx, worktreePath, worktreeBranch); err != nil {
+		return "", "", err
+	}
 	return worktreePath, worktreeBranch, nil
+}
+
+func syncBranchFromRemote(ctx context.Context, repoDir, branch string) error {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return nil
+	}
+	hasOrigin, err := hasRemote(ctx, repoDir, "origin")
+	if err != nil {
+		return err
+	}
+	if !hasOrigin {
+		return nil
+	}
+	exists, err := remoteBranchExists(ctx, repoDir, branch)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if err := runGit(ctx, repoDir, "pull", "--rebase", "origin", branch); err != nil {
+		return fmt.Errorf("rebase remote branch before implementation: %w", err)
+	}
+	return nil
+}
+
+func hasRemote(ctx context.Context, repoDir, remote string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "remote", "get-url", remote)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 2 {
+		return false, nil
+	}
+	return false, fmt.Errorf("git remote get-url %s: %w: %s", remote, err, strings.TrimSpace(string(out)))
 }
 
 func addImplementationWorktree(ctx context.Context, baseDir, branch, worktreePath string) error {

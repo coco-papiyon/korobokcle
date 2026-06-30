@@ -27,6 +27,7 @@ type SettingsStore interface {
 type ArtifactActions interface {
 	GetArtifact(context.Context, string) (DesignArtifact, error)
 	ApproveArtifact(context.Context, string, string) (domain.Job, error)
+	RequestChanges(context.Context, string, string) (domain.Job, error)
 	RerunArtifact(context.Context, string, string) (domain.Job, error)
 }
 
@@ -123,6 +124,36 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 		}
 
 		id := strings.TrimPrefix(r.URL.Path, "/api/jobs/")
+		if strings.HasSuffix(id, "/artifact/request-changes") {
+			id = strings.TrimSuffix(id, "/artifact/request-changes")
+			if id == "" {
+				http.NotFound(w, r)
+				return
+			}
+			if artifactActions == nil {
+				http.Error(w, "artifact actions not configured", http.StatusServiceUnavailable)
+				return
+			}
+			switch r.Method {
+			case http.MethodPost:
+				var req struct {
+					Comment string `json:"comment"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				job, err := artifactActions.RequestChanges(r.Context(), id, req.Comment)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(job)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
 		if strings.HasSuffix(id, "/artifact") {
 			id = strings.TrimSuffix(id, "/artifact")
 			if id == "" {
@@ -307,7 +338,7 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 			return
 		}
 
-		distDir := filepath.Join(cfg.ToolDir, "frontend", "dist")
+		distDir := filepath.Join(cfg.ToolDir, "static")
 		indexPath := filepath.Join(distDir, "index.html")
 		if _, err := os.Stat(indexPath); err != nil {
 			http.Error(w, "frontend not built", http.StatusServiceUnavailable)

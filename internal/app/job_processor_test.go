@@ -222,6 +222,62 @@ func TestWorkDirForJobPrunesMissingRegisteredWorktree(t *testing.T) {
 	}
 }
 
+func TestWorkDirForJobRebasesRemoteBranchBeforeImplementation(t *testing.T) {
+	baseDir := t.TempDir()
+	remoteDir := filepath.Join(baseDir, "remote.git")
+	repoDir := filepath.Join(baseDir, "repo")
+	otherRepoDir := filepath.Join(baseDir, "other")
+	toolDir := t.TempDir()
+	settings := domain.NormalizeWatchSettings(domain.WatchSettings{
+		BranchNamePattern: "issue_#<issue番号>",
+	})
+	job := domain.Job{
+		ID:         "issue-114",
+		Kind:       domain.JobKindIssueImplementation,
+		State:      domain.StateDesignApproved,
+		Repository: "owner/repo",
+		Number:     114,
+		Title:      "画面構成変更",
+	}
+
+	runGitTestCommand(t, baseDir, "init", "--bare", remoteDir)
+	runGitTestCommand(t, baseDir, "clone", remoteDir, repoDir)
+	runGitTestCommand(t, repoDir, "config", "user.email", "test@example.com")
+	runGitTestCommand(t, repoDir, "config", "user.name", "Test User")
+	runGitTestCommand(t, repoDir, "checkout", "-b", "main")
+	writeTestFile(t, repoDir, "README.md", "initial\n")
+	runGitTestCommand(t, repoDir, "add", "README.md")
+	runGitTestCommand(t, repoDir, "commit", "-m", "initial")
+	runGitTestCommand(t, repoDir, "push", "-u", "origin", "main")
+	runGitTestCommand(t, repoDir, "checkout", "-b", "issue_#114")
+	writeTestFile(t, repoDir, "branch.txt", "local branch\n")
+	runGitTestCommand(t, repoDir, "add", "branch.txt")
+	runGitTestCommand(t, repoDir, "commit", "-m", "branch start")
+	runGitTestCommand(t, repoDir, "push", "-u", "origin", "issue_#114")
+	runGitTestCommand(t, repoDir, "checkout", "main")
+
+	runGitTestCommand(t, baseDir, "clone", remoteDir, otherRepoDir)
+	runGitTestCommand(t, otherRepoDir, "config", "user.email", "test@example.com")
+	runGitTestCommand(t, otherRepoDir, "config", "user.name", "Test User")
+	runGitTestCommand(t, otherRepoDir, "checkout", "issue_#114")
+	writeTestFile(t, otherRepoDir, "remote.txt", "remote change\n")
+	runGitTestCommand(t, otherRepoDir, "add", "remote.txt")
+	runGitTestCommand(t, otherRepoDir, "commit", "-m", "remote implementation base")
+	runGitTestCommand(t, otherRepoDir, "push", "origin", "issue_#114")
+
+	processor := &WorkflowProcessor{baseDir: repoDir, toolDir: toolDir}
+	workDir, branch, err := processor.workDirForJob(context.Background(), job, settings)
+	if err != nil {
+		t.Fatalf("workDirForJob() error = %v", err)
+	}
+	if branch != "issue_#114" {
+		t.Fatalf("branch = %q, want issue_#114", branch)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, "remote.txt")); err != nil {
+		t.Fatalf("worktree was not rebased from remote branch: %v", err)
+	}
+}
+
 func TestAppendIssueAILog(t *testing.T) {
 	toolDir := t.TempDir()
 	processor := &WorkflowProcessor{toolDir: toolDir}
