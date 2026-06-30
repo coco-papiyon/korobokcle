@@ -14,14 +14,20 @@ if not exist "frontend\node_modules" (
 )
 
 echo Starting backend at http://localhost:8080...
-start "korobokcle backend" /D "%ROOT_DIR%" cmd /k go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --work-dir "%ROOT_DIR%" %*
-if errorlevel 1 goto :error
+set "FRONTEND_RUNNING="
+for /f "tokens=5" %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess"') do set "FRONTEND_RUNNING=%%P"
+if defined FRONTEND_RUNNING (
+  echo Frontend is already running on http://localhost:5173 ^(PID: %FRONTEND_RUNNING%^). Skipping startup.
+) else (
+  echo Starting frontend at http://localhost:5173...
+  start "korobokcle frontend" /D "%ROOT_DIR%\frontend" cmd /k npm run dev
+  if errorlevel 1 goto :error
+  echo Frontend source changes are applied automatically by Vite HMR.
+)
+echo Backend runs in this window.
 
-echo Starting frontend at http://localhost:5173...
-start "korobokcle frontend" /D "%ROOT_DIR%\frontend" cmd /k npm run dev
+go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --work-dir "%ROOT_DIR%" %*
 if errorlevel 1 goto :error
-
-echo Frontend source changes are applied automatically by Vite HMR.
 
 popd
 exit /b 0
