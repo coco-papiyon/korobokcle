@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,10 +22,11 @@ func TestJobsAPI(t *testing.T) {
 	storePath := filepath.Join(dir, "db", "jobs.json")
 	store := newTestJobStore(storePath)
 	settingsStore := newTestSettingsStore(domain.WatchSettings{Repository: "owner/repo"})
+	branchResolver := &testJobBranchResolver{}
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, store, settingsStore, nil)
+	server := NewServer(cfg, store, settingsStore, nil, branchResolver)
 
 	body := map[string]any{
 		"kind":       string(domain.JobKindIssueDesign),
@@ -81,6 +83,16 @@ func TestJobsAPI(t *testing.T) {
 	if detail.ID != resp.Jobs[0].ID {
 		t.Fatalf("detail id = %q, want %q", detail.ID, resp.Jobs[0].ID)
 	}
+	var detailResp struct {
+		domain.Job
+		Branch string `json:"branch"`
+	}
+	if err := json.Unmarshal(detailRec.Body.Bytes(), &detailResp); err != nil {
+		t.Fatalf("detail response json.Unmarshal() error = %v", err)
+	}
+	if detailResp.Branch != "issue_#42" {
+		t.Fatalf("detail branch = %q, want issue_#42", detailResp.Branch)
+	}
 
 	updateReqBody, err := json.Marshal(map[string]any{
 		"state": string(domain.StateDesignRunning),
@@ -104,6 +116,53 @@ func TestJobsAPI(t *testing.T) {
 	}
 }
 
+type testJobBranchResolver struct{}
+
+func (testJobBranchResolver) Resolve(_ context.Context, job domain.Job, _ domain.WatchSettings) (string, error) {
+	switch job.Kind {
+	case domain.JobKindIssueDesign, domain.JobKindIssueImplementation:
+		return "issue_#" + strconv.Itoa(job.Number), nil
+	case domain.JobKindPRReview, domain.JobKindPRFeedback:
+		return "feature/pr-" + strconv.Itoa(job.Number), nil
+	default:
+		return "", nil
+	}
+}
+
+func TestDefaultJobBranchResolver(t *testing.T) {
+	resolver := NewDefaultJobBranchResolver()
+
+	issueBranch, err := resolver.Resolve(context.Background(), domain.Job{
+		Kind:   domain.JobKindIssueImplementation,
+		Number: 114,
+	}, domain.WatchSettings{BranchNamePattern: "feature/<issueNumber>"})
+	if err != nil {
+		t.Fatalf("issue Resolve() error = %v", err)
+	}
+	if issueBranch != "feature/114" {
+		t.Fatalf("issue branch = %q, want feature/114", issueBranch)
+	}
+
+	dir := t.TempDir()
+	script := "@echo off\r\nif \"%1\"==\"pr\" if \"%2\"==\"view\" (\r\n  echo {\"headRefName\":\"feature/pr-114\"}\r\n  exit /b 0\r\n)\r\nexit /b 1\r\n"
+	if err := os.WriteFile(filepath.Join(dir, "gh.cmd"), []byte(script), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	prBranch, err := resolver.Resolve(context.Background(), domain.Job{
+		Kind:       domain.JobKindPRReview,
+		Repository: "owner/repo",
+		Number:     114,
+	}, domain.WatchSettings{})
+	if err != nil {
+		t.Fatalf("PR Resolve() error = %v", err)
+	}
+	if prBranch != "feature/pr-114" {
+		t.Fatalf("PR branch = %q, want feature/pr-114", prBranch)
+	}
+}
+
 func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 	dir := t.TempDir()
 	store := newTestJobStore(filepath.Join(dir, "db", "jobs.json"))
@@ -111,7 +170,7 @@ func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, store, settingsStore, nil)
+	server := NewServer(cfg, store, settingsStore, nil, nil)
 
 	job := domain.Job{
 		ID:         "job-1",
@@ -140,7 +199,7 @@ func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 }
 
 func TestHealthz(t *testing.T) {
-	server := NewServer(config.Default(), nil, nil, nil)
+	server := NewServer(config.Default(), nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(rec, req)
@@ -160,7 +219,7 @@ func TestArtifactRequestChangesAPI(t *testing.T) {
 			Title:      "review target",
 		},
 	}
-	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions)
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil)
 
 	body := bytes.NewBufferString(`{"comment":"追加でここも修正"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/jobs/pr-12/artifact/request-changes", body)
@@ -200,7 +259,7 @@ func (a *testArtifactActions) RerunArtifact(context.Context, string, string) (do
 
 func TestSkillsAPI(t *testing.T) {
 	actions := &testSkillActions{statuses: []domain.SkillStatus{{Purpose: domain.SkillPurposeIssueDesign, Name: "design-from-issue"}}}
-	server := NewServer(config.Default(), nil, nil, nil, actions)
+	server := NewServer(config.Default(), nil, nil, nil, nil, actions)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
 	getRec := httptest.NewRecorder()
@@ -259,7 +318,7 @@ func TestSettingsAPI(t *testing.T) {
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-4.1"},
 		},
 	})
-	server := NewServer(config.Default(), nil, store, nil)
+	server := NewServer(config.Default(), nil, store, nil, nil)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
 	getRec := httptest.NewRecorder()
@@ -363,7 +422,7 @@ func TestStaticAssetsAndSPAFallback(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, nil, nil, nil)
+	server := NewServer(cfg, nil, nil, nil, nil)
 
 	assetReq := httptest.NewRequest(http.MethodGet, "/assets/index-test.js", nil)
 	assetRec := httptest.NewRecorder()

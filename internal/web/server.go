@@ -47,7 +47,7 @@ type Server struct {
 	skillActions    SkillActions
 }
 
-func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, artifactActions ArtifactActions, optionalSkillActions ...SkillActions) *Server {
+func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, artifactActions ArtifactActions, branchResolver JobBranchResolver, optionalSkillActions ...SkillActions) *Server {
 	mux := http.NewServeMux()
 	var skillActions SkillActions
 	if len(optionalSkillActions) > 0 {
@@ -265,7 +265,25 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 			http.NotFound(w, r)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(job)
+		settings := domain.NormalizeWatchSettings(domain.WatchSettings{})
+		if settingsStore != nil {
+			if loaded, err := settingsStore.Load(r.Context()); err == nil {
+				settings = domain.NormalizeWatchSettings(loaded)
+			}
+		}
+		branch := ""
+		if branchResolver != nil {
+			if resolved, err := branchResolver.Resolve(r.Context(), job, settings); err == nil {
+				branch = strings.TrimSpace(resolved)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(struct {
+			domain.Job
+			Branch string `json:"branch,omitempty"`
+		}{
+			Job:    job,
+			Branch: branch,
+		})
 	})
 
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {

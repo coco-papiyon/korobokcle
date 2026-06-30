@@ -118,7 +118,7 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}()
 
-	srv := web.NewServer(cfg, store, settingsStore, artifactActions, skillGenerator)
+	srv := web.NewServer(cfg, store, settingsStore, artifactActions, web.NewDefaultJobBranchResolver(), skillGenerator)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- srv.ListenAndServe()

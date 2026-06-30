@@ -7,6 +7,7 @@ export type Job = {
   repository: string
   number: number
   title: string
+  branch?: string
 }
 
 export type JobArtifact = {

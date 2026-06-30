@@ -56,6 +56,8 @@ const detailTitle = computed(() => {
   return detailJob.value.title || `#${detailJob.value.number}`
 })
 
+const detailBranch = computed(() => detailJob.value?.branch?.trim() || '-')
+
 function jobStateLabel(state: string) {
   return stateLabels[state] ?? state
 }
@@ -273,6 +275,10 @@ watch(
         <div class="detail__meta-item">
           <div class="detail__meta-label">Number</div>
           <div class="detail__meta-value detail__meta-value--number">#{{ detailJob.number }}</div>
+        </div>
+        <div class="detail__meta-item">
+          <div class="detail__meta-label">ブランチ</div>
+          <div class="detail__meta-value detail__meta-value--mono">{{ detailBranch }}</div>
         </div>
       </div>
 
