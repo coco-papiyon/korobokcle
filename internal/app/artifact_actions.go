@@ -90,7 +90,7 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		if err := s.prepareImplementationBranch(ctx, job); err != nil {
 			return domain.Job{}, err
 		}
-		if err := s.createPullRequest(ctx, job, buildResultBody(job, artifact.Content, userComment)); err != nil {
+		if err := s.createPullRequest(ctx, job, buildPullRequestBody(job, artifact.Content, userComment)); err != nil {
 			return domain.Job{}, err
 		}
 		latestLabels := []string{domain.MustLabel(domain.StatePRCreated)}
@@ -560,6 +560,10 @@ func buildResultBody(job domain.Job, artifact string, userComment string) string
 		)
 	}
 	return strings.Join(lines, "\n")
+}
+
+func buildPullRequestBody(job domain.Job, artifact string, userComment string) string {
+	return buildResultBody(job, artifact, userComment) + "\n\nCloses #" + strconv.Itoa(job.Number)
 }
 
 func resultTitle(job domain.Job) string {
