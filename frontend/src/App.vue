@@ -10,6 +10,12 @@ type Tab = 'settings' | 'skills' | 'jobs' | 'detail'
 const activeTab = ref<Tab>('jobs')
 const selectedJobId = ref('')
 const detailRefreshKey = ref(0)
+const tabDescriptions: Record<Tab, string> = {
+  settings: 'AI プロバイダーと監視条件をまとめて設定する。',
+  skills: 'Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。',
+  jobs: '監視中のジョブ一覧を確認し、処理対象を選択する。',
+  detail: '選択したジョブの詳細と生成物を確認し、必要なら再実行や承認を行う。',
+}
 
 function selectJob(jobId: string) {
   selectedJobId.value = jobId
@@ -68,6 +74,10 @@ function selectTab(tab: Tab) {
             詳細
           </button>
         </div>
+
+        <p class="tab-description" aria-live="polite">
+          {{ tabDescriptions[activeTab] }}
+        </p>
 
         <div v-show="activeTab === 'settings'" class="tab-panel" role="tabpanel">
           <SettingsPanel />

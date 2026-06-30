@@ -54,7 +54,7 @@ select {
 }
 
 .hero--compact {
-  padding: 32px;
+  padding: 24px;
 }
 
 .hero__header {
@@ -111,7 +111,7 @@ h1 {
 .tabs {
   display: flex;
   gap: 10px;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
   padding: 6px;
   border-radius: 18px;
   background: rgba(18, 32, 51, 0.05);
@@ -142,6 +142,17 @@ h1 {
   background: rgba(255, 255, 255, 0.96);
   color: #122033;
   box-shadow: 0 8px 20px rgba(18, 32, 51, 0.08);
+}
+
+.tab-description {
+  margin: 0 0 14px;
+  padding: 14px 18px;
+  border: 1px solid rgba(18, 32, 51, 0.08);
+  border-radius: 18px;
+  background: rgba(248, 250, 253, 0.88);
+  color: rgba(18, 32, 51, 0.72);
+  font-size: 0.93rem;
+  line-height: 1.7;
 }
 
 .tab-panel {
@@ -674,7 +685,7 @@ h1 {
 
   .hero--compact,
   .panel {
-    padding: 20px;
+    padding: 18px;
     border-radius: 22px;
   }
 
@@ -688,6 +699,13 @@ h1 {
 
   .tabs {
     padding: 4px;
+  }
+
+  .tab-description {
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    font-size: 0.9rem;
   }
 
   .tab {

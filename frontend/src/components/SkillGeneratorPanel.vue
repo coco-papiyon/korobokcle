@@ -109,11 +109,7 @@ onMounted(() => {
 
 <template>
   <div class="hero hero--compact">
-    <p class="eyebrow">Issue-driven skills</p>
     <div class="hero__header">
-      <div>
-        <p class="lede">Issue駆動開発に必要なAgent Skillを監視対象リポジトリへ生成する。</p>
-      </div>
       <div class="hero__actions">
         <button class="button button--ghost" type="button" :disabled="loading || generating" @click="loadSkills">
           {{ loading ? '確認中' : '再確認' }}
