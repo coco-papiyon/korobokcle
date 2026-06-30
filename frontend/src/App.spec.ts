@@ -2,6 +2,8 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { vi } from 'vitest'
 import App from './App.vue'
+import JobDetailPanel from './components/JobDetailPanel.vue'
+import JobListPanel from './components/JobListPanel.vue'
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -61,5 +63,39 @@ describe('App', () => {
     await tabs[3].trigger('click')
     await nextTick()
     expect(description()).toBe('選択したジョブの詳細と生成物を確認し、必要なら再実行や承認を行う。')
+  })
+
+  it('passes active only to the visible job panels', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/settings') {
+        return Promise.resolve(
+          jsonResponse({
+            aiProvider: 'codex',
+          }),
+        )
+      }
+      if (url === '/api/skills') {
+        return Promise.resolve(jsonResponse({ skills: [] }))
+      }
+      if (url === '/api/jobs') {
+        return Promise.resolve(jsonResponse({ jobs: [] }))
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(App)
+    await flushPromises()
+
+    expect(wrapper.getComponent(JobListPanel).props('active')).toBe(true)
+    expect(wrapper.getComponent(JobDetailPanel).props('active')).toBe(false)
+
+    const tabs = wrapper.findAll('button[role="tab"]')
+    await tabs[3].trigger('click')
+    await nextTick()
+
+    expect(wrapper.getComponent(JobListPanel).props('active')).toBe(false)
+    expect(wrapper.getComponent(JobDetailPanel).props('active')).toBe(true)
   })
 })

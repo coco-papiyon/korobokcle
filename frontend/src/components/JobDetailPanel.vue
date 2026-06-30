@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Job, JobArtifact } from '../types'
 
 const props = defineProps<{
   jobId: string
   refreshKey: number
+  active: boolean
 }>()
 
 const detailLoading = ref(false)
@@ -16,6 +17,7 @@ const artifact = ref<JobArtifact | null>(null)
 const artifactUserComment = ref('')
 const artifactActionLoading = ref(false)
 let detailRequestSequence = 0
+let detailRefreshTimer: number | undefined
 
 const stateLabels: Record<string, string> = {
   detected: '検知済み',
@@ -91,7 +93,7 @@ function artifactTitle(job: Job | null) {
 }
 
 async function loadJobDetail(id: string) {
-	const requestSequence = ++detailRequestSequence
+  const requestSequence = ++detailRequestSequence
   if (!id) {
     detailJob.value = null
     return
@@ -120,7 +122,7 @@ async function loadJobDetail(id: string) {
 }
 
 async function loadArtifact() {
-  if (!detailJob.value) {
+  if (!props.active || !detailJob.value) {
     return
   }
   artifactLoading.value = true
@@ -218,27 +220,53 @@ async function rerunArtifact() {
   }
 }
 
-watch(
-  () => [props.jobId, props.refreshKey] as const,
-  ([jobId]) => {
+function stopRefreshing() {
+  if (detailRefreshTimer !== undefined) {
+    window.clearInterval(detailRefreshTimer)
+    detailRefreshTimer = undefined
+  }
+}
+
+function startRefreshing(jobId: string) {
+  stopRefreshing()
+  if (!jobId) {
+    return
+  }
+  detailRefreshTimer = window.setInterval(() => {
     void loadJobDetail(jobId)
+  }, 5000)
+}
+
+watch(
+  () => [props.jobId, props.refreshKey, props.active] as const,
+  ([jobId, , active]) => {
+    stopRefreshing()
+    if (!active) {
+      return
+    }
+    void loadJobDetail(jobId)
+    startRefreshing(jobId)
   },
   { immediate: true },
 )
 
 watch(
-  detailJob,
-  (job) => {
+  [detailJob, () => props.active],
+  ([job, active]) => {
     artifact.value = null
     artifactError.value = ''
     artifactLoading.value = false
     artifactUserComment.value = ''
-    if (job && canInspectArtifact(job)) {
+    if (active && job && canInspectArtifact(job)) {
       void loadArtifact()
     }
   },
   { immediate: true },
 )
+
+onBeforeUnmount(() => {
+  stopRefreshing()
+})
 </script>
 
 <template>

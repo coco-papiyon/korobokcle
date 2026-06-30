@@ -23,7 +23,17 @@ async function flushPromises() {
   await nextTick()
 }
 
+async function flushMicrotasks() {
+  await Promise.resolve()
+  await nextTick()
+}
+
 describe('JobListPanel', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
   it('hides completed jobs by default and shows them when toggled on', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
@@ -60,6 +70,7 @@ describe('JobListPanel', () => {
     const wrapper = mount(JobListPanel, {
       props: {
         selectedJobId: '',
+        active: true,
       },
     })
     await flushPromises()
@@ -75,5 +86,47 @@ describe('JobListPanel', () => {
     expect(wrapper.get('input[type="checkbox"]').element).toHaveProperty('checked', true)
     expect(wrapper.findAll('tbody tr')).toHaveLength(3)
     expect(wrapper.text()).toContain('完了ジョブ')
+  })
+
+  it('refreshes only while active', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        jobs: [
+          {
+            id: 'job-1',
+            kind: 'issue_design',
+            state: 'design_running',
+            repository: 'owner/repo',
+            number: 1,
+            title: '設計中ジョブ',
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobListPanel, {
+      props: {
+        selectedJobId: '',
+        active: false,
+      },
+    })
+
+    await flushMicrotasks()
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ active: true })
+    await flushMicrotasks()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushMicrotasks()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    await wrapper.setProps({ active: false })
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushMicrotasks()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })
