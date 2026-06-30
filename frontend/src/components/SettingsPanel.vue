@@ -200,11 +200,7 @@ onMounted(() => {
 
 <template>
   <div class="hero hero--compact">
-    <p class="eyebrow">korobokcle</p>
     <div class="hero__header">
-      <div>
-        <p class="lede">AI プロバイダーと監視条件をここで設定する。</p>
-      </div>
       <div class="hero__actions">
         <button class="button button--ghost" type="button" @click="loadSettings" :disabled="settingsLoading">
           {{ settingsLoading ? '読込中' : '再読込' }}
