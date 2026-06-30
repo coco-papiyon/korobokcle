@@ -85,6 +85,7 @@ func Run(ctx context.Context, opts Options) error {
 			cfg.Repository = settings.Repository
 		}
 		cfg.PollInterval = settings.PollIntervalDuration()
+		cfg.JobWorkers = settings.JobConcurrency
 	}
 
 	feedbackStore := NewFileDesignFeedbackStore(filepath.Join(cfg.WorkDir, "workspace", "design_feedback"))
@@ -95,6 +96,9 @@ func Run(ctx context.Context, opts Options) error {
 		processorFactory = NewWorkflowProcessorFactory(store, settingsStore, feedbackStore, cfg.BaseDir, cfg.WorkDir, logger)
 	}
 	manager := NewWorkerManagerWithFactory(cfg, infoLogger, processorFactory)
+	settingsStore.SetOnSave(func(settings domain.WatchSettings) {
+		manager.SetConcurrency(settings.JobConcurrency)
+	})
 	if err := manager.Start(ctx); err != nil {
 		return err
 	}

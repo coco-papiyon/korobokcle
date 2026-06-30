@@ -12,9 +12,7 @@ import (
 
 func TestWorkerManagerSubmitAndProcess(t *testing.T) {
 	cfg := config.Default()
-	cfg.DesignWorkers = 1
-	cfg.ImplementationWorkers = 1
-	cfg.ReviewWorkers = 1
+	cfg.JobWorkers = 1
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -86,9 +84,7 @@ func TestWorkerManagerRequiresStart(t *testing.T) {
 
 func TestWorkerManagerOwnsProcessorLifecycle(t *testing.T) {
 	cfg := config.Default()
-	cfg.DesignWorkers = 1
-	cfg.ImplementationWorkers = 1
-	cfg.ReviewWorkers = 1
+	cfg.JobWorkers = 1
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var mu sync.Mutex
@@ -104,9 +100,32 @@ func TestWorkerManagerOwnsProcessorLifecycle(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if starts != 4 || stops != 4 {
-		t.Fatalf("processor lifecycle starts=%d stops=%d, want 4/4", starts, stops)
+	if starts != 1 || stops != 1 {
+		t.Fatalf("processor lifecycle starts=%d stops=%d, want 1/1", starts, stops)
 	}
+}
+
+func TestWorkerManagerChangesConcurrency(t *testing.T) {
+	cfg := config.Default()
+	cfg.JobWorkers = 1
+	ctx, cancel := context.WithCancel(context.Background())
+	manager := NewWorkerManager(cfg, nil, nil)
+	if err := manager.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if got := manager.Concurrency(); got != 1 {
+		t.Fatalf("Concurrency() = %d, want 1", got)
+	}
+	manager.SetConcurrency(4)
+	if got := manager.Concurrency(); got != 4 {
+		t.Fatalf("Concurrency() = %d, want 4", got)
+	}
+	manager.SetConcurrency(2)
+	if got := manager.Concurrency(); got != 2 {
+		t.Fatalf("Concurrency() = %d, want 2", got)
+	}
+	cancel()
+	manager.Wait()
 }
 
 type lifecycleTestProcessor struct {

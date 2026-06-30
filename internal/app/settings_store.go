@@ -22,6 +22,7 @@ type FileSettingsStore struct {
 
 	mu       sync.Mutex
 	settings domain.WatchSettings
+	onSave   func(domain.WatchSettings)
 }
 
 func NewFileSettingsStore(path string, defaults domain.WatchSettings) (*FileSettingsStore, error) {
@@ -49,9 +50,21 @@ func (s *FileSettingsStore) Load(context.Context) (domain.WatchSettings, error) 
 
 func (s *FileSettingsStore) Save(_ context.Context, settings domain.WatchSettings) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.settings = domain.NormalizeWatchSettings(settings)
-	return s.saveLocked()
+	err := s.saveLocked()
+	onSave := s.onSave
+	saved := s.settings
+	s.mu.Unlock()
+	if err == nil && onSave != nil {
+		onSave(saved)
+	}
+	return err
+}
+
+func (s *FileSettingsStore) SetOnSave(onSave func(domain.WatchSettings)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onSave = onSave
 }
 
 func (s *FileSettingsStore) load() error {

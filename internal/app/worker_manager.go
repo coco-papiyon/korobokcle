@@ -35,10 +35,13 @@ type WorkerManager struct {
 	logger  *log.Logger
 	factory WorkerProcessorFactory
 
-	mu      sync.Mutex
-	queues  map[domain.JobKind]chan domain.Job
-	started bool
-	wg      sync.WaitGroup
+	mu          sync.Mutex
+	queue       chan domain.Job
+	started     bool
+	ctx         context.Context
+	nextWorker  int
+	workerStops map[int]context.CancelFunc
+	wg          sync.WaitGroup
 }
 
 func NewWorkerManager(cfg config.Config, logger *log.Logger, processor JobProcessor) *WorkerManager {
@@ -52,15 +55,11 @@ func NewWorkerManager(cfg config.Config, logger *log.Logger, processor JobProces
 
 func NewWorkerManagerWithFactory(cfg config.Config, logger *log.Logger, factory WorkerProcessorFactory) *WorkerManager {
 	return &WorkerManager{
-		cfg:     cfg,
-		logger:  logger,
-		factory: factory,
-		queues: map[domain.JobKind]chan domain.Job{
-			domain.JobKindIssueDesign:         make(chan domain.Job, 32),
-			domain.JobKindIssueImplementation: make(chan domain.Job, 32),
-			domain.JobKindPRReview:            make(chan domain.Job, 32),
-			domain.JobKindPRFeedback:          make(chan domain.Job, 32),
-		},
+		cfg:         cfg,
+		logger:      logger,
+		factory:     factory,
+		queue:       make(chan domain.Job, 128),
+		workerStops: make(map[int]context.CancelFunc),
 	}
 }
 
@@ -71,12 +70,47 @@ func (m *WorkerManager) Start(ctx context.Context) error {
 		return errors.New("worker manager already started")
 	}
 	m.started = true
-
-	m.startPool(ctx, domain.JobKindIssueDesign, m.cfg.DesignWorkers)
-	m.startPool(ctx, domain.JobKindIssueImplementation, m.cfg.ImplementationWorkers)
-	m.startPool(ctx, domain.JobKindPRFeedback, m.cfg.ImplementationWorkers)
-	m.startPool(ctx, domain.JobKindPRReview, m.cfg.ReviewWorkers)
+	m.ctx = ctx
+	m.setConcurrencyLocked(m.cfg.JobWorkers)
 	return nil
+}
+
+func (m *WorkerManager) SetConcurrency(limit int) {
+	if limit < 1 {
+		limit = 1
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg.JobWorkers = limit
+	if m.started {
+		m.setConcurrencyLocked(limit)
+	}
+}
+
+func (m *WorkerManager) Concurrency() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.workerStops)
+}
+
+func (m *WorkerManager) setConcurrencyLocked(limit int) {
+	if limit < 1 {
+		limit = 1
+	}
+	for len(m.workerStops) < limit {
+		m.nextWorker++
+		id := m.nextWorker
+		workerCtx, stop := context.WithCancel(m.ctx)
+		m.workerStops[id] = stop
+		m.startWorker(workerCtx, id)
+	}
+	for len(m.workerStops) > limit {
+		for id, stop := range m.workerStops {
+			stop()
+			delete(m.workerStops, id)
+			break
+		}
+	}
 }
 
 func (m *WorkerManager) Submit(job domain.Job) error {
@@ -85,61 +119,56 @@ func (m *WorkerManager) Submit(job domain.Job) error {
 	if !m.started {
 		return errors.New("worker manager not started")
 	}
-	queue, ok := m.queues[job.Kind]
-	if !ok {
+	switch job.Kind {
+	case domain.JobKindIssueDesign, domain.JobKindIssueImplementation, domain.JobKindPRReview, domain.JobKindPRFeedback:
+	default:
 		return fmt.Errorf("unsupported job kind: %s", job.Kind)
 	}
 	select {
-	case queue <- job:
+	case m.queue <- job:
 		return nil
 	default:
-		return fmt.Errorf("job queue full for kind %s", job.Kind)
+		return errors.New("job queue full")
 	}
 }
 
-func (m *WorkerManager) Wait() {
-	m.wg.Wait()
-}
+func (m *WorkerManager) Wait() { m.wg.Wait() }
 
-func (m *WorkerManager) startPool(ctx context.Context, kind domain.JobKind, limit int) {
-	if limit < 1 {
-		limit = 1
-	}
-	queue := m.queues[kind]
-	for i := 0; i < limit; i++ {
-		m.wg.Add(1)
-		go func(workerIndex int) {
-			defer m.wg.Done()
-			processor := m.factory()
-			if err := processor.Start(ctx); err != nil {
-				if m.logger != nil {
-					m.logger.Printf("worker startup failed kind=%s worker=%d error=%v", kind, workerIndex+1, err)
-				}
+func (m *WorkerManager) startWorker(workerCtx context.Context, workerID int) {
+	m.wg.Add(1)
+	go func() {
+		defer m.wg.Done()
+		processor := m.factory()
+		if err := processor.Start(m.ctx); err != nil {
+			if m.logger != nil {
+				m.logger.Printf("worker startup failed worker=%d error=%v", workerID, err)
+			}
+			return
+		}
+		defer func() {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := processor.Stop(stopCtx); err != nil && m.logger != nil {
+				m.logger.Printf("worker shutdown failed worker=%d error=%v", workerID, err)
+			}
+		}()
+		for {
+			select {
+			case <-workerCtx.Done():
 				return
+			default:
 			}
-			defer func() {
-				stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				if err := processor.Stop(stopCtx); err != nil && m.logger != nil {
-					m.logger.Printf("worker shutdown failed kind=%s worker=%d error=%v", kind, workerIndex+1, err)
+			select {
+			case <-workerCtx.Done():
+				return
+			case job := <-m.queue:
+				if m.logger != nil {
+					m.logger.Printf("worker started kind=%s worker=%d job=%s state=%s", job.Kind, workerID, job.ID, job.State)
 				}
-			}()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case job := <-queue:
-					if job.Kind == "" {
-						continue
-					}
-					if m.logger != nil {
-						m.logger.Printf("worker started kind=%s worker=%d job=%s state=%s", job.Kind, workerIndex+1, job.ID, job.State)
-					}
-					if err := processor.Process(ctx, job); err != nil && m.logger != nil {
-						m.logger.Printf("worker failed kind=%s worker=%d job=%s error=%v", job.Kind, workerIndex+1, job.ID, err)
-					}
+				if err := processor.Process(m.ctx, job); err != nil && m.logger != nil {
+					m.logger.Printf("worker failed kind=%s worker=%d job=%s error=%v", job.Kind, workerID, job.ID, err)
 				}
 			}
-		}(i)
-	}
+		}
+	}()
 }

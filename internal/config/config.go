@@ -7,15 +7,13 @@ import (
 )
 
 type Config struct {
-	BaseDir               string
-	ToolDir               string
-	WorkDir               string
-	Repository            string
-	Addr                  string
-	PollInterval          time.Duration
-	DesignWorkers         int
-	ImplementationWorkers int
-	ReviewWorkers         int
+	BaseDir      string
+	ToolDir      string
+	WorkDir      string
+	Repository   string
+	Addr         string
+	PollInterval time.Duration
+	JobWorkers   int
 }
 
 func Default() Config {
@@ -28,14 +26,12 @@ func Default() Config {
 		toolDir = filepath.Dir(exe)
 	}
 	return Config{
-		BaseDir:               wd,
-		ToolDir:               toolDir,
-		WorkDir:               toolDir,
-		Repository:            "",
-		Addr:                  ":8080",
-		PollInterval:          120 * time.Second,
-		DesignWorkers:         1,
-		ImplementationWorkers: 1,
-		ReviewWorkers:         1,
+		BaseDir:      wd,
+		ToolDir:      toolDir,
+		WorkDir:      toolDir,
+		Repository:   "",
+		Addr:         ":8080",
+		PollInterval: 120 * time.Second,
+		JobWorkers:   4,
 	}
 }

@@ -278,6 +278,9 @@ func TestSettingsAPI(t *testing.T) {
 	if settings.PollIntervalSeconds != 120 {
 		t.Fatalf("poll interval = %d, want 120", settings.PollIntervalSeconds)
 	}
+	if settings.JobConcurrency != 4 {
+		t.Fatalf("job concurrency = %d, want 4", settings.JobConcurrency)
+	}
 	if settings.BaseBranch != "develop" {
 		t.Fatalf("base branch = %q, want develop", settings.BaseBranch)
 	}
@@ -298,6 +301,7 @@ func TestSettingsAPI(t *testing.T) {
 		Repository:          "owner/updated",
 		AIProvider:          domain.AIProviderCodex,
 		PollIntervalSeconds: 240,
+		JobConcurrency:      6,
 		BaseBranch:          "release",
 		BranchNamePattern:   "feature/<issue番号>",
 		AIAllowedCommands:   []string{"npm ci", "go test ./..."},
@@ -330,6 +334,9 @@ func TestSettingsAPI(t *testing.T) {
 	}
 	if updated.PollIntervalSeconds != 240 {
 		t.Fatalf("updated poll interval = %d, want 240", updated.PollIntervalSeconds)
+	}
+	if updated.JobConcurrency != 6 {
+		t.Fatalf("updated job concurrency = %d, want 6", updated.JobConcurrency)
 	}
 	if updated.BaseBranch != "release" {
 		t.Fatalf("updated base branch = %q, want release", updated.BaseBranch)

@@ -38,6 +38,7 @@ export type WatchSettings = {
   repository: string
   aiProvider: AIProvider
   pollIntervalSeconds: number
+  jobConcurrency: number
   baseBranch: string
   branchNamePattern: string
   aiAllowedCommands: string[]

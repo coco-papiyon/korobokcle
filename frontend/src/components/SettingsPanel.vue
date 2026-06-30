@@ -10,6 +10,7 @@ const settingsForm = ref({
   repository: '',
   aiProvider: 'codex' as AIProvider,
   pollIntervalSeconds: 120,
+  jobConcurrency: 4,
   baseBranch: 'main',
   branchNamePattern: 'issue_#<issue番号>',
   aiAllowedCommandsText: '',
@@ -97,6 +98,7 @@ function settingsToForm(settings: WatchSettings) {
   settingsForm.value.repository = settings.repository ?? ''
   settingsForm.value.aiProvider = settings.aiProvider ?? 'codex'
   settingsForm.value.pollIntervalSeconds = settings.pollIntervalSeconds ?? 120
+  settingsForm.value.jobConcurrency = settings.jobConcurrency ?? 4
   settingsForm.value.baseBranch = settings.baseBranch?.trim() || 'main'
   settingsForm.value.branchNamePattern = settings.branchNamePattern?.trim() || 'issue_#<issue番号>'
   settingsForm.value.aiAllowedCommandsText = joinLines(settings.aiAllowedCommands ?? settings.codexAllowedCommands ?? [])
@@ -125,6 +127,10 @@ function formToSettings(): WatchSettings {
       Number.isFinite(settingsForm.value.pollIntervalSeconds) && settingsForm.value.pollIntervalSeconds > 0
         ? Math.floor(settingsForm.value.pollIntervalSeconds)
         : 120,
+    jobConcurrency:
+      Number.isFinite(settingsForm.value.jobConcurrency) && settingsForm.value.jobConcurrency > 0
+        ? Math.floor(settingsForm.value.jobConcurrency)
+        : 4,
     baseBranch: settingsForm.value.baseBranch.trim() || 'main',
     branchNamePattern: settingsForm.value.branchNamePattern.trim() || 'issue_#<issue番号>',
     aiAllowedCommands: splitLines(settingsForm.value.aiAllowedCommandsText),
@@ -271,6 +277,12 @@ onMounted(() => {
     <label class="field field--full">
       <span>監視間隔（秒）</span>
       <input v-model.number="settingsForm.pollIntervalSeconds" class="control" type="number" min="1" step="1" />
+    </label>
+
+    <label class="field field--full">
+      <span>ジョブ多重度</span>
+      <input v-model.number="settingsForm.jobConcurrency" class="control" type="number" min="1" step="1" />
+      <span class="field-note">同時に実行できるジョブ数。デフォルトは4。</span>
     </label>
 
     <label class="field field--full">

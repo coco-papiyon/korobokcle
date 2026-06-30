@@ -31,6 +31,7 @@ type WatchSettings struct {
 	Repository           string          `json:"repository"`
 	AIProvider           AIProvider      `json:"aiProvider,omitempty"`
 	PollIntervalSeconds  int             `json:"pollIntervalSeconds,omitempty"`
+	JobConcurrency       int             `json:"jobConcurrency,omitempty"`
 	BaseBranch           string          `json:"baseBranch,omitempty"`
 	BranchNamePattern    string          `json:"branchNamePattern,omitempty"`
 	AIAllowedCommands    []string        `json:"aiAllowedCommands,omitempty"`
@@ -56,6 +57,9 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 	}
 	if settings.PollIntervalSeconds <= 0 {
 		settings.PollIntervalSeconds = 120
+	}
+	if settings.JobConcurrency <= 0 {
+		settings.JobConcurrency = 4
 	}
 	if strings.TrimSpace(settings.BaseBranch) == "" {
 		settings.BaseBranch = "main"
