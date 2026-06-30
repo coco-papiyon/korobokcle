@@ -29,19 +29,29 @@ func TestClassifyIssue(t *testing.T) {
 
 func TestClassifyPullRequest(t *testing.T) {
 	tests := []struct {
-		name   string
-		labels []string
-		wantK  domain.JobKind
-		wantS  domain.JobState
+		name             string
+		labels           []string
+		mergeable        string
+		mergeStateStatus string
+		wantK            domain.JobKind
+		wantS            domain.JobState
 	}{
 		{name: "default", labels: nil, wantK: domain.JobKindPRReview, wantS: domain.StateReviewRunning},
 		{name: "review comment", labels: []string{"state:pr_review_comment"}, wantK: domain.JobKindPRFeedback, wantS: domain.StatePRReviewComment},
 		{name: "review fix design approved", labels: []string{"state:review_fix_design_approved"}, wantK: domain.JobKindPRFeedback, wantS: domain.StateReviewFixDesignApproved},
 		{name: "approved label wins", labels: []string{"state:pr_review_comment", "state:review_fix_design_approved"}, wantK: domain.JobKindPRFeedback, wantS: domain.StateReviewFixDesignApproved},
+		{name: "conflicting", mergeable: "CONFLICTING", wantK: domain.JobKindPRConflict, wantS: domain.StatePRConflict},
+		{name: "dirty merge state", mergeStateStatus: "DIRTY", wantK: domain.JobKindPRConflict, wantS: domain.StatePRConflict},
 	}
 
 	for _, tt := range tests {
-		kind, state := classifyPullRequest(tt.labels)
+		record := ghPRRecord{Mergeable: tt.mergeable, MergeStateStatus: tt.mergeStateStatus}
+		for _, label := range tt.labels {
+			record.Labels = append(record.Labels, struct {
+				Name string `json:"name"`
+			}{Name: label})
+		}
+		kind, state := classifyPullRequest(record)
 		if kind != tt.wantK || state != tt.wantS {
 			t.Fatalf("%s: classifyPullRequest() = (%s, %s), want (%s, %s)", tt.name, kind, state, tt.wantK, tt.wantS)
 		}
@@ -56,6 +66,17 @@ func TestGitHubSourceEmptyRepository(t *testing.T) {
 	}
 	if len(jobs) != 0 {
 		t.Fatalf("jobs = %d, want 0", len(jobs))
+	}
+}
+
+func TestJobIDForPRConflict(t *testing.T) {
+	conflict := ghPRRecord{Number: 42, Mergeable: "CONFLICTING"}
+	if got := jobIDForPR(conflict); got != "pr-conflict-42" {
+		t.Fatalf("jobIDForPR() = %q, want pr-conflict-42", got)
+	}
+	regular := ghPRRecord{Number: 42, Mergeable: "MERGEABLE"}
+	if got := jobIDForPR(regular); got != "pr-42" {
+		t.Fatalf("jobIDForPR() = %q, want pr-42", got)
 	}
 }
 

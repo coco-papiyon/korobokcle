@@ -97,6 +97,28 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		if err := s.updateTargetLabels(ctx, job, latestLabels, stateLabelsExcept(latestLabels...)); err != nil {
 			return domain.Job{}, err
 		}
+	} else if job.Kind == domain.JobKindPRConflict {
+		if err := s.prepareImplementationBranch(ctx, job); err != nil {
+			return domain.Job{}, err
+		}
+		repoDir, err := s.jobRepoDir(ctx, job)
+		if err != nil {
+			return domain.Job{}, err
+		}
+		branch, err := currentBranch(ctx, repoDir)
+		if err != nil {
+			return domain.Job{}, err
+		}
+		if err := publishBranch(ctx, repoDir, branch); err != nil {
+			return domain.Job{}, err
+		}
+		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
+			return domain.Job{}, err
+		}
+		latestLabels := []string{domain.MustLabel(domain.StatePRConflictResolved)}
+		if err := s.updateTargetLabels(ctx, job, latestLabels, stateLabelsExcept(latestLabels...)); err != nil {
+			return domain.Job{}, err
+		}
 	} else {
 		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
 			return domain.Job{}, err
@@ -278,7 +300,7 @@ func (s *ArtifactActionService) ensureBranch(ctx context.Context, job domain.Job
 }
 
 func (s *ArtifactActionService) jobRepoDir(ctx context.Context, job domain.Job) (string, error) {
-	if job.Kind != domain.JobKindIssueImplementation {
+	if job.Kind != domain.JobKindIssueImplementation && job.Kind != domain.JobKindPRConflict {
 		return s.baseDir, nil
 	}
 	return implementationWorktreePath(s.toolDir, job), nil
@@ -539,7 +561,8 @@ func isReadyState(state domain.JobState) bool {
 		domain.StateImplementationReady,
 		domain.StateReviewReady,
 		domain.StateReviewFixDesignReady,
-		domain.StateReviewFixImplementationReady:
+		domain.StateReviewFixImplementationReady,
+		domain.StatePRConflictReady:
 		return true
 	default:
 		return false
@@ -581,6 +604,8 @@ func resultTitle(job domain.Job) string {
 		default:
 			return "レビュー指摘検討結果"
 		}
+	case domain.JobKindPRConflict:
+		return "コンフリクト解消結果"
 	default:
 		return "結果"
 	}

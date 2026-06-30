@@ -28,6 +28,10 @@ const stateLabels: Record<string, string> = {
   implementation_approved: '実装承認済み',
   pr_created: 'PR済み',
   pr_review_comment: 'レビュー指摘あり',
+  pr_conflict: 'コンフリクト検知済み',
+  pr_conflict_running: 'コンフリクト解消中',
+  pr_conflict_ready: 'コンフリクト解消完了',
+  pr_conflict_resolved: 'コンフリクト解消済み',
   review_fix_design_running: 'レビュー指摘検討中',
   review_fix_design_ready: 'レビュー指摘検討済み',
   review_fix_design_approved: 'レビュー検討承認済み',
@@ -47,6 +51,7 @@ const inspectableStates = new Set([
   'review_ready',
   'review_fix_design_ready',
   'review_fix_implementation_ready',
+  'pr_conflict_ready',
 ])
 
 const detailTitle = computed(() => {
@@ -86,6 +91,9 @@ function artifactTitle(job: Job | null) {
   }
   if (job.kind === 'pr_feedback') {
     return 'レビュー指摘検討結果'
+  }
+  if (job.kind === 'pr_conflict') {
+    return 'コンフリクト解消結果'
   }
   return '結果'
 }

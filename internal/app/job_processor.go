@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -316,6 +317,13 @@ func (p *WorkflowProcessor) buildPrompt(job domain.Job, settings domain.WatchSet
 	)
 
 	if implementationJob(job) {
+		if job.Kind == domain.JobKindPRConflict {
+			lines = append(lines,
+				"",
+				"Resolve the merge conflicts directly in working_dir.",
+				"Keep the intent of both issues and branches in mind while editing.",
+			)
+		}
 		designPath := p.relatedDesignPath(job)
 		if designPath != "" {
 			if raw, err := os.ReadFile(designPath); err == nil {
@@ -362,6 +370,9 @@ func stripLeadingH1(artifact string) string {
 }
 
 func systemPromptForJob(job domain.Job) string {
+	if job.Kind == domain.JobKindPRConflict {
+		return "You are an autonomous software engineer. Resolve merge conflicts carefully, preserve both issue intents when possible, and report the result in concise Japanese Markdown."
+	}
 	if implementationJob(job) {
 		return "You are an autonomous software engineer. Follow the repository instructions with minimal extra process. Edit the repository directly and report the result in concise Japanese Markdown."
 	}
@@ -369,7 +380,7 @@ func systemPromptForJob(job domain.Job) string {
 }
 
 func implementationJob(job domain.Job) bool {
-	return job.Kind == domain.JobKindIssueImplementation || (job.Kind == domain.JobKindPRFeedback && (job.State == domain.StateReviewFixImplementationRunning || job.State == domain.StateReviewFixImplementationReady || job.State == domain.StateReviewFixImplementationApproved || job.State == domain.StateReviewFixDesignApproved || job.State == domain.StateReviewFixed))
+	return job.Kind == domain.JobKindIssueImplementation || job.Kind == domain.JobKindPRConflict || (job.Kind == domain.JobKindPRFeedback && (job.State == domain.StateReviewFixImplementationRunning || job.State == domain.StateReviewFixImplementationReady || job.State == domain.StateReviewFixImplementationApproved || job.State == domain.StateReviewFixDesignApproved || job.State == domain.StateReviewFixed))
 }
 
 func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, settings domain.WatchSettings) (string, string, error) {
@@ -377,16 +388,32 @@ func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, s
 		return p.baseDir, "", nil
 	}
 	branch := renderBranchName(settings.BranchNamePattern, job.Number)
+	baseBranch := ""
+	if job.Kind == domain.JobKindPRConflict {
+		var err error
+		branch, baseBranch, err = pullRequestBranches(ctx, job)
+		if err != nil {
+			return "", "", err
+		}
+	}
 	worktreeBranch := branch
 	worktreePath := implementationWorktreePath(p.toolDir, job)
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
 		return "", "", fmt.Errorf("create worktree parent: %w", err)
 	}
 	if _, err := os.Stat(filepath.Join(worktreePath, ".git")); err == nil {
+		if job.Kind == domain.JobKindPRConflict && mergeInProgress(ctx, worktreePath) {
+			return worktreePath, branch, nil
+		}
 		currentBranchName, currentErr := currentBranch(ctx, worktreePath)
 		if currentErr == nil && strings.TrimSpace(currentBranchName) != "" {
 			if err := syncBranchFromRemote(ctx, worktreePath, currentBranchName); err != nil {
 				return "", "", err
+			}
+			if job.Kind == domain.JobKindPRConflict {
+				if err := prepareConflictMerge(ctx, worktreePath, baseBranch); err != nil {
+					return "", "", err
+				}
 			}
 			return worktreePath, currentBranchName, nil
 		}
@@ -412,7 +439,55 @@ func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, s
 	if err := syncBranchFromRemote(ctx, worktreePath, worktreeBranch); err != nil {
 		return "", "", err
 	}
+	if job.Kind == domain.JobKindPRConflict {
+		if err := prepareConflictMerge(ctx, worktreePath, baseBranch); err != nil {
+			return "", "", err
+		}
+	}
 	return worktreePath, worktreeBranch, nil
+}
+
+func pullRequestBranches(ctx context.Context, job domain.Job) (string, string, error) {
+	raw, err := runGHJSON(ctx, "pr", "view", "--repo", job.Repository, fmt.Sprintf("%d", job.Number), "--json", "headRefName,baseRefName")
+	if err != nil {
+		return "", "", err
+	}
+	var refs struct {
+		Head string `json:"headRefName"`
+		Base string `json:"baseRefName"`
+	}
+	if err := json.Unmarshal(raw, &refs); err != nil {
+		return "", "", fmt.Errorf("decode PR branches: %w", err)
+	}
+	refs.Head = strings.TrimSpace(refs.Head)
+	refs.Base = strings.TrimSpace(refs.Base)
+	if refs.Head == "" || refs.Base == "" {
+		return "", "", fmt.Errorf("PR #%d is missing head or base branch", job.Number)
+	}
+	return refs.Head, refs.Base, nil
+}
+
+func prepareConflictMerge(ctx context.Context, repoDir, baseBranch string) error {
+	if mergeInProgress(ctx, repoDir) {
+		return nil
+	}
+	if err := runGit(ctx, repoDir, "fetch", "origin", baseBranch); err != nil {
+		return fmt.Errorf("fetch PR base branch: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "merge", "--no-edit", "origin/"+baseBranch)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	if mergeInProgress(ctx, repoDir) {
+		return nil
+	}
+	return fmt.Errorf("merge PR base branch: %w: %s", err, strings.TrimSpace(string(out)))
+}
+
+func mergeInProgress(ctx context.Context, repoDir string) bool {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+	return cmd.Run() == nil
 }
 
 func syncBranchFromRemote(ctx context.Context, repoDir, branch string) error {
@@ -567,6 +642,8 @@ func artifactSubdir(job domain.Job) string {
 		return "design"
 	case domain.JobKindIssueImplementation:
 		return "implementation"
+	case domain.JobKindPRConflict:
+		return "pr_conflict"
 	case domain.JobKindPRReview:
 		return "review"
 	case domain.JobKindPRFeedback:

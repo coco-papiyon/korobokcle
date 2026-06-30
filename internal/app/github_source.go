@@ -29,6 +29,28 @@ type ghUser struct {
 	Login string `json:"login"`
 }
 
+type ghPRRecord struct {
+	Number           int       `json:"number"`
+	Title            string    `json:"title"`
+	Labels           []ghLabel `json:"labels"`
+	Author           ghUser    `json:"author"`
+	Assignees        []ghUser  `json:"assignees"`
+	URL              string    `json:"url"`
+	IsDraft          bool      `json:"isDraft"`
+	Mergeable        string    `json:"mergeable"`
+	MergeStateStatus string    `json:"mergeStateStatus"`
+	HeadRefName      string    `json:"headRefName"`
+	BaseRefName      string    `json:"baseRefName"`
+	Body             string    `json:"body"`
+	Files            []struct {
+		Path string `json:"path"`
+	} `json:"files"`
+	Comments []struct {
+		Author ghUser `json:"author"`
+		Body   string `json:"body"`
+	} `json:"comments"`
+}
+
 func NewGitHubSource(settings SettingsStore, fallbackRepository string, logger githubLogger) *GitHubSource {
 	return &GitHubSource{
 		settings: settings,
@@ -129,23 +151,13 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 }
 
 func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, rule domain.SearchCondition) ([]domain.Job, error) {
-	type prRecord struct {
-		Number    int       `json:"number"`
-		Title     string    `json:"title"`
-		Labels    []ghLabel `json:"labels"`
-		Author    ghUser    `json:"author"`
-		Assignees []ghUser  `json:"assignees"`
-		URL       string    `json:"url"`
-		IsDraft   bool      `json:"isDraft"`
-	}
-
-	cmd := exec.CommandContext(ctx, "gh", "pr", "list", "--repo", repository, "--state", "open", "--json", "number,title,labels,url,isDraft,author,assignees")
+	cmd := exec.CommandContext(ctx, "gh", "pr", "list", "--repo", repository, "--state", "open", "--json", "number,title,labels,url,isDraft,author,assignees,mergeable,mergeStateStatus,headRefName,baseRefName")
 	raw, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("gh pr list: %w", err)
 	}
 
-	var records []prRecord
+	var records []ghPRRecord
 	if err := json.Unmarshal(raw, &records); err != nil {
 		return nil, fmt.Errorf("decode gh pr list: %w", err)
 	}
@@ -158,12 +170,15 @@ func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, 
 		labels := labelNames(record.Labels)
 		assignees := loginNames(record.Assignees)
 		s.debugPRRecord(repository, record.Number, record.Title, labels, record.Author.Login, assignees, record.IsDraft)
+		if hasLabel(labels, "state:pr_conflict_resolved") {
+			continue
+		}
 		if !rule.Matches(record.Title, labels, record.Author.Login, assignees) {
 			continue
 		}
-		kind, state := classifyPullRequest(labels)
+		kind, state := classifyPullRequest(record)
 		jobs = append(jobs, domain.Job{
-			ID:         fmt.Sprintf("pr-%d", record.Number),
+			ID:         jobIDForPR(record),
 			Kind:       kind,
 			State:      state,
 			Repository: repository,
@@ -190,8 +205,11 @@ func classifyIssue(labels []string) (domain.JobKind, domain.JobState) {
 	}
 }
 
-func classifyPullRequest(labels []string) (domain.JobKind, domain.JobState) {
+func classifyPullRequest(record ghPRRecord) (domain.JobKind, domain.JobState) {
+	labels := labelNames(record.Labels)
 	switch {
+	case isConflictState(record.Mergeable, record.MergeStateStatus):
+		return domain.JobKindPRConflict, domain.StatePRConflict
 	case hasLabel(labels, "state:review_fix_design_approved"):
 		return domain.JobKindPRFeedback, domain.StateReviewFixDesignApproved
 	case hasLabel(labels, "state:pr_review_comment"):
@@ -199,6 +217,25 @@ func classifyPullRequest(labels []string) (domain.JobKind, domain.JobState) {
 	default:
 		return domain.JobKindPRReview, domain.StateReviewRunning
 	}
+}
+
+func isConflictState(mergeable string, mergeStateStatus string) bool {
+	switch strings.ToUpper(strings.TrimSpace(mergeable)) {
+	case "CONFLICTING":
+		return true
+	}
+	switch strings.ToUpper(strings.TrimSpace(mergeStateStatus)) {
+	case "DIRTY":
+		return true
+	}
+	return false
+}
+
+func jobIDForPR(record ghPRRecord) string {
+	if isConflictState(record.Mergeable, record.MergeStateStatus) {
+		return fmt.Sprintf("pr-conflict-%d", record.Number)
+	}
+	return fmt.Sprintf("pr-%d", record.Number)
 }
 
 func labelNames(labels []ghLabel) []string {

@@ -52,6 +52,15 @@ describe('SkillGeneratorPanel', () => {
       generated: true,
       path: '.agents/skills/review-pull-request/SKILL.md',
     },
+    {
+      purpose: 'pr_conflict_resolution',
+      name: 'resolve-pr-conflicts',
+      displayName: 'PRのコンフリクト解消',
+      exists: true,
+      aiExists: true,
+      generated: true,
+      path: '.agents/skills/resolve-pr-conflicts/SKILL.md',
+    },
   ]
 
   function mockInitialFetch() {
@@ -67,6 +76,10 @@ describe('SkillGeneratorPanel', () => {
     return fetchMock
   }
 
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
   it('loads skills with all items selected by default', async () => {
     mockInitialFetch()
 
@@ -78,10 +91,10 @@ describe('SkillGeneratorPanel', () => {
     expect(wrapper.text()).toContain('AI生成済み')
 
     const checkboxes = wrapper.findAll('input[type="checkbox"]')
-    expect(checkboxes).toHaveLength(4)
+    expect(checkboxes).toHaveLength(5)
     expect(checkboxes.every((checkbox) => (checkbox.element as HTMLInputElement).checked)).toBe(true)
-    expect(wrapper.get('button:not(.button--ghost)').text()).toContain('選択スキルを生成 (3)')
-    expect(wrapper.findAll('button.button--ghost').at(-1)?.text()).toContain('選択スキルを再生成 (3)')
+    expect(wrapper.get('button:not(.button--ghost)').text()).toContain('選択スキルを生成 (4)')
+    expect(wrapper.findAll('button.button--ghost').at(-1)?.text()).toContain('選択スキルを再生成[上書き] (4)')
   })
 
   it('sends only checked purposes when generating and regenerating skills', async () => {
@@ -94,7 +107,7 @@ describe('SkillGeneratorPanel', () => {
     await checkboxes[1].setChecked(false)
     await wrapper.get('textarea[placeholder^="go test ./..."]').setValue('go test ./...\ngo test ./internal/app')
 
-    expect(wrapper.get('button:not(.button--ghost)').text()).toContain('選択スキルを生成 (2)')
+    expect(wrapper.get('button:not(.button--ghost)').text()).toContain('選択スキルを生成 (3)')
 
     await wrapper.get('button:not(.button--ghost)').trigger('click')
     await flushPromises()
@@ -113,7 +126,7 @@ describe('SkillGeneratorPanel', () => {
       projectContext: '',
       testCommand: 'go test ./...\ngo test ./internal/app',
       maxFixLoops: 3,
-      forcePurposes: ['implement-from-design', 'review-pull-request'],
+      forcePurposes: ['implement-from-design', 'review-pull-request', 'pr_conflict_resolution'],
       overwriteExisting: false,
     })
 
@@ -125,8 +138,33 @@ describe('SkillGeneratorPanel', () => {
       projectContext: '',
       testCommand: 'go test ./...\ngo test ./internal/app',
       maxFixLoops: 3,
-      forcePurposes: ['implement-from-design', 'review-pull-request'],
+      forcePurposes: ['implement-from-design', 'review-pull-request', 'pr_conflict_resolution'],
       overwriteExisting: true,
     })
+  })
+
+  it('restores saved generation form from localStorage', async () => {
+    window.localStorage.setItem(
+      'korobokcle.skillGenerationForm.v1',
+      JSON.stringify({
+        projectContext: 'バックエンドはGo、フロントはVue',
+        testCommand: 'go test ./...\nnpm test',
+        maxFixLoops: 5,
+      }),
+    )
+    mockInitialFetch()
+
+    const wrapper = mount(SkillGeneratorPanel)
+    await flushPromises()
+
+    expect(wrapper.get('textarea[placeholder="使用言語、フレームワーク、設計規約、確認必須事項など"]').element).toHaveProperty(
+      'value',
+      'バックエンドはGo、フロントはVue',
+    )
+    expect(wrapper.get('textarea[placeholder^="go test ./..."]').element).toHaveProperty(
+      'value',
+      'go test ./...\nnpm test',
+    )
+    expect(wrapper.get('input[type="number"]').element).toHaveProperty('value', '5')
   })
 })

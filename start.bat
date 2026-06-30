@@ -13,19 +13,15 @@ if not exist "frontend\node_modules" (
   popd
 )
 
-echo Building frontend...
-pushd "frontend" || goto :error
-call npm run build
-if errorlevel 1 goto :error
-popd
-
-echo Updating static files...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path 'static') { Remove-Item -Recurse -Force 'static' }; New-Item -ItemType Directory -Path 'static' | Out-Null; Copy-Item -Recurse -Force 'frontend\dist\*' 'static\'"
+echo Starting backend at http://localhost:8080...
+start "korobokcle backend" /D "%ROOT_DIR%" cmd /k go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --work-dir "%ROOT_DIR%" %*
 if errorlevel 1 goto :error
 
-echo Starting korobokcle...
-go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --work-dir "%ROOT_DIR%" %*
+echo Starting frontend at http://localhost:5173...
+start "korobokcle frontend" /D "%ROOT_DIR%\frontend" cmd /k npm run dev
 if errorlevel 1 goto :error
+
+echo Frontend source changes are applied automatically by Vite HMR.
 
 popd
 exit /b 0

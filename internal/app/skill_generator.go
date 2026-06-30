@@ -54,6 +54,7 @@ var issueDrivenSkillDefinitions = []skillDefinition{
 	{domain.SkillPurposePRReview, "review-pull-request", "PRのレビュー", [][]string{{"pull request", "review"}, {"pr", "レビュー"}}},
 	{domain.SkillPurposeReviewFeedbackDesign, "design-review-fix", "レビュー指摘の検討", [][]string{{"review", "feedback", "design"}, {"レビュー", "指摘", "検討"}}},
 	{domain.SkillPurposeReviewFeedbackImplement, "implement-review-fix", "レビュー指摘の実装", [][]string{{"review", "feedback", "implement"}, {"レビュー", "指摘", "実装"}}},
+	{domain.SkillPurposePRConflictResolution, "resolve-pr-conflicts", "PRのコンフリクト解消", [][]string{{"pull request", "conflict", "resolve"}, {"pr", "コンフリクト", "解消"}}},
 }
 
 type SkillGenerator struct {
@@ -136,6 +137,7 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 	for _, purpose := range req.ForcePurposes {
 		forceTargets[purpose] = struct{}{}
 	}
+	selectedOnly := len(forceTargets) > 0
 
 	statuses, err := g.scanSkills(ctx)
 	if err != nil {
@@ -156,11 +158,15 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 
 	toCreate := make([]skillDefinition, 0)
 	evaluated := make(map[domain.SkillPurpose]skillMatchRecord)
+	skippedExisting := 0
 	for _, definition := range issueDrivenSkillDefinitions {
 		candidateSkills := candidates[definition.purpose]
 		forced := false
 		if _, ok := forceTargets[definition.purpose]; ok {
 			forced = true
+		}
+		if selectedOnly && !forced {
+			continue
 		}
 		if len(candidateSkills) == 0 {
 			toCreate = append(toCreate, definition)
@@ -171,6 +177,12 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 				AIExists:  true,
 				Path:      candidateSkills[0].path,
 				Generated: hasGeneratedMarker(candidateSkills[0].normalized),
+			}
+			targetDir := filepath.Join(g.baseDir, ".agents", "skills", definition.name)
+			if !req.OverwriteExisting && directoryExists(targetDir) {
+				skippedExisting++
+				g.appendSkillGenerationLog(logRunID, "skip", fmt.Sprintf("forced purpose target exists and overwrite disabled: %s", targetDir))
+				continue
 			}
 			toCreate = append(toCreate, definition)
 			continue
@@ -202,8 +214,12 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 			g.appendSkillGenerationLog(logRunID, "error", fmt.Sprintf("rescan skills: %v", err))
 			return domain.SkillGenerationResult{}, err
 		}
-		g.appendSkillGenerationLog(logRunID, "complete", "同等のスキルがすでに存在します。")
-		return domain.SkillGenerationResult{Provider: settings.AIProvider, Skills: statuses, Message: "同等のスキルがすでに存在します。"}, nil
+		message := "同等のスキルがすでに存在します。"
+		if skippedExisting > 0 {
+			message = fmt.Sprintf("既存スキル %d 件をスキップしました。", skippedExisting)
+		}
+		g.appendSkillGenerationLog(logRunID, "complete", message)
+		return domain.SkillGenerationResult{Provider: settings.AIProvider, Skills: statuses, Message: message}, nil
 	}
 
 	stageDir := filepath.Join(g.workDir, "workspace", "skill-generation", strconv.FormatInt(time.Now().UnixNano(), 10))
@@ -298,8 +314,14 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 		g.appendSkillGenerationLog(logRunID, "error", fmt.Sprintf("final rescan skills: %v", err))
 		return domain.SkillGenerationResult{}, err
 	}
-	g.appendSkillGenerationLog(logRunID, "complete", "不足していたスキルを生成しました。")
-	return domain.SkillGenerationResult{Provider: settings.AIProvider, Skills: statuses, Message: "不足していたスキルを生成しました。"}, nil
+	message := "不足していたスキルを生成しました。"
+	if req.OverwriteExisting {
+		message = "選択したスキルを再生成して上書きしました。"
+	} else if skippedExisting > 0 {
+		message = fmt.Sprintf("不足スキルを生成し、既存スキル %d 件をスキップしました。", skippedExisting)
+	}
+	g.appendSkillGenerationLog(logRunID, "complete", message)
+	return domain.SkillGenerationResult{Provider: settings.AIProvider, Skills: statuses, Message: message}, nil
 }
 
 func settingsModel(settings domain.WatchSettings) string {
@@ -420,6 +442,11 @@ func relativeSkillPath(baseDir string, path string) string {
 		return path
 	}
 	return rel
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func hasGeneratedMarker(content string) bool {
@@ -568,6 +595,8 @@ func skillDefinitionIntent(purpose domain.SkillPurpose) string {
 		return "設計修正の必須出力形式を規定する: 概要、要件、設計、変更対象ファイル、テスト計画、リスク。"
 	case domain.SkillPurposeReviewFeedbackImplement:
 		return "レビュー対応結果の必須出力形式を規定する: 概要、変更内容、テスト結果、残課題。"
+	case domain.SkillPurposePRConflictResolution:
+		return "PRコンフリクト解消結果の必須出力形式を規定する: 概要、確認した情報、解消方針、変更内容、テスト結果、残課題。"
 	default:
 		return ""
 	}
@@ -612,6 +641,11 @@ func validateGeneratedSkill(dir string, definition skillDefinition, req domain.S
 		}
 		if !containsAllCommandsFold(content, req.TestCommand) {
 			return fmt.Errorf("generated implementation skill %s is missing required output sections or test command", definition.name)
+		}
+	}
+	if definition.purpose == domain.SkillPurposePRConflictResolution {
+		if !containsAllFold(content, "概要", "確認した情報", "解消方針", "変更内容", "テスト結果", "残課題") || !containsAllCommandsFold(content, req.TestCommand) {
+			return fmt.Errorf("generated conflict resolution skill %s is missing required output sections or test command", definition.name)
 		}
 	}
 	return nil

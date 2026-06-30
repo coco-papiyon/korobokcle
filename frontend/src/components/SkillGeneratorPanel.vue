@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { AIProvider, SkillGenerationResult, SkillStatus, WatchSettings } from '../types'
+
+const formStorageKey = 'korobokcle.skillGenerationForm.v1'
 
 const skills = ref<SkillStatus[]>([])
 const selectedPurposes = ref<string[]>([])
@@ -39,6 +41,34 @@ function statusChipClass(skill: SkillStatus) {
     'chip--generated': skill.generated,
     'chip--missing': !skill.exists && !skill.aiExists && !skill.generated,
   }
+}
+
+function restoreSavedForm() {
+  const raw = window.localStorage.getItem(formStorageKey)
+  if (!raw) return
+  try {
+    const saved = JSON.parse(raw) as {
+      projectContext?: string
+      testCommand?: string
+      maxFixLoops?: number
+    }
+    projectContext.value = typeof saved.projectContext === 'string' ? saved.projectContext : ''
+    testCommand.value = typeof saved.testCommand === 'string' && saved.testCommand.length > 0 ? saved.testCommand : 'go test ./...'
+    maxFixLoops.value = typeof saved.maxFixLoops === 'number' && Number.isFinite(saved.maxFixLoops) ? saved.maxFixLoops : 3
+  } catch {
+    window.localStorage.removeItem(formStorageKey)
+  }
+}
+
+function persistForm() {
+  window.localStorage.setItem(
+    formStorageKey,
+    JSON.stringify({
+      projectContext: projectContext.value,
+      testCommand: testCommand.value,
+      maxFixLoops: maxFixLoops.value,
+    }),
+  )
 }
 
 async function loadSkills() {
@@ -103,7 +133,12 @@ function regenerateSelectedSkills() {
 }
 
 onMounted(() => {
+  restoreSavedForm()
   void loadSkills()
+})
+
+watch([projectContext, testCommand, maxFixLoops], () => {
+  persistForm()
 })
 </script>
 
@@ -118,7 +153,7 @@ onMounted(() => {
           {{ generating ? 'AIで生成中' : `選択スキルを生成 (${selectedCount})` }}
         </button>
         <button class="button button--ghost" type="button" :disabled="generating || selectedCount === 0" @click="regenerateSelectedSkills">
-          {{ generating ? '再生成中' : `選択スキルを再生成 (${selectedCount})` }}
+          {{ generating ? '再生成中' : `選択スキルを再生成[上書き] (${selectedCount})` }}
         </button>
       </div>
     </div>

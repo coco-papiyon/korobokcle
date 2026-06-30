@@ -11,6 +11,7 @@ const (
 	SkillPurposeIssueDesign             SkillPurpose = "issue_design"
 	SkillPurposeIssueImplementation     SkillPurpose = "issue_implementation"
 	SkillPurposePRReview                SkillPurpose = "pr_review"
+	SkillPurposePRConflictResolution    SkillPurpose = "pr_conflict_resolution"
 	SkillPurposeReviewFeedbackDesign    SkillPurpose = "review_feedback_design"
 	SkillPurposeReviewFeedbackImplement SkillPurpose = "review_feedback_implementation"
 )

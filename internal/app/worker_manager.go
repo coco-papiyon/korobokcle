@@ -120,7 +120,7 @@ func (m *WorkerManager) Submit(job domain.Job) error {
 		return errors.New("worker manager not started")
 	}
 	switch job.Kind {
-	case domain.JobKindIssueDesign, domain.JobKindIssueImplementation, domain.JobKindPRReview, domain.JobKindPRFeedback:
+	case domain.JobKindIssueDesign, domain.JobKindIssueImplementation, domain.JobKindPRReview, domain.JobKindPRFeedback, domain.JobKindPRConflict:
 	default:
 		return fmt.Errorf("unsupported job kind: %s", job.Kind)
 	}

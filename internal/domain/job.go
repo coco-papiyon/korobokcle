@@ -9,6 +9,7 @@ const (
 	JobKindIssueImplementation JobKind = "issue_implementation"
 	JobKindPRReview            JobKind = "pr_review"
 	JobKindPRFeedback          JobKind = "pr_feedback"
+	JobKindPRConflict          JobKind = "pr_conflict"
 )
 
 type JobState string
@@ -23,6 +24,10 @@ const (
 	StateImplementationApproved          JobState = "implementation_approved"
 	StatePRCreated                       JobState = "pr_created"
 	StatePRReviewComment                 JobState = "pr_review_comment"
+	StatePRConflict                      JobState = "pr_conflict"
+	StatePRConflictRunning               JobState = "pr_conflict_running"
+	StatePRConflictReady                 JobState = "pr_conflict_ready"
+	StatePRConflictResolved              JobState = "pr_conflict_resolved"
 	StateReviewFixDesignRunning          JobState = "review_fix_design_running"
 	StateReviewFixDesignReady            JobState = "review_fix_design_ready"
 	StateReviewFixDesignApproved         JobState = "review_fix_design_approved"
@@ -47,6 +52,10 @@ var stateDisplayNames = map[JobState]string{
 	StateImplementationApproved:          "実装承認済み",
 	StatePRCreated:                       "PR済み",
 	StatePRReviewComment:                 "レビュー指摘あり",
+	StatePRConflict:                      "コンフリクト検知済み",
+	StatePRConflictRunning:               "コンフリクト解消中",
+	StatePRConflictReady:                 "コンフリクト解消完了",
+	StatePRConflictResolved:              "コンフリクト解消済み",
 	StateReviewFixDesignRunning:          "レビュー指摘検討中",
 	StateReviewFixDesignReady:            "レビュー指摘検討済み",
 	StateReviewFixDesignApproved:         "レビュー検討承認済み",
@@ -71,6 +80,10 @@ var stateLabels = map[JobState]string{
 	StateImplementationApproved:          "state:implementation_approved",
 	StatePRCreated:                       "state:pr_created",
 	StatePRReviewComment:                 "state:pr_review_comment",
+	StatePRConflict:                      "state:pr_conflict",
+	StatePRConflictRunning:               "state:pr_conflict_running",
+	StatePRConflictReady:                 "state:pr_conflict_ready",
+	StatePRConflictResolved:              "state:pr_conflict_resolved",
 	StateReviewFixDesignRunning:          "state:review_fix_design_running",
 	StateReviewFixDesignReady:            "state:review_fix_design_ready",
 	StateReviewFixDesignApproved:         "state:review_fix_design_approved",
@@ -122,6 +135,23 @@ var allowedTransitions = map[JobState]map[JobState]struct{}{
 	StatePRReviewComment: {
 		StateReviewFixDesignRunning: {},
 		StateFailed:                 {},
+	},
+	StatePRConflict: {
+		StatePRConflictRunning: {},
+		StateFailed:            {},
+	},
+	StatePRConflictRunning: {
+		StatePRConflictReady: {},
+		StateFailed:          {},
+	},
+	StatePRConflictReady: {
+		StatePRConflictResolved: {},
+		StateCompleted:          {},
+		StateFailed:             {},
+	},
+	StatePRConflictResolved: {
+		StateCompleted: {},
+		StateFailed:    {},
 	},
 	StateReviewFixDesignRunning: {
 		StateReviewFixDesignReady: {},
@@ -227,6 +257,8 @@ func InitialStateForKind(kind JobKind) JobState {
 		return StateReviewRunning
 	case JobKindPRFeedback:
 		return StatePRReviewComment
+	case JobKindPRConflict:
+		return StatePRConflict
 	default:
 		return StateDetected
 	}
@@ -247,6 +279,8 @@ func RunningStateForKind(kind JobKind, state JobState) JobState {
 		default:
 			return StateReviewFixDesignRunning
 		}
+	case JobKindPRConflict:
+		return StatePRConflictRunning
 	default:
 		return StateFailed
 	}
@@ -267,6 +301,8 @@ func ReadyStateForKind(kind JobKind, state JobState) JobState {
 		default:
 			return StateReviewFixDesignReady
 		}
+	case JobKindPRConflict:
+		return StatePRConflictReady
 	default:
 		return StateFailed
 	}
@@ -284,6 +320,8 @@ func RunningStateForReadyState(state JobState) JobState {
 		return StateReviewFixDesignRunning
 	case StateReviewFixImplementationReady:
 		return StateReviewFixImplementationRunning
+	case StatePRConflictReady:
+		return StatePRConflictRunning
 	default:
 		return StateFailed
 	}
@@ -301,6 +339,8 @@ func ApprovedStateForReadyState(state JobState) JobState {
 		return StateReviewFixDesignApproved
 	case StateReviewFixImplementationReady:
 		return StateReviewFixImplementationApproved
+	case StatePRConflictReady:
+		return StatePRConflictResolved
 	default:
 		return StateFailed
 	}
@@ -308,7 +348,7 @@ func ApprovedStateForReadyState(state JobState) JobState {
 
 func ResultCommentTarget(kind JobKind) string {
 	switch kind {
-	case JobKindPRReview, JobKindPRFeedback:
+	case JobKindPRReview, JobKindPRFeedback, JobKindPRConflict:
 		return "pr"
 	default:
 		return "issue"
