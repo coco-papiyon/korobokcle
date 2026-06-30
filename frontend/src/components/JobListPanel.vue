@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Job } from '../types'
 
 const props = defineProps<{
   selectedJobId: string
+  active: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,6 +49,7 @@ const sortedJobs = computed(() => {
       return a.kind.localeCompare(b.kind)
     })
 })
+const refreshIntervalMs = 5000
 
 async function loadJobs() {
   loadingJobs.value = true
@@ -70,17 +72,35 @@ function jobStateLabel(state: string) {
   return stateLabels[state] ?? state
 }
 
-onMounted(() => {
-  void loadJobs()
-  refreshTimer = window.setInterval(() => {
-    void loadJobs()
-  }, 5000)
-})
-
-onBeforeUnmount(() => {
+function stopRefreshTimer() {
   if (refreshTimer !== undefined) {
     window.clearInterval(refreshTimer)
+    refreshTimer = undefined
   }
+}
+
+function startRefreshTimer() {
+  stopRefreshTimer()
+  refreshTimer = window.setInterval(() => {
+    void loadJobs()
+  }, refreshIntervalMs)
+}
+
+watch(
+  () => props.active,
+  (active) => {
+    stopRefreshTimer()
+    if (!active) {
+      return
+    }
+    void loadJobs()
+    startRefreshTimer()
+  },
+  { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  stopRefreshTimer()
 })
 </script>
 

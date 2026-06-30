@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Job, JobArtifact } from '../types'
 
 const props = defineProps<{
   jobId: string
   refreshKey: number
+  active: boolean
 }>()
 
 const detailLoading = ref(false)
@@ -48,6 +49,7 @@ const inspectableStates = new Set([
   'review_fix_design_ready',
   'review_fix_implementation_ready',
 ])
+const refreshIntervalMs = 5000
 
 const detailTitle = computed(() => {
   if (!detailJob.value) {
@@ -91,8 +93,10 @@ function artifactTitle(job: Job | null) {
 }
 
 async function loadJobDetail(id: string) {
-	const requestSequence = ++detailRequestSequence
+  const requestSequence = ++detailRequestSequence
   if (!id) {
+    detailLoading.value = false
+    detailError.value = ''
     detailJob.value = null
     return
   }
@@ -117,6 +121,23 @@ async function loadJobDetail(id: string) {
       detailLoading.value = false
     }
   }
+}
+
+function stopRefreshTimer() {
+  if (refreshTimer !== undefined) {
+    window.clearInterval(refreshTimer)
+    refreshTimer = undefined
+  }
+}
+
+function startRefreshTimer() {
+  stopRefreshTimer()
+  refreshTimer = window.setInterval(() => {
+    if (!props.jobId) {
+      return
+    }
+    void loadJobDetail(props.jobId)
+  }, refreshIntervalMs)
 }
 
 async function loadArtifact() {
@@ -218,10 +239,19 @@ async function rerunArtifact() {
   }
 }
 
+let refreshTimer: number | undefined
+
 watch(
-  () => [props.jobId, props.refreshKey] as const,
-  ([jobId]) => {
+  () => [props.active, props.jobId, props.refreshKey] as const,
+  ([active, jobId]) => {
+    stopRefreshTimer()
+    if (!active) {
+      return
+    }
     void loadJobDetail(jobId)
+    if (jobId) {
+      startRefreshTimer()
+    }
   },
   { immediate: true },
 )
@@ -239,6 +269,10 @@ watch(
   },
   { immediate: true },
 )
+
+onBeforeUnmount(() => {
+  stopRefreshTimer()
+})
 </script>
 
 <template>
