@@ -36,6 +36,22 @@ func TestBuildResultBodyReviewFeedbackTitle(t *testing.T) {
 	}
 }
 
+func TestBuildPullRequestBodyAppendsClosingKeyword(t *testing.T) {
+	body := buildPullRequestBody(domain.Job{Kind: domain.JobKindIssueImplementation, Number: 114}, "## 概要\nresult text", "")
+	want := "# 実装結果\n\n## 概要\nresult text\n\nCloses #114"
+	if body != want {
+		t.Fatalf("body = %q, want %q", body, want)
+	}
+}
+
+func TestBuildPullRequestBodyKeepsUserCommentBeforeClosingKeyword(t *testing.T) {
+	body := buildPullRequestBody(domain.Job{Kind: domain.JobKindIssueImplementation, Number: 114}, "## 概要\nresult text", " please fix ")
+	want := "# 実装結果\n\n## 概要\nresult text\n\n### ユーザコメント\nplease fix\n\nCloses #114"
+	if body != want {
+		t.Fatalf("body = %q, want %q", body, want)
+	}
+}
+
 func TestCompleteApprovalPersistsBeforeRepositoryRefresh(t *testing.T) {
 	store := newMemoryJobStore()
 	job := domain.Job{ID: "issue-114", State: domain.StateCompleted}
