@@ -149,6 +149,55 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestArtifactRequestChangesAPI(t *testing.T) {
+	actions := &testArtifactActions{
+		job: domain.Job{
+			ID:         "pr-12",
+			Kind:       domain.JobKindPRReview,
+			State:      domain.StateCompleted,
+			Repository: "owner/repo",
+			Number:     12,
+			Title:      "review target",
+		},
+	}
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions)
+
+	body := bytes.NewBufferString(`{"comment":"追加でここも修正"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs/pr-12/artifact/request-changes", body)
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("request changes status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if actions.requestChangesID != "pr-12" || actions.requestChangesComment != "追加でここも修正" {
+		t.Fatalf("request changes id=%q comment=%q", actions.requestChangesID, actions.requestChangesComment)
+	}
+}
+
+type testArtifactActions struct {
+	job                   domain.Job
+	requestChangesID      string
+	requestChangesComment string
+}
+
+func (a *testArtifactActions) GetArtifact(context.Context, string) (DesignArtifact, error) {
+	return DesignArtifact{Content: "artifact", Path: ".workspace/review/12_review.md"}, nil
+}
+
+func (a *testArtifactActions) ApproveArtifact(context.Context, string, string) (domain.Job, error) {
+	return a.job, nil
+}
+
+func (a *testArtifactActions) RequestChanges(_ context.Context, id, comment string) (domain.Job, error) {
+	a.requestChangesID = id
+	a.requestChangesComment = comment
+	return a.job, nil
+}
+
+func (a *testArtifactActions) RerunArtifact(context.Context, string, string) (domain.Job, error) {
+	return a.job, nil
+}
+
 func TestSkillsAPI(t *testing.T) {
 	actions := &testSkillActions{statuses: []domain.SkillStatus{{Purpose: domain.SkillPurposeIssueDesign, Name: "design-from-issue"}}}
 	server := NewServer(config.Default(), nil, nil, nil, actions)
@@ -301,11 +350,11 @@ func TestSettingsAPI(t *testing.T) {
 
 func TestStaticAssetsAndSPAFallback(t *testing.T) {
 	dir := t.TempDir()
-	distDir := filepath.Join(dir, "frontend", "dist", "assets")
+	distDir := filepath.Join(dir, "static", "assets")
 	if err := os.MkdirAll(distDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "frontend", "dist", "index.html"), []byte("<html><body>index</body></html>"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "static", "index.html"), []byte("<html><body>index</body></html>"), 0o644); err != nil {
 		t.Fatalf("WriteFile index.html error = %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(distDir, "index-test.js"), []byte("export default 1;"), 0o644); err != nil {
