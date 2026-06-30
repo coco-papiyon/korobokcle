@@ -542,7 +542,7 @@ h1 {
 
 .detail {
   display: grid;
-  gap: 18px;
+  gap: 14px;
 }
 
 .detail__header {
@@ -567,15 +567,54 @@ h1 {
 
 .detail__meta {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 14px;
+  align-items: start;
+}
+
+.detail__meta-item {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(18, 32, 51, 0.03);
+  min-width: 0;
+}
+
+.detail__meta-label {
+  color: rgba(18, 32, 51, 0.56);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.detail__meta-value {
+  color: #122033;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.detail__meta-value--mono {
+  font-family:
+    "Cascadia Mono",
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  color: #243b64;
+}
+
+.detail__meta-value--number {
+  color: rgba(18, 32, 51, 0.72);
 }
 
 .detail-artifact {
   display: grid;
-  gap: 18px;
-  margin-top: 6px;
-  padding-top: 18px;
+  gap: 14px;
+  margin-top: 2px;
+  padding-top: 14px;
   border-top: 1px solid rgba(18, 32, 51, 0.1);
 }
 
