@@ -46,8 +46,8 @@ func TestJobStateTransitions(t *testing.T) {
 	if !StateDesignReady.CanTransitionTo(StateCompleted) {
 		t.Fatal("expected design_ready -> completed to be allowed")
 	}
-	if !StatePRReviewComment.CanTransitionTo(StateReviewFixDesignRunning) {
-		t.Fatal("expected pr_review_comment -> review_fix_design_running to be allowed")
+	if !StatePRReviewComment.CanTransitionTo(StateReviewFixImplementationRunning) {
+		t.Fatal("expected pr_review_comment -> review_fix_implementation_running to be allowed")
 	}
 	if !StateImplementationApproved.CanTransitionTo(StatePRCreated) {
 		t.Fatal("expected implementation_approved -> pr_created to be allowed")
@@ -94,5 +94,14 @@ func TestPRFeedbackDesignApprovalStartsImplementation(t *testing.T) {
 	}
 	if !StateReviewFixDesignApproved.CanTransitionTo(StateReviewFixImplementationRunning) {
 		t.Fatal("expected review_fix_design_approved -> review_fix_implementation_running to be allowed")
+	}
+}
+
+func TestPRFeedbackReviewCommentStartsImplementation(t *testing.T) {
+	if got := RunningStateForKind(JobKindPRFeedback, StatePRReviewComment); got != StateReviewFixImplementationRunning {
+		t.Fatalf("RunningStateForKind() = %s, want %s", got, StateReviewFixImplementationRunning)
+	}
+	if got := ReadyStateForKind(JobKindPRFeedback, StatePRReviewComment); got != StateReviewFixImplementationReady {
+		t.Fatalf("ReadyStateForKind() = %s, want %s", got, StateReviewFixImplementationReady)
 	}
 }

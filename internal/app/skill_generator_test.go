@@ -397,8 +397,8 @@ description: Rework a design based on review feedback.
 ## 必須出力形式
 概要、要件、設計、変更対象ファイル、テスト計画、リスクの順で出力する。
 `,
-		"implement-review-fix": `---
-name: implement-review-fix
+		"review-comment-fix": `---
+name: review-comment-fix
 description: Implement review feedback and verify it with tests.
 ---
 <!-- generated-by: korobokcle -->

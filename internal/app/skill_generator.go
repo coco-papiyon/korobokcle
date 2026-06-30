@@ -52,8 +52,7 @@ var issueDrivenSkillDefinitions = []skillDefinition{
 	{domain.SkillPurposeIssueDesign, "design-from-issue", "Issueをもとに設計", [][]string{{"issue", "design"}, {"issue", "設計"}}},
 	{domain.SkillPurposeIssueImplementation, "implement-from-design", "設計結果をもとに実装", [][]string{{"design", "implement"}, {"設計", "実装"}}},
 	{domain.SkillPurposePRReview, "review-pull-request", "PRのレビュー", [][]string{{"pull request", "review"}, {"pr", "レビュー"}}},
-	{domain.SkillPurposeReviewFeedbackDesign, "design-review-fix", "レビュー指摘の検討", [][]string{{"review", "feedback", "design"}, {"レビュー", "指摘", "検討"}}},
-	{domain.SkillPurposeReviewFeedbackImplement, "implement-review-fix", "レビュー指摘の実装", [][]string{{"review", "feedback", "implement"}, {"レビュー", "指摘", "実装"}}},
+	{domain.SkillPurposeReviewFeedbackImplement, "review-comment-fix", "レビュー指摘の実装", [][]string{{"review", "feedback", "implement"}, {"レビュー", "指摘", "実装"}}},
 	{domain.SkillPurposePRConflictResolution, "resolve-pr-conflicts", "PRのコンフリクト解消", [][]string{{"pull request", "conflict", "resolve"}, {"pr", "コンフリクト", "解消"}}},
 }
 

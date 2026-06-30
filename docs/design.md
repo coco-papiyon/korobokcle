@@ -95,7 +95,6 @@ base_dir/
   .workspace/
     design/
     implementation/
-    review_fix_design/
     review_fix_implementation/
     review/
     pr_conflict/
@@ -107,7 +106,6 @@ base_dir/
 | --- | --- |
 | 設計結果 | `base_dir/.workspace/design/<issue番号>_<issueタイトル>.md` |
 | 実装結果 | `base_dir/.workspace/implementation/<issue番号>_<issueタイトル>.md` |
-| レビュー指摘の設計結果 | `base_dir/.workspace/review_fix_design/<issue番号>_<issueタイトル>.md` |
 | レビュー指摘の実装結果 | `base_dir/.workspace/review_fix_implementation/<issue番号>_<issueタイトル>.md` |
 | PR レビュー結果 | `base_dir/.workspace/review/<issue番号>_<issueタイトル>.md` |
 | PR コンフリクト解消結果 | `base_dir/.workspace/pr_conflict/<PR番号>_<PRタイトル>.md` |
@@ -205,8 +203,6 @@ work_dir/workspace/<repo-id>/<job-id>/worktree/
 | コンフリクト解消中 | `pr_conflict_running` |
 | コンフリクト解消完了 | `pr_conflict_ready` |
 | コンフリクト解消済み | `pr_conflict_resolved` |
-| レビュー指摘検討済み | `review_fix_design_ready` |
-| レビュー検討承認済み | `review_fix_design_approved` |
 | レビュー指摘修正済み | `review_fixed` |
 | レビュー中 | `review_running` |
 | レビュー完了 | `review_ready` |
@@ -227,8 +223,7 @@ Issue は次のジョブに分割する。
 
 1. 設計ジョブ
 2. 実装ジョブ
-3. レビュー指摘対応の設計ジョブ
-4. レビュー指摘対応の実装ジョブ
+3. レビュー指摘対応の実装ジョブ
 
 各ジョブは、それぞれ専用のワーカー goroutine を持つ。
 
@@ -281,25 +276,15 @@ PR は次のジョブに分ける。
 処理:
 
 1. PR から実装内容と指摘を取得する
-2. レビュー指摘対応の設計ジョブを起動する
-3. 設計結果を `base_dir/.workspace/review_fix_design/<issue番号>_<issueタイトル>.md` に保存する
-4. 状態タグをレビュー指摘検討済みにする
-5. 画面に設計内容を表示する
-6. OK なら承認、NG なら今の結果と指示内容を渡して再設計する
-7. 設計を承認したら Issue に設計内容を投稿し、状態をレビュー検討承認済みにする
-
-#### 7.1.5 状態 = レビュー検討承認済み
-
-処理:
-
-1. 設計に従い実装ジョブを起動する
+2. レビュー指摘対応の実装ジョブを起動する
+3. `work_dir/workspace/` 配下の worktree 上で修正する
 2. 実装結果を `base_dir/.workspace/review_fix_implementation/<issue番号>_<issueタイトル>.md` に保存する
 3. 状態タグを実装済みにする
 4. 画面に実装内容を表示する
 5. OK なら承認、NG なら今の結果と指示内容を渡して再実装する
 6. 実装を承認したら状態を実装承認済みにする
 
-#### 7.1.6 状態 = 実装承認済み
+#### 7.1.5 状態 = 実装承認済み
 
 処理:
 
@@ -414,17 +399,11 @@ PR は次のジョブに分ける。
 - 実装成果物
 - テスト結果
 
-#### レビュー指摘対応の設計
+#### レビュー指摘対応の実装
 
 - PR コメント
 - レビュー結果
-- Issue 設計
-- PR 差分
-
-#### レビュー指摘対応の実装
-
-- レビュー指摘対応の設計
-- PR コメント
+- Issue / PR 文脈
 - worktree
 
 ### 9.3 出力ルール
@@ -500,4 +479,4 @@ Markdown は人間がレビューしやすい正本として扱う。
 3. 実装時だけ `work_dir` 配下に worktree を切る
 4. AI はリポジトリ内スキルを最小指示で実行する
 
-これにより、設計結果のレビュー、実装結果のレビュー、PR コメント起点の再設計を独立に扱える。
+これにより、設計結果のレビュー、実装結果のレビュー、PR コメント起点の修正実装を独立に扱える。

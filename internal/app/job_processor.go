@@ -380,7 +380,7 @@ func systemPromptForJob(job domain.Job) string {
 }
 
 func implementationJob(job domain.Job) bool {
-	return job.Kind == domain.JobKindIssueImplementation || job.Kind == domain.JobKindPRConflict || (job.Kind == domain.JobKindPRFeedback && (job.State == domain.StateReviewFixImplementationRunning || job.State == domain.StateReviewFixImplementationReady || job.State == domain.StateReviewFixImplementationApproved || job.State == domain.StateReviewFixDesignApproved || job.State == domain.StateReviewFixed))
+	return job.Kind == domain.JobKindIssueImplementation || job.Kind == domain.JobKindPRConflict || (job.Kind == domain.JobKindPRFeedback && (job.State == domain.StatePRReviewComment || job.State == domain.StateReviewFixImplementationRunning || job.State == domain.StateReviewFixImplementationReady || job.State == domain.StateReviewFixImplementationApproved || job.State == domain.StateReviewFixDesignApproved || job.State == domain.StateReviewFixed))
 }
 
 func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, settings domain.WatchSettings) (string, string, error) {
@@ -407,6 +407,16 @@ func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, s
 		}
 		currentBranchName, currentErr := currentBranch(ctx, worktreePath)
 		if currentErr == nil && strings.TrimSpace(currentBranchName) != "" {
+			dirty, dirtyErr := gitHasChanges(ctx, worktreePath)
+			if dirtyErr != nil {
+				return "", "", dirtyErr
+			}
+			if dirty {
+				if p.logger != nil {
+					p.logger.Infof("workflow reuse dirty worktree job=%s path=%s branch=%s", job.ID, worktreePath, currentBranchName)
+				}
+				return worktreePath, currentBranchName, nil
+			}
 			if err := syncBranchFromRemote(ctx, worktreePath, currentBranchName); err != nil {
 				return "", "", err
 			}
@@ -559,8 +569,6 @@ func (p *WorkflowProcessor) relatedDesignPath(job domain.Job) string {
 	switch job.Kind {
 	case domain.JobKindIssueImplementation:
 		return filepath.Join(p.baseDir, ".workspace", "design", fileName)
-	case domain.JobKindPRFeedback:
-		return filepath.Join(p.baseDir, ".workspace", "review_fix_design", fileName)
 	default:
 		return ""
 	}
@@ -647,12 +655,7 @@ func artifactSubdir(job domain.Job) string {
 	case domain.JobKindPRReview:
 		return "review"
 	case domain.JobKindPRFeedback:
-		switch job.State {
-		case domain.StateReviewFixImplementationRunning, domain.StateReviewFixImplementationReady, domain.StateReviewFixImplementationApproved:
-			return "review_fix_implementation"
-		default:
-			return "review_fix_design"
-		}
+		return "review_fix_implementation"
 	default:
 		return ""
 	}

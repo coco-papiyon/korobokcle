@@ -13,7 +13,6 @@ if not exist "frontend\node_modules" (
   popd
 )
 
-echo Starting backend at http://localhost:8080...
 set "FRONTEND_RUNNING="
 for /f "tokens=5" %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess"') do set "FRONTEND_RUNNING=%%P"
 if defined FRONTEND_RUNNING (
@@ -26,6 +25,7 @@ if defined FRONTEND_RUNNING (
 )
 echo Backend runs in this window.
 
+echo Starting backend at http://localhost:8080...
 go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --work-dir "%ROOT_DIR%" %*
 if errorlevel 1 goto :error
 

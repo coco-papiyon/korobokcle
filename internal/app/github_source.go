@@ -198,6 +198,8 @@ func classifyIssue(labels []string) (domain.JobKind, domain.JobState) {
 		return domain.JobKindIssueImplementation, domain.StateDesignApproved
 	case hasLabel(labels, "state:review_fix_design_approved"):
 		return domain.JobKindIssueImplementation, domain.StateReviewFixDesignApproved
+	case hasLabel(labels, "state:review_fix_implementation_approved"):
+		return domain.JobKindIssueImplementation, domain.StateReviewFixImplementationApproved
 	case hasLabel(labels, "state:review_fixed"):
 		return domain.JobKindIssueImplementation, domain.StateReviewFixed
 	default:
@@ -210,6 +212,12 @@ func classifyPullRequest(record ghPRRecord) (domain.JobKind, domain.JobState) {
 	switch {
 	case isConflictState(record.Mergeable, record.MergeStateStatus):
 		return domain.JobKindPRConflict, domain.StatePRConflict
+	case hasLabel(labels, "state:review_fix_implementation_approved"):
+		return domain.JobKindPRFeedback, domain.StateReviewFixImplementationApproved
+	case hasLabel(labels, "state:review_fix_implementation_ready"):
+		return domain.JobKindPRFeedback, domain.StateReviewFixImplementationReady
+	case hasLabel(labels, "state:review_fix_implementation_running"):
+		return domain.JobKindPRFeedback, domain.StateReviewFixImplementationRunning
 	case hasLabel(labels, "state:review_fix_design_approved"):
 		return domain.JobKindPRFeedback, domain.StateReviewFixDesignApproved
 	case hasLabel(labels, "state:pr_review_comment"):

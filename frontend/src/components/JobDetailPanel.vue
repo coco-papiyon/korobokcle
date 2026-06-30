@@ -49,7 +49,6 @@ const inspectableStates = new Set([
   'design_ready',
   'implementation_ready',
   'review_ready',
-  'review_fix_design_ready',
   'review_fix_implementation_ready',
   'pr_conflict_ready',
 ])
@@ -90,7 +89,7 @@ function artifactTitle(job: Job | null) {
     return 'レビュー指摘修正結果'
   }
   if (job.kind === 'pr_feedback') {
-    return 'レビュー指摘検討結果'
+    return 'レビュー指摘修正結果'
   }
   if (job.kind === 'pr_conflict') {
     return 'コンフリクト解消結果'

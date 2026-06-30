@@ -598,12 +598,7 @@ func resultTitle(job domain.Job) string {
 	case domain.JobKindPRReview:
 		return "レビュー結果"
 	case domain.JobKindPRFeedback:
-		switch job.State {
-		case domain.StateReviewFixImplementationReady, domain.StateReviewFixImplementationApproved:
-			return "レビュー指摘修正結果"
-		default:
-			return "レビュー指摘検討結果"
-		}
+		return "レビュー指摘修正結果"
 	case domain.JobKindPRConflict:
 		return "コンフリクト解消結果"
 	default:

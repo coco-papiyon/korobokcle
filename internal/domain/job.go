@@ -133,8 +133,8 @@ var allowedTransitions = map[JobState]map[JobState]struct{}{
 		StateFailed: {},
 	},
 	StatePRReviewComment: {
-		StateReviewFixDesignRunning: {},
-		StateFailed:                 {},
+		StateReviewFixImplementationRunning: {},
+		StateFailed:                         {},
 	},
 	StatePRConflict: {
 		StatePRConflictRunning: {},
@@ -277,7 +277,7 @@ func RunningStateForKind(kind JobKind, state JobState) JobState {
 		case StateReviewFixDesignApproved, StateReviewFixImplementationReady, StateReviewFixImplementationRunning, StateReviewFixImplementationApproved:
 			return StateReviewFixImplementationRunning
 		default:
-			return StateReviewFixDesignRunning
+			return StateReviewFixImplementationRunning
 		}
 	case JobKindPRConflict:
 		return StatePRConflictRunning
@@ -299,7 +299,7 @@ func ReadyStateForKind(kind JobKind, state JobState) JobState {
 		case StateReviewFixDesignApproved, StateReviewFixImplementationRunning, StateReviewFixImplementationReady, StateReviewFixImplementationApproved:
 			return StateReviewFixImplementationReady
 		default:
-			return StateReviewFixDesignReady
+			return StateReviewFixImplementationReady
 		}
 	case JobKindPRConflict:
 		return StatePRConflictReady

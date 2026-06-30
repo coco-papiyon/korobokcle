@@ -278,6 +278,55 @@ func TestWorkDirForJobRebasesRemoteBranchBeforeImplementation(t *testing.T) {
 	}
 }
 
+func TestWorkDirForJobKeepsDirtyWorktree(t *testing.T) {
+	baseDir := t.TempDir()
+	toolDir := t.TempDir()
+	settings := domain.NormalizeWatchSettings(domain.WatchSettings{
+		BranchNamePattern: "issue_#<issue番号>",
+	})
+	job := domain.Job{
+		ID:         "issue-127",
+		Kind:       domain.JobKindIssueImplementation,
+		State:      domain.StateDesignApproved,
+		Repository: "owner/repo",
+		Number:     127,
+		Title:      "dirty worktree",
+	}
+
+	runGitTestCommand(t, baseDir, "init", "-b", "main")
+	runGitTestCommand(t, baseDir, "config", "user.email", "test@example.com")
+	runGitTestCommand(t, baseDir, "config", "user.name", "Test User")
+	writeTestFile(t, baseDir, "README.md", "initial\n")
+	runGitTestCommand(t, baseDir, "add", "README.md")
+	runGitTestCommand(t, baseDir, "commit", "-m", "initial")
+
+	worktreePath := implementationWorktreePath(toolDir, job)
+	if err := os.MkdirAll(worktreePath, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	runGitTestCommand(t, baseDir, "worktree", "add", "-B", "issue_#127", worktreePath, "HEAD")
+	writeTestFile(t, worktreePath, "README.md", "dirty change\n")
+
+	processor := &WorkflowProcessor{baseDir: baseDir, toolDir: toolDir}
+	workDir, branch, err := processor.workDirForJob(context.Background(), job, settings)
+	if err != nil {
+		t.Fatalf("workDirForJob() error = %v", err)
+	}
+	if workDir != worktreePath {
+		t.Fatalf("workDir = %q, want %q", workDir, worktreePath)
+	}
+	if branch != "issue_#127" {
+		t.Fatalf("branch = %q, want issue_#127", branch)
+	}
+	raw, err := os.ReadFile(filepath.Join(worktreePath, "README.md"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(raw) != "dirty change\n" {
+		t.Fatalf("dirty worktree content changed unexpectedly: %q", string(raw))
+	}
+}
+
 func TestAppendIssueAILog(t *testing.T) {
 	toolDir := t.TempDir()
 	processor := &WorkflowProcessor{toolDir: toolDir}

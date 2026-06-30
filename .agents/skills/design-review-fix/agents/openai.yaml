@@ -1,4 +1,0 @@
-interface:
-  display_name: "レビュー指摘の検討"
-  short_description: "レビュー指摘を反映した設計修正版を要件・設計・リスクまで整理する"
-  default_prompt: "Use $design-review-fix to レビュー指摘を反映した設計を日本語で簡潔にまとめてください。"
