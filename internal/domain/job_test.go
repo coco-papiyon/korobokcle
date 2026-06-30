@@ -78,3 +78,15 @@ func TestInitialStateForKind(t *testing.T) {
 		}
 	}
 }
+
+func TestPRFeedbackDesignApprovalStartsImplementation(t *testing.T) {
+	if got := RunningStateForKind(JobKindPRFeedback, StateReviewFixDesignApproved); got != StateReviewFixImplementationRunning {
+		t.Fatalf("RunningStateForKind() = %s, want %s", got, StateReviewFixImplementationRunning)
+	}
+	if got := ReadyStateForKind(JobKindPRFeedback, StateReviewFixDesignApproved); got != StateReviewFixImplementationReady {
+		t.Fatalf("ReadyStateForKind() = %s, want %s", got, StateReviewFixImplementationReady)
+	}
+	if !StateReviewFixDesignApproved.CanTransitionTo(StateReviewFixImplementationRunning) {
+		t.Fatal("expected review_fix_design_approved -> review_fix_implementation_running to be allowed")
+	}
+}

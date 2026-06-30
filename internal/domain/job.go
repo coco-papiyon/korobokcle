@@ -242,7 +242,7 @@ func RunningStateForKind(kind JobKind, state JobState) JobState {
 		return StateReviewRunning
 	case JobKindPRFeedback:
 		switch state {
-		case StateReviewFixImplementationReady, StateReviewFixImplementationRunning, StateReviewFixImplementationApproved:
+		case StateReviewFixDesignApproved, StateReviewFixImplementationReady, StateReviewFixImplementationRunning, StateReviewFixImplementationApproved:
 			return StateReviewFixImplementationRunning
 		default:
 			return StateReviewFixDesignRunning
@@ -262,7 +262,7 @@ func ReadyStateForKind(kind JobKind, state JobState) JobState {
 		return StateReviewReady
 	case JobKindPRFeedback:
 		switch state {
-		case StateReviewFixImplementationRunning, StateReviewFixImplementationReady, StateReviewFixImplementationApproved:
+		case StateReviewFixDesignApproved, StateReviewFixImplementationRunning, StateReviewFixImplementationReady, StateReviewFixImplementationApproved:
 			return StateReviewFixImplementationReady
 		default:
 			return StateReviewFixDesignReady

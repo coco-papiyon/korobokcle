@@ -28,7 +28,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\create_test_data.ps1" -Ro
 if errorlevel 1 goto :error
 
 echo Starting korobokcle in mock mode...
-go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --base-dir "%ROOT_DIR%\tests" --work-dir "%ROOT_DIR%\tests" --mock-mode %*
+go run .\cmd\korobokcle --addr :8081 --tool-dir "%ROOT_DIR%" --base-dir "%ROOT_DIR%\tests" --work-dir "%ROOT_DIR%\tests" --mock-mode %*
 if errorlevel 1 goto :error
 
 popd

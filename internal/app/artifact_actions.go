@@ -101,7 +101,11 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
 			return domain.Job{}, err
 		}
-		latestLabels := []string{domain.MustLabel(domain.ApprovedStateForReadyState(job.State))}
+		approvedState := domain.ApprovedStateForReadyState(job.State)
+		if job.Kind == domain.JobKindPRFeedback && job.State == domain.StateReviewFixImplementationReady {
+			approvedState = domain.StateReviewFixed
+		}
+		latestLabels := []string{domain.MustLabel(approvedState)}
 		if err := s.updateTargetLabels(ctx, job, latestLabels, stateLabelsExcept(latestLabels...)); err != nil {
 			return domain.Job{}, err
 		}

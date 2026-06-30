@@ -191,10 +191,14 @@ func classifyIssue(labels []string) (domain.JobKind, domain.JobState) {
 }
 
 func classifyPullRequest(labels []string) (domain.JobKind, domain.JobState) {
-	if hasLabel(labels, "state:pr_review_comment") {
+	switch {
+	case hasLabel(labels, "state:review_fix_design_approved"):
+		return domain.JobKindPRFeedback, domain.StateReviewFixDesignApproved
+	case hasLabel(labels, "state:pr_review_comment"):
 		return domain.JobKindPRFeedback, domain.StatePRReviewComment
+	default:
+		return domain.JobKindPRReview, domain.StateReviewRunning
 	}
-	return domain.JobKindPRReview, domain.StateReviewRunning
 }
 
 func labelNames(labels []ghLabel) []string {

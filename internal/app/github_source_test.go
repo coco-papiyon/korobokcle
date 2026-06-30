@@ -27,10 +27,24 @@ func TestClassifyIssue(t *testing.T) {
 	}
 }
 
-func TestClassifyPullRequestReviewComment(t *testing.T) {
-	kind, state := classifyPullRequest([]string{"state:pr_review_comment"})
-	if kind != domain.JobKindPRFeedback || state != domain.StatePRReviewComment {
-		t.Fatalf("classifyPullRequest() = (%s, %s), want (%s, %s)", kind, state, domain.JobKindPRFeedback, domain.StatePRReviewComment)
+func TestClassifyPullRequest(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels []string
+		wantK  domain.JobKind
+		wantS  domain.JobState
+	}{
+		{name: "default", labels: nil, wantK: domain.JobKindPRReview, wantS: domain.StateReviewRunning},
+		{name: "review comment", labels: []string{"state:pr_review_comment"}, wantK: domain.JobKindPRFeedback, wantS: domain.StatePRReviewComment},
+		{name: "review fix design approved", labels: []string{"state:review_fix_design_approved"}, wantK: domain.JobKindPRFeedback, wantS: domain.StateReviewFixDesignApproved},
+		{name: "approved label wins", labels: []string{"state:pr_review_comment", "state:review_fix_design_approved"}, wantK: domain.JobKindPRFeedback, wantS: domain.StateReviewFixDesignApproved},
+	}
+
+	for _, tt := range tests {
+		kind, state := classifyPullRequest(tt.labels)
+		if kind != tt.wantK || state != tt.wantS {
+			t.Fatalf("%s: classifyPullRequest() = (%s, %s), want (%s, %s)", tt.name, kind, state, tt.wantK, tt.wantS)
+		}
 	}
 }
 
