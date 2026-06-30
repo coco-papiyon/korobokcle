@@ -168,7 +168,8 @@ h1 {
 }
 
 .skill-select-all,
-.skill-status-card__select {
+.skill-status-card__select,
+.job-list-filter {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -178,11 +179,20 @@ h1 {
 }
 
 .skill-select-all input,
-.skill-status-card__select input {
+.skill-status-card__select input,
+.job-list-filter input {
   width: 16px;
   height: 16px;
   margin: 0;
   accent-color: #2f5bea;
+}
+
+.job-list-panel__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .form {

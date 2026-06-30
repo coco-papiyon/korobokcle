@@ -13,6 +13,7 @@ const emit = defineEmits<{
 const jobs = ref<Job[]>([])
 const loadingJobs = ref(false)
 const error = ref('')
+const showCompletedJobs = ref(true)
 let refreshTimer: number | undefined
 
 const stateLabels: Record<string, string> = {
@@ -39,14 +40,17 @@ const stateLabels: Record<string, string> = {
   failed: '失敗',
 }
 
-const sortedJobs = computed(() => {
-  return jobs.value
-    .filter((job) => job.state !== 'completed')
-    .sort((a, b) => {
-      if (a.repository !== b.repository) return a.repository.localeCompare(b.repository)
-      if (a.number !== b.number) return a.number - b.number
-      return a.kind.localeCompare(b.kind)
-    })
+function shouldShowJob(job: Job) {
+  if (showCompletedJobs.value) return true
+  return job.state !== 'completed'
+}
+
+const visibleJobs = computed(() => {
+  return [...jobs.value.filter(shouldShowJob)].sort((a, b) => {
+    if (a.repository !== b.repository) return a.repository.localeCompare(b.repository)
+    if (a.number !== b.number) return a.number - b.number
+    return a.kind.localeCompare(b.kind)
+  })
 })
 
 async function loadJobs() {
@@ -88,13 +92,19 @@ onBeforeUnmount(() => {
   <div>
     <div class="panel__title-row">
       <h2>現在のジョブ</h2>
-      <span class="panel__hint">{{ sortedJobs.length }} 件</span>
+      <div class="job-list-panel__meta">
+        <span class="panel__hint">{{ visibleJobs.length }} 件</span>
+        <label class="job-list-filter">
+          <input v-model="showCompletedJobs" type="checkbox" />
+          <span>完了ジョブを表示</span>
+        </label>
+      </div>
     </div>
 
     <p v-if="error" class="error">{{ error }}</p>
 
     <div v-if="loadingJobs" class="empty-state">読み込み中...</div>
-    <div v-else-if="sortedJobs.length === 0" class="empty-state">まだジョブがありません。</div>
+    <div v-else-if="visibleJobs.length === 0" class="empty-state">まだジョブがありません。</div>
 
     <div v-else class="job-table-wrap">
       <table class="job-table">
@@ -109,7 +119,7 @@ onBeforeUnmount(() => {
         </thead>
         <tbody>
           <tr
-            v-for="job in sortedJobs"
+            v-for="job in visibleJobs"
             :key="job.id"
             class="job-table__row"
             :class="{ 'job-table__row--active': selectedJobId === job.id }"
