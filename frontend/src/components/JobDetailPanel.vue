@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { Job, JobArtifact } from '../types'
+import { jobStateChipClass } from '../utils/jobState'
 
 const props = defineProps<{
   jobId: string
@@ -62,6 +63,10 @@ const detailTitle = computed(() => {
 
 function jobStateLabel(state: string) {
   return stateLabels[state] ?? state
+}
+
+function jobStateClass(state: string) {
+  return jobStateChipClass(state)
 }
 
 function canInspectArtifact(job: Job | null) {
@@ -264,7 +269,7 @@ watch(
           <h3>{{ detailTitle }}</h3>
         </div>
         <div class="detail__header-actions">
-          <span class="chip">{{ jobStateLabel(detailJob.state) }}</span>
+          <span :class="jobStateClass(detailJob.state)">{{ jobStateLabel(detailJob.state) }}</span>
         </div>
       </div>
 
