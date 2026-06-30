@@ -543,6 +543,11 @@ h1 {
   white-space: nowrap;
 }
 
+.chip--running {
+  background: rgba(250, 216, 120, 0.34);
+  color: #7a5600;
+}
+
 .meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

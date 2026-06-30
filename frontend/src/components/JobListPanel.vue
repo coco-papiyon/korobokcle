@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { Job } from '../types'
+import { jobStateChipClass } from '../utils/jobState'
 
 const props = defineProps<{
   selectedJobId: string
@@ -74,6 +75,10 @@ function jobStateLabel(state: string) {
   return stateLabels[state] ?? state
 }
 
+function jobStateClass(state: string) {
+  return jobStateChipClass(state)
+}
+
 onMounted(() => {
   void loadJobs()
   refreshTimer = window.setInterval(() => {
@@ -132,7 +137,7 @@ onBeforeUnmount(() => {
             <td>#{{ job.number }}</td>
             <td><code>{{ job.id }}</code></td>
             <td class="job-table__title">{{ job.title || `#${job.number}` }}</td>
-            <td><span class="chip">{{ jobStateLabel(job.state) }}</span></td>
+            <td><span :class="jobStateClass(job.state)">{{ jobStateLabel(job.state) }}</span></td>
           </tr>
         </tbody>
       </table>

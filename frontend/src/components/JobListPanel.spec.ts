@@ -76,4 +76,44 @@ describe('JobListPanel', () => {
     expect(wrapper.get('tbody').text()).not.toContain('完了ジョブ')
     expect(wrapper.get('tbody').text()).toContain('設計中ジョブ')
   })
+
+  it('uses running chip colors only for running states', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        jobs: [
+          {
+            id: 'job-1',
+            kind: 'issue_design',
+            state: 'design_running',
+            repository: 'owner/repo',
+            number: 1,
+            title: '設計中ジョブ',
+          },
+          {
+            id: 'job-2',
+            kind: 'issue_implementation',
+            state: 'implementation_ready',
+            repository: 'owner/repo',
+            number: 2,
+            title: '待機中ジョブ',
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobListPanel, {
+      props: {
+        selectedJobId: '',
+      },
+    })
+    await flushPromises()
+
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].get('span').classes()).toContain('chip')
+    expect(rows[0].get('span').classes()).toContain('chip--running')
+    expect(rows[1].get('span').classes()).toContain('chip')
+    expect(rows[1].get('span').classes()).not.toContain('chip--running')
+  })
 })
