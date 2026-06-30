@@ -261,28 +261,20 @@ watch(
         </div>
       </div>
 
-      <dl class="detail__meta">
-        <div>
-          <dt>ID</dt>
-          <dd>{{ detailJob.id }}</dd>
+      <div class="detail__meta" aria-label="ジョブ詳細の要約">
+        <div class="detail__meta-item">
+          <div class="detail__meta-label">Kind</div>
+          <div class="detail__meta-value detail__meta-value--mono">{{ detailJob.kind }}</div>
         </div>
-        <div>
-          <dt>Kind</dt>
-          <dd>{{ detailJob.kind }}</dd>
+        <div class="detail__meta-item">
+          <div class="detail__meta-label">ID</div>
+          <div class="detail__meta-value detail__meta-value--mono">{{ detailJob.id }}</div>
         </div>
-        <div>
-          <dt>State</dt>
-          <dd>{{ detailJob.state }}</dd>
+        <div class="detail__meta-item">
+          <div class="detail__meta-label">Number</div>
+          <div class="detail__meta-value detail__meta-value--number">#{{ detailJob.number }}</div>
         </div>
-        <div>
-          <dt>Repository</dt>
-          <dd>{{ detailJob.repository }}</dd>
-        </div>
-        <div>
-          <dt>Number</dt>
-          <dd>#{{ detailJob.number }}</dd>
-        </div>
-      </dl>
+      </div>
 
       <div v-if="canInspectArtifact(detailJob)" class="detail-artifact">
         <div class="panel__title-row">
