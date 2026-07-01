@@ -92,10 +92,6 @@ func TestPollerAllowsNewStateForSameJob(t *testing.T) {
 		t.Fatal("fetchedAt is zero after first poll")
 	}
 
-	poller.mu.Lock()
-	poller.seen = make(map[string]struct{})
-	poller.mu.Unlock()
-
 	poller.source = NewStaticJobSource([]domain.Job{
 		{ID: "1", Kind: domain.JobKindIssueDesign, State: domain.StateDesignRunning},
 	})
@@ -185,6 +181,76 @@ func TestPollerPreservesTimesWhenStateDoesNotChange(t *testing.T) {
 	}
 	if !got.UpdatedAt.Equal(updatedAt) {
 		t.Fatalf("updatedAt = %s, want %s", got.UpdatedAt, updatedAt)
+	}
+}
+
+func TestPollerReprocessesPRReviewAfterFeedbackCycle(t *testing.T) {
+	cfg := config.Default()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var mu sync.Mutex
+	processed := make([]domain.Job, 0, 3)
+	manager := NewWorkerManager(cfg, nil, func(_ context.Context, job domain.Job) error {
+		mu.Lock()
+		processed = append(processed, job)
+		mu.Unlock()
+		return nil
+	})
+	if err := manager.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	store := newMemoryJobStore()
+	poller := NewPoller(cfg, NewStaticJobSource([]domain.Job{
+		{
+			ID:         "pr-1",
+			Kind:       domain.JobKindPRReview,
+			State:      domain.StateReviewRunning,
+			Repository: "owner/repo",
+			Number:     1,
+			Title:      "reviewed PR",
+		},
+	}), store, nil, manager)
+
+	if err := poller.poll(ctx); err != nil {
+		t.Fatalf("first poll() error = %v", err)
+	}
+
+	poller.source = NewStaticJobSource([]domain.Job{
+		{
+			ID:         "pr-1",
+			Kind:       domain.JobKindPRFeedback,
+			State:      domain.StatePRReviewComment,
+			Repository: "owner/repo",
+			Number:     1,
+			Title:      "reviewed PR",
+		},
+	})
+	if err := poller.poll(ctx); err != nil {
+		t.Fatalf("second poll() error = %v", err)
+	}
+
+	poller.source = NewStaticJobSource([]domain.Job{
+		{
+			ID:         "pr-1",
+			Kind:       domain.JobKindPRReview,
+			State:      domain.StateReviewRunning,
+			Repository: "owner/repo",
+			Number:     1,
+			Title:      "reviewed PR",
+		},
+	})
+	if err := poller.poll(ctx); err != nil {
+		t.Fatalf("third poll() error = %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(processed) != 3 {
+		t.Fatalf("processed jobs = %d, want 3", len(processed))
 	}
 }
 

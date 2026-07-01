@@ -39,7 +39,7 @@ type Poller struct {
 
 	pollMu sync.Mutex
 	mu     sync.Mutex
-	seen   map[string]struct{}
+	last   map[string]string
 }
 
 func NewPoller(cfg config.Config, source JobSource, store JobStore, settings PollSettingsStore, manager *WorkerManager) *Poller {
@@ -49,7 +49,7 @@ func NewPoller(cfg config.Config, source JobSource, store JobStore, settings Pol
 		store:    store,
 		settings: settings,
 		manager:  manager,
-		seen:     make(map[string]struct{}),
+		last:     make(map[string]string),
 	}
 }
 
@@ -122,7 +122,7 @@ func (p *Poller) poll(ctx context.Context) error {
 			}
 		}
 		key := p.jobKey(job)
-		if p.alreadySeen(key) {
+		if p.alreadyProcessed(job.ID, key) {
 			continue
 		}
 		if hasExisting {
@@ -191,15 +191,15 @@ func isTrackedPRJob(job domain.Job) bool {
 }
 
 func (p *Poller) jobKey(job domain.Job) string {
-	return string(job.Kind) + ":" + job.ID + ":" + string(job.State)
+	return string(job.Kind) + ":" + string(job.State)
 }
 
-func (p *Poller) alreadySeen(key string) bool {
+func (p *Poller) alreadyProcessed(jobID string, key string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if _, ok := p.seen[key]; ok {
+	if last, ok := p.last[jobID]; ok && last == key {
 		return true
 	}
-	p.seen[key] = struct{}{}
+	p.last[jobID] = key
 	return false
 }
