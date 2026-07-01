@@ -63,6 +63,7 @@ const inspectableStates = new Set([
   'review_ready',
   'review_fix_implementation_ready',
   'pr_conflict_ready',
+  'completed',
 ])
 
 const detailTitle = computed(() => {
