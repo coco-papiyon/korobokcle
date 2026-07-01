@@ -93,7 +93,7 @@ describe('App', () => {
 
     await tabs[2].trigger('click')
     await nextTick()
-    expect(description()).toBe('AI プロバイダーと監視条件をまとめて設定する。')
+    expect(description()).toBe('AI プロバイダー、実行条件、監視条件を分けて設定する。')
 
     await tabs[0].trigger('click')
     await flushPromises()
