@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,41 @@ import (
 
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
+
+func TestWorkflowProcessorPersistsFailureStateAndMessage(t *testing.T) {
+	baseDir := t.TempDir()
+	store := newMemoryJobStore()
+	processor := newWorkflowProcessor(
+		store,
+		&workflowTestSettingsStore{settings: domain.NormalizeWatchSettings(domain.WatchSettings{
+			Repository: "owner/repo",
+			AIProvider: domain.AIProviderCodex,
+		})},
+		nil,
+		baseDir,
+		t.TempDir(),
+		nil,
+		fakeAIRunner{err: errors.New("test command failed")},
+		fakeJobContextLoader{content: "Issue context"},
+	)
+	job := domain.Job{
+		ID: "issue-500", Kind: domain.JobKindIssueDesign, State: domain.StateDetected,
+		Repository: "owner/repo", Number: 500, Title: "失敗確認",
+	}
+	if err := processor.Process(context.Background(), job); err == nil {
+		t.Fatal("Process() error = nil, want error")
+	}
+	updated, ok, err := store.Get(context.Background(), job.ID)
+	if err != nil || !ok {
+		t.Fatalf("Get() = (%+v, %v, %v), want stored job", updated, ok, err)
+	}
+	if updated.State != domain.StateFailed {
+		t.Fatalf("state = %s, want %s", updated.State, domain.StateFailed)
+	}
+	if !strings.Contains(updated.ErrorMessage, "test command failed") {
+		t.Fatalf("errorMessage = %q, want runner error", updated.ErrorMessage)
+	}
+}
 
 func TestWorkflowProcessorProcessesDesignJob(t *testing.T) {
 	baseDir := t.TempDir()
@@ -188,6 +224,45 @@ func TestWorkflowProcessorProcessesImplementationJob(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "after") {
 		t.Fatalf("worktree file missing applied diff: %s", string(raw))
+	}
+}
+
+func TestBuildPromptIncludesMandatoryImplementationSkill(t *testing.T) {
+	workDir := t.TempDir()
+	skillDir := filepath.Join(workDir, ".agents", "skills", "implement-from-design")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skill := "## 必須出力形式\n## 概要\n## 変更内容\n## テスト結果\n## 残課題"
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skill), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	processor := &WorkflowProcessor{baseDir: t.TempDir()}
+	job := domain.Job{ID: "issue-146", Kind: domain.JobKindIssueImplementation, Number: 146, Title: "表示修正"}
+	prompt := processor.buildPrompt(
+		job,
+		domain.WatchSettings{AIProvider: domain.AIProviderGitHubCopilot},
+		"",
+		"Issue context",
+		workDir,
+		"issue_#146",
+		domain.StateImplementationRunning,
+		domain.StateImplementationReady,
+	)
+	for _, want := range []string{
+		"Mandatory Agent Skill instructions (implement-from-design):",
+		skill,
+		"Do not return progress updates as the final response.",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prompt does not contain %q:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "base_dir:") {
+		t.Fatalf("implementation prompt exposes base_dir:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Do not access the original repository root") {
+		t.Fatalf("implementation prompt does not restrict access to working_dir:\n%s", prompt)
 	}
 }
 

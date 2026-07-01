@@ -55,6 +55,21 @@ func TestCommandRequestAllowed(t *testing.T) {
 	}
 }
 
+func TestCommandRequestAllowedWithArguments(t *testing.T) {
+	params := json.RawMessage(`{"command":"git log --oneline -10"}`)
+	if !commandRequestAllowed(params, []string{"git log"}) {
+		t.Fatal("expected git log options to be allowed by git log")
+	}
+	params = json.RawMessage(`{"command":"git logger --oneline"}`)
+	if commandRequestAllowed(params, []string{"git log"}) {
+		t.Fatal("expected git logger not to be allowed by git log")
+	}
+	params = json.RawMessage(`{"command":"git log --oneline && npm test"}`)
+	if commandRequestAllowed(params, []string{"git log"}) {
+		t.Fatal("expected chained command not to be allowed by git log")
+	}
+}
+
 func TestCommandRequestAllowedWithPowerShellEnvAssignments(t *testing.T) {
 	params := json.RawMessage(`{
 		"commandActions": [{
@@ -79,14 +94,163 @@ func TestCommandRequestAllowedWithPowerShellEnvAssignments(t *testing.T) {
 
 func TestCopilotServerResponseAllowsConfiguredCommand(t *testing.T) {
 	params := json.RawMessage(`{
-		"commandActions": [{"type": "unknown", "command": "npm ci"}],
-		"proposedExecpolicyAmendment": ["npm", "ci"]
+		"toolCall": {
+			"kind": "execute",
+			"rawInput": {"command": "npm ci"}
+		}
 	}`)
-	got := copilotServerResponse("session/request_permission", params, []string{"npm ci"})
-	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "approved"}}) {
-		t.Fatalf("copilotServerResponse() = %+v, want approved", got)
+	got := copilotServerResponse("session/request_permission", params, []string{"npm ci"}, t.TempDir())
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
 	}
-	got = copilotServerResponse("session/request_permission", params, []string{"npm test"})
+	got = copilotServerResponse("session/request_permission", params, []string{"npm test"}, t.TempDir())
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want cancelled", got)
+	}
+}
+
+func TestCopilotServerResponseAllowsConfiguredCommandWrappedInWorktree(t *testing.T) {
+	worktree := t.TempDir()
+	frontend := filepath.Join(worktree, "frontend")
+	params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
+		"kind": "execute",
+		"rawInput": map[string]any{
+			"command": `cd "` + frontend + `" && npm ci 2>&1 | tail -20`,
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := copilotServerResponse("session/request_permission", params, []string{"npm ci"}, worktree)
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+	}
+}
+
+func TestCopilotServerResponseAllowsConfiguredCommandAfterPowerShellCD(t *testing.T) {
+	worktree := t.TempDir()
+	frontend := filepath.Join(worktree, "frontend")
+	params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
+		"kind": "execute",
+		"rawInput": map[string]any{
+			"command": `cd ` + frontend + ` ; npm ci 2>&1 | tail -20`,
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := copilotServerResponse("session/request_permission", params, []string{"npm ci"}, worktree)
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+	}
+}
+
+func TestCopilotServerResponseAllowsCommandSequenceWhenEveryCommandIsConfigured(t *testing.T) {
+	worktree := t.TempDir()
+	params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
+		"kind": "execute",
+		"rawInput": map[string]any{
+			"command": `cd frontend && npm ci --silent && npm test --silent`,
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := copilotServerResponse("session/request_permission", params, []string{"npm ci", "npm test"}, worktree)
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+	}
+}
+
+func TestCopilotServerResponseSplitsSupportedShellOperators(t *testing.T) {
+	worktree := t.TempDir()
+	for _, command := range []string{
+		`npm ci && npm test`,
+		`npm ci || npm test`,
+		`npm ci; npm test`,
+		`npm ci 2>&1 | tail -20`,
+	} {
+		t.Run(command, func(t *testing.T) {
+			params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
+				"kind": "execute", "rawInput": map[string]any{"command": command},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := copilotServerResponse("session/request_permission", params, []string{"npm ci", "npm test"}, worktree)
+			if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
+				t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+			}
+		})
+	}
+}
+
+func TestCopilotServerResponseRejectsSequenceContainingUnconfiguredCommand(t *testing.T) {
+	params := json.RawMessage(`{"toolCall":{"kind":"execute","rawInput":{"command":"npm ci && Remove-Item -Recurse ."}}}`)
+	got := copilotServerResponse("session/request_permission", params, []string{"npm ci"}, t.TempDir())
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want cancelled", got)
+	}
+}
+
+func TestCopilotServerResponseRejectsWrappedCommandOutsideWorktree(t *testing.T) {
+	worktree := t.TempDir()
+	outside := filepath.Join(filepath.Dir(worktree), "outside")
+	params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
+		"kind": "execute",
+		"rawInput": map[string]any{
+			"command": `cd "` + outside + `" && npm ci 2>&1 | tail -20`,
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := copilotServerResponse("session/request_permission", params, []string{"npm ci"}, worktree)
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want cancelled", got)
+	}
+}
+
+func TestCopilotServerResponseAllowsReadAndEditWithinWorktree(t *testing.T) {
+	worktree := t.TempDir()
+	inside := filepath.Join(worktree, "frontend", "app.go")
+	outside := filepath.Join(filepath.Dir(worktree), "outside.go")
+
+	for _, kind := range []string{"read", "edit"} {
+		t.Run(kind+" inside", func(t *testing.T) {
+			params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
+				"kind":      kind,
+				"rawInput":  map[string]any{"fileName": inside},
+				"locations": []map[string]any{{"path": inside}},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := copilotServerResponse("session/request_permission", params, nil, worktree)
+			if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
+				t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+			}
+		})
+
+		t.Run(kind+" outside", func(t *testing.T) {
+			params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
+				"kind":     kind,
+				"rawInput": map[string]any{"path": outside},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := copilotServerResponse("session/request_permission", params, nil, worktree)
+			if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}) {
+				t.Fatalf("copilotServerResponse() = %+v, want cancelled", got)
+			}
+		})
+	}
+}
+
+func TestCopilotServerResponseRejectsUnknownPermissionKind(t *testing.T) {
+	params := json.RawMessage(`{"toolCall":{"kind":"fetch","rawInput":{"url":"https://example.com"}}}`)
+	got := copilotServerResponse("session/request_permission", params, nil, t.TempDir())
 	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}) {
 		t.Fatalf("copilotServerResponse() = %+v, want cancelled", got)
 	}

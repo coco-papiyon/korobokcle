@@ -395,6 +395,14 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <div v-if="detailJob.state === 'failed' && detailJob.errorMessage" class="error detail__error">
+        <strong>エラー内容</strong>
+        <pre>{{ detailJob.errorMessage }}</pre>
+        <button class="button button--danger detail__retry" type="button" @click="rerunArtifact" :disabled="artifactActionLoading">
+          再実行
+        </button>
+      </div>
+
       <div class="detail__meta" aria-label="ジョブ詳細の要約">
         <div class="detail__meta-item">
           <div class="detail__meta-label">Kind</div>

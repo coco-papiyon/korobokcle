@@ -220,11 +220,21 @@ func commandRequestAllowed(params json.RawMessage, allowed []string) bool {
 
 func commandMatchesAllowed(command string, allowedSet map[string]struct{}) bool {
 	for _, candidate := range commandCandidates(command) {
-		if _, ok := allowedSet[normalizeCommand(candidate)]; ok {
+		normalized := normalizeCommand(candidate)
+		if _, ok := allowedSet[normalized]; ok {
 			return true
+		}
+		for allowed := range allowedSet {
+			if strings.HasPrefix(normalized, allowed+" ") && safeCommandArguments(normalized[len(allowed):]) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+func safeCommandArguments(arguments string) bool {
+	return !strings.ContainsAny(arguments, ";|><`&\r\n") && !strings.Contains(arguments, "$(")
 }
 
 func commandCandidates(command string) []string {

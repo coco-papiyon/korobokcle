@@ -85,6 +85,17 @@ func TestStateLabelsExceptKeepsOnlyLatestState(t *testing.T) {
 	}
 }
 
+func TestRerunRunningStateRestoresFailedStage(t *testing.T) {
+	job := domain.Job{
+		Kind:            domain.JobKindIssueImplementation,
+		State:           domain.StateFailed,
+		FailedFromState: domain.StateImplementationRunning,
+	}
+	if got := rerunRunningState(job); got != domain.StateImplementationRunning {
+		t.Fatalf("rerunRunningState() = %s, want %s", got, domain.StateImplementationRunning)
+	}
+}
+
 func TestExistingLabelsOnly(t *testing.T) {
 	got := existingLabelsOnly(
 		[]string{"state:detected", "state:review_ready", "state:pr_created", "STATE:REVIEW_READY"},

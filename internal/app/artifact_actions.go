@@ -206,7 +206,8 @@ func (s *ArtifactActionService) RerunArtifact(ctx context.Context, id, userComme
 	if !ok {
 		return domain.Job{}, fmt.Errorf("job not found")
 	}
-	if !isReadyState(job.State) {
+	runningState := rerunRunningState(job)
+	if runningState == domain.StateFailed {
 		return domain.Job{}, fmt.Errorf("job is not ready for rerun")
 	}
 	if s.feedback != nil {
@@ -214,7 +215,8 @@ func (s *ArtifactActionService) RerunArtifact(ctx context.Context, id, userComme
 			return domain.Job{}, err
 		}
 	}
-	job = markJobState(job, domain.RunningStateForReadyState(job.State))
+	job.ErrorMessage = ""
+	job = markJobState(job, runningState)
 	if err := s.store.Upsert(ctx, job); err != nil {
 		return domain.Job{}, err
 	}
@@ -225,6 +227,26 @@ func (s *ArtifactActionService) RerunArtifact(ctx context.Context, id, userComme
 		return domain.Job{}, err
 	}
 	return job, nil
+}
+
+func rerunRunningState(job domain.Job) domain.JobState {
+	if isReadyState(job.State) {
+		return domain.RunningStateForReadyState(job.State)
+	}
+	if job.State != domain.StateFailed {
+		return domain.StateFailed
+	}
+	switch job.FailedFromState {
+	case domain.StateDesignRunning,
+		domain.StateImplementationRunning,
+		domain.StateReviewRunning,
+		domain.StateReviewFixDesignRunning,
+		domain.StateReviewFixImplementationRunning,
+		domain.StatePRConflictRunning:
+		return job.FailedFromState
+	default:
+		return domain.RunningStateForKind(job.Kind, job.State)
+	}
 }
 
 func (s *ArtifactActionService) getJob(ctx context.Context, id string) (domain.Job, bool, error) {

@@ -631,6 +631,21 @@ h1 {
   color: #1f6a31;
 }
 
+.chip--failed {
+  background: rgba(218, 62, 62, 0.16);
+  color: #8c1d1d;
+}
+
+.detail__error pre {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  font: inherit;
+}
+
+.detail__retry {
+  margin-top: 12px;
+}
+
 .meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

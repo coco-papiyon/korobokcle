@@ -28,6 +28,33 @@ describe('JobDetailPanel', () => {
     vi.restoreAllMocks()
   })
 
+  it('shows a failed job error with the failed chip style', async () => {
+	const fetchMock = vi.fn().mockResolvedValueOnce(
+	  jsonResponse({
+		updatedAt: '2026-07-01T00:00:00Z',
+		job: {
+		  id: 'job-failed',
+		  kind: 'issue_implementation',
+		  state: 'failed',
+		  repository: 'owner/repo',
+		  number: 500,
+		  title: '失敗ジョブ',
+		  errorMessage: 'copilot permission denied: execute: npm test',
+		},
+	  }),
+	)
+	vi.stubGlobal('fetch', fetchMock)
+
+	const wrapper = mount(JobDetailPanel, {
+	  props: { active: true, jobId: 'job-failed', refreshKey: 0 },
+	})
+	await flushPromises()
+
+	expect(wrapper.find('.chip--failed').text()).toBe('失敗')
+	expect(wrapper.find('.detail__error').text()).toContain('copilot permission denied: execute: npm test')
+	expect(wrapper.find('.detail__retry').text()).toBe('再実行')
+  })
+
   it('only refreshes while active', async () => {
     let intervalHandler: TimerHandler | undefined
     const fetchMock = vi.fn().mockImplementation(() =>

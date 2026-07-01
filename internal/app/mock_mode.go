@@ -245,7 +245,8 @@ func (s *MockArtifactActionService) RerunArtifact(ctx context.Context, id, userC
 	if !ok {
 		return domain.Job{}, fmt.Errorf("job not found")
 	}
-	if !isReadyState(job.State) {
+	runningState := rerunRunningState(job)
+	if runningState == domain.StateFailed {
 		return domain.Job{}, fmt.Errorf("job is not ready for rerun")
 	}
 	if s.feedback != nil {
@@ -253,7 +254,8 @@ func (s *MockArtifactActionService) RerunArtifact(ctx context.Context, id, userC
 			return domain.Job{}, err
 		}
 	}
-	job = markJobState(job, domain.RunningStateForReadyState(job.State))
+	job.ErrorMessage = ""
+	job = markJobState(job, runningState)
 	if err := s.store.Upsert(ctx, job); err != nil {
 		return domain.Job{}, err
 	}
