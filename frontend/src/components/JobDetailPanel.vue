@@ -12,6 +12,7 @@ const detailLoading = ref(false)
 const detailError = ref('')
 const detailJob = ref<Job | null>(null)
 const detailUpdatedAt = ref('')
+const detailBranch = ref('')
 const artifactLoading = ref(false)
 const artifactError = ref('')
 const artifact = ref<JobArtifact | null>(null)
@@ -108,9 +109,10 @@ function artifactTitle(job: Job | null) {
 }
 
 async function loadJobDetail(id: string) {
-	const requestSequence = ++detailRequestSequence
+  const requestSequence = ++detailRequestSequence
   if (!id) {
     detailJob.value = null
+    detailBranch.value = ''
     return
   }
   const showLoading = detailJob.value?.id !== id || detailJob.value == null
@@ -124,17 +126,20 @@ async function loadJobDetail(id: string) {
       throw new Error(`HTTP ${res.status}`)
     }
     const payload = (await res.json()) as JobDetailResponse
+    const branch = payload.branch || payload.job.branch || ''
     if (
       requestSequence === detailRequestSequence &&
-      (payload.updatedAt !== detailUpdatedAt.value || detailJob.value?.id !== payload.job.id)
+      (payload.updatedAt !== detailUpdatedAt.value || detailJob.value?.id !== payload.job.id || branch !== detailBranch.value)
     ) {
       detailUpdatedAt.value = payload.updatedAt
       detailJob.value = payload.job
+      detailBranch.value = branch
     }
   } catch (err) {
     if (requestSequence === detailRequestSequence) {
       detailError.value = err instanceof Error ? err.message : 'unknown error'
       detailJob.value = null
+      detailBranch.value = ''
     }
   } finally {
     if (requestSequence === detailRequestSequence && showLoading) {
@@ -261,6 +266,7 @@ async function deleteJob() {
       throw new Error(message || `HTTP ${res.status}`)
     }
     detailUpdatedAt.value = ''
+    detailBranch.value = ''
     emit('deleted', detailJob.value.id)
     detailJob.value = null
     artifact.value = null
@@ -326,6 +332,10 @@ watch(
         <div class="detail__meta-item">
           <div class="detail__meta-label">Number</div>
           <div class="detail__meta-value detail__meta-value--number">#{{ detailJob.number }}</div>
+        </div>
+        <div class="detail__meta-item">
+          <div class="detail__meta-label">ブランチ</div>
+          <div class="detail__meta-value detail__meta-value--mono">{{ detailBranch || detailJob.branch || '-' }}</div>
         </div>
       </div>
 

@@ -71,7 +71,7 @@ func (s *GitHubSource) List(ctx context.Context) ([]domain.Job, error) {
 	var jobs []domain.Job
 
 	s.infof("github source: list issues repo=%s", repository)
-	issues, err := s.listIssues(ctx, repository, settings.Issue)
+	issues, err := s.listIssues(ctx, repository, settings.Issue, settings)
 	if err != nil {
 		s.infof("github source: list issues failed repo=%s err=%v", repository, err)
 		return nil, err
@@ -104,7 +104,7 @@ func (s *GitHubSource) currentSettings(ctx context.Context) (domain.WatchSetting
 	return settings, strings.TrimSpace(settings.Repository), nil
 }
 
-func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule domain.SearchCondition) ([]domain.Job, error) {
+func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule domain.SearchCondition, settings domain.WatchSettings) ([]domain.Job, error) {
 	type issueRecord struct {
 		Number    int       `json:"number"`
 		Title     string    `json:"title"`
@@ -144,6 +144,7 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 			Repository: repository,
 			Number:     record.Number,
 			Title:      record.Title,
+			Branch:     renderBranchName(settings.BranchNamePattern, record.Number),
 		})
 	}
 	s.infof("github source: issues retrieved repo=%s fetched=%d targets=%d", repository, len(records), len(jobs))
@@ -184,6 +185,7 @@ func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, 
 			Repository: repository,
 			Number:     record.Number,
 			Title:      record.Title,
+			Branch:     strings.TrimSpace(record.HeadRefName),
 		})
 	}
 	s.infof("github source: pull requests retrieved repo=%s fetched=%d targets=%d", repository, len(records), len(jobs))
