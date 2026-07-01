@@ -145,19 +145,22 @@ watch([projectContext, testCommand, maxFixLoops], () => {
 <template>
   <div class="hero hero--compact">
     <div class="hero__header">
+      <div class="hero__intro">
+        <p class="hero__lede">選択したスキルを生成・再生成し、状態を再確認する。</p>
+        <p class="field-note hero__meta">使用プロバイダー: {{ providerLabel(provider) }}。設定タブのプロバイダーとモデルを使用する。</p>
+      </div>
       <div class="hero__actions">
-        <button class="button button--ghost" type="button" :disabled="loading || generating" @click="loadSkills">
+        <button class="button button--ghost button--small" type="button" :disabled="loading || generating" @click="loadSkills">
           {{ loading ? '確認中' : '再確認' }}
         </button>
-        <button class="button" type="button" :disabled="generating || selectedCount === 0" @click="generateSelectedSkills">
+        <button class="button button--small" type="button" :disabled="generating || selectedCount === 0" @click="generateSelectedSkills">
           {{ generating ? 'AIで生成中' : `選択スキルを生成 (${selectedCount})` }}
         </button>
-        <button class="button button--ghost" type="button" :disabled="generating || selectedCount === 0" @click="regenerateSelectedSkills">
+        <button class="button button--ghost button--small" type="button" :disabled="generating || selectedCount === 0" @click="regenerateSelectedSkills">
           {{ generating ? '再生成中' : `選択スキルを再生成[上書き] (${selectedCount})` }}
         </button>
       </div>
     </div>
-    <p class="field-note">使用プロバイダー: {{ providerLabel(provider) }}。設定タブのプロバイダーとモデルを使用する。</p>
     <p v-if="error" class="error">{{ error }}</p>
     <p v-if="message" class="success">{{ message }}</p>
   </div>

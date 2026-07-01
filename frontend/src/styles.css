@@ -58,14 +58,28 @@ select {
 }
 
 .hero__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 16px;
+}
+
+.hero__intro {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hero__lede {
+  margin: 0;
+  max-width: 56ch;
+  color: rgba(18, 32, 51, 0.76);
+  line-height: 1.7;
 }
 
 .hero__actions {
   display: flex;
+  justify-content: flex-end;
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
@@ -413,9 +427,13 @@ h1 {
 }
 
 .button--small {
-  padding: 8px 12px;
+  padding: 7px 11px;
   border-radius: 12px;
-  font-size: 0.84rem;
+  font-size: 0.82rem;
+}
+
+.hero__meta {
+  max-width: 60ch;
 }
 
 .empty-state {
@@ -717,11 +735,13 @@ h1 {
   }
 
   .hero__header {
-    flex-direction: column;
+    grid-template-columns: 1fr;
+    align-items: stretch;
   }
 
   .hero__actions {
     width: 100%;
+    justify-content: flex-start;
   }
 
   .tabs {
