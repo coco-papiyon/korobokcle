@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { vi } from 'vitest'
+import { afterEach, vi } from 'vitest'
 import JobListPanel from './JobListPanel.vue'
 
 type JsonBody = Record<string, unknown>
@@ -24,6 +24,46 @@ async function flushPromises() {
 }
 
 describe('JobListPanel', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('only refreshes while active', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [],
+      }),
+    )
+    const setIntervalSpy = vi.spyOn(window, 'setInterval').mockReturnValue(1 as unknown as number)
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval')
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobListPanel, {
+      props: {
+        active: false,
+        selectedJobId: '',
+      },
+    })
+    await flushPromises()
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(setIntervalSpy).not.toHaveBeenCalled()
+
+    await wrapper.setProps({ active: true })
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1)
+
+    await wrapper.setProps({ active: false })
+    await nextTick()
+
+    expect(clearIntervalSpy).toHaveBeenCalledWith(1)
+
+    wrapper.unmount()
+  })
+
   it('hides completed jobs by default and shows them when toggled on', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
@@ -60,6 +100,7 @@ describe('JobListPanel', () => {
 
     const wrapper = mount(JobListPanel, {
       props: {
+        active: true,
         selectedJobId: '',
       },
     })
@@ -106,6 +147,7 @@ describe('JobListPanel', () => {
 
     const wrapper = mount(JobListPanel, {
       props: {
+        active: true,
         selectedJobId: '',
       },
     })
@@ -162,6 +204,7 @@ describe('JobListPanel', () => {
 
       const wrapper = mount(JobListPanel, {
         props: {
+          active: true,
           selectedJobId: '',
         },
       })

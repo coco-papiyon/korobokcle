@@ -92,7 +92,7 @@ function selectTab(tab: Tab) {
         </div>
 
         <div v-show="activeTab === 'jobs'" class="tab-panel" role="tabpanel">
-          <JobListPanel :selected-job-id="selectedJobId" @select="selectJob" />
+          <JobListPanel :active="activeTab === 'jobs'" :selected-job-id="selectedJobId" @select="selectJob" />
         </div>
 
         <div v-show="activeTab === 'skills'" class="tab-panel" role="tabpanel">
@@ -100,7 +100,12 @@ function selectTab(tab: Tab) {
         </div>
 
         <div v-show="activeTab === 'detail'" class="tab-panel" role="tabpanel">
-          <JobDetailPanel :job-id="selectedJobId" :refresh-key="detailRefreshKey" @deleted="handleJobDeleted" />
+          <JobDetailPanel
+            :active="activeTab === 'detail'"
+            :job-id="selectedJobId"
+            :refresh-key="detailRefreshKey"
+            @deleted="handleJobDeleted"
+          />
         </div>
       </section>
     </main>

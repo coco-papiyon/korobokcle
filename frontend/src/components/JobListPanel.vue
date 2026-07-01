@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Job, JobListResponse } from '../types'
 import { jobStateChipClass } from '../utils/jobState'
 
 const props = defineProps<{
+  active: boolean
   selectedJobId: string
 }>()
 
@@ -84,6 +85,23 @@ async function loadJobs() {
   }
 }
 
+function startPolling() {
+  if (refreshTimer !== undefined) {
+    return
+  }
+  refreshTimer = window.setInterval(() => {
+    void loadJobs()
+  }, 5000)
+}
+
+function stopPolling() {
+  if (refreshTimer === undefined) {
+    return
+  }
+  window.clearInterval(refreshTimer)
+  refreshTimer = undefined
+}
+
 function jobStateLabel(state: string) {
   return stateLabels[state] ?? state
 }
@@ -92,17 +110,21 @@ function jobStateClass(state: string) {
   return jobStateChipClass(state)
 }
 
-onMounted(() => {
-  void loadJobs()
-  refreshTimer = window.setInterval(() => {
+watch(
+  () => props.active,
+  (active) => {
+    if (!active) {
+      stopPolling()
+      return
+    }
     void loadJobs()
-  }, 5000)
-})
+    startPolling()
+  },
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
-  if (refreshTimer !== undefined) {
-    window.clearInterval(refreshTimer)
-  }
+  stopPolling()
 })
 </script>
 
