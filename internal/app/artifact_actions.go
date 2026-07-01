@@ -123,7 +123,7 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
 			return domain.Job{}, err
 		}
-		job.State = domain.StateReviewApproved
+		job = markJobState(job, domain.StateReviewApproved)
 	} else {
 		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
 			return domain.Job{}, err
@@ -143,7 +143,7 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		}
 	}
 	if job.Kind != domain.JobKindPRReview {
-		job.State = domain.StateCompleted
+		job = markJobState(job, domain.StateCompleted)
 	}
 	if err := s.completeApproval(ctx, job); err != nil {
 		return domain.Job{}, err
@@ -179,7 +179,7 @@ func (s *ArtifactActionService) RequestChanges(ctx context.Context, id, userComm
 			return domain.Job{}, err
 		}
 	}
-	job.State = domain.StateCompleted
+	job = markJobState(job, domain.StateCompleted)
 	if err := s.completeApproval(ctx, job); err != nil {
 		return domain.Job{}, err
 	}
@@ -214,7 +214,7 @@ func (s *ArtifactActionService) RerunArtifact(ctx context.Context, id, userComme
 			return domain.Job{}, err
 		}
 	}
-	job.State = domain.RunningStateForReadyState(job.State)
+	job = markJobState(job, domain.RunningStateForReadyState(job.State))
 	if err := s.store.Upsert(ctx, job); err != nil {
 		return domain.Job{}, err
 	}

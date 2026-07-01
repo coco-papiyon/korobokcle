@@ -155,10 +155,10 @@ describe('JobListPanel', () => {
 
     const rows = wrapper.findAll('tbody tr')
     expect(rows).toHaveLength(2)
-    expect(rows[0].get('span').classes()).toContain('chip')
-    expect(rows[0].get('span').classes()).toContain('chip--running')
-    expect(rows[1].get('span').classes()).toContain('chip')
-    expect(rows[1].get('span').classes()).not.toContain('chip--running')
+    expect(rows[0].get('td:last-child span').classes()).toContain('chip')
+    expect(rows[0].get('td:last-child span').classes()).toContain('chip--running')
+    expect(rows[1].get('td:last-child span').classes()).toContain('chip')
+    expect(rows[1].get('td:last-child span').classes()).not.toContain('chip--running')
   })
 
   it('uses approved chip colors for review approvals', async () => {
@@ -187,10 +187,71 @@ describe('JobListPanel', () => {
     })
     await flushPromises()
 
-    const chip = wrapper.get('tbody tr span')
+    const chip = wrapper.get('tbody tr td:last-child span')
     expect(chip.classes()).toContain('chip')
     expect(chip.classes()).toContain('chip--approved')
     expect(chip.text()).toBe('レビュー承認済み')
+  })
+
+  it('shows fetched and updated times beside the title', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [
+          {
+            id: 'job-1',
+            kind: 'issue_design',
+            state: 'design_running',
+            repository: 'owner/repo',
+            number: 1,
+            title: '時刻付きジョブ',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobListPanel, {
+      props: {
+        active: true,
+        selectedJobId: '',
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.job-table__title').text()).toContain('時刻付きジョブ')
+    expect(wrapper.get('.job-table__title').text()).toContain('取得時間 2026/07/01 09:00:00 / 更新時間 2026/07/01 12:04:05')
+  })
+
+  it('shows placeholders when job times are missing', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [
+          {
+            id: 'job-1',
+            kind: 'issue_design',
+            state: 'design_running',
+            repository: 'owner/repo',
+            number: 1,
+            title: '時刻なしジョブ',
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobListPanel, {
+      props: {
+        active: true,
+        selectedJobId: '',
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('.job-table__title').text()).toContain('取得時間 - / 更新時間 -')
   })
 
   it('skips updating visible jobs when updatedAt is unchanged', async () => {

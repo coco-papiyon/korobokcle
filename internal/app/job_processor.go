@@ -154,7 +154,7 @@ func (p *WorkflowProcessor) transitionState(ctx context.Context, job domain.Job,
 	if job.State != next && !job.State.CanTransitionTo(next) {
 		return domain.Job{}, fmt.Errorf("invalid workflow transition: %s -> %s", job.State, next)
 	}
-	job.State = next
+	job = markJobState(job, next)
 	if p.store == nil {
 		return job, nil
 	}

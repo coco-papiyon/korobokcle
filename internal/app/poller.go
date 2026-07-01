@@ -110,14 +110,30 @@ func (p *Poller) poll(ctx context.Context) error {
 	for _, job := range jobs {
 		sourceIDs[job.ID] = struct{}{}
 
+		var existing domain.Job
+		var hasExisting bool
 		if p.store != nil {
-			if existing, ok, err := p.store.Get(ctx, job.ID); err == nil && ok && shouldKeepApprovedPR(existing, job) {
+			if stored, ok, err := p.store.Get(ctx, job.ID); err == nil && ok {
+				existing = stored
+				hasExisting = true
+			}
+			if hasExisting && shouldKeepApprovedPR(existing, job) {
 				continue
 			}
 		}
 		key := p.jobKey(job)
 		if p.alreadySeen(key) {
 			continue
+		}
+		if hasExisting {
+			job.FetchedAt = existing.FetchedAt
+			if existing.State == job.State {
+				job.UpdatedAt = existing.UpdatedAt
+			} else {
+				job.UpdatedAt = time.Now().UTC()
+			}
+		} else {
+			job = markJobFetchedAt(job)
 		}
 		if p.store != nil {
 			if err := p.store.Upsert(ctx, job); err != nil {
@@ -157,7 +173,7 @@ func (p *Poller) completeMissingPRJobs(ctx context.Context, sourceIDs map[string
 		if _, ok := sourceIDs[job.ID]; ok {
 			continue
 		}
-		job.State = domain.StateCompleted
+		job = markJobState(job, domain.StateCompleted)
 		if err := p.store.Upsert(ctx, job); err != nil {
 			return fmt.Errorf("complete missing job %s: %w", job.ID, err)
 		}

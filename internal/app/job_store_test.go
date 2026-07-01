@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
@@ -26,6 +27,8 @@ func TestFileJobStoreUpsertAndLoad(t *testing.T) {
 		Repository: "owner/repo",
 		Number:     42,
 		Title:      "design me",
+		FetchedAt:  time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 7, 1, 3, 4, 5, 0, time.UTC),
 	}
 	if err := store.Upsert(context.Background(), job); err != nil {
 		t.Fatalf("Upsert() error = %v", err)
@@ -48,6 +51,12 @@ func TestFileJobStoreUpsertAndLoad(t *testing.T) {
 	}
 	if jobs[0].ID != job.ID || jobs[0].Title != job.Title {
 		t.Fatalf("loaded job = %+v, want %+v", jobs[0], job)
+	}
+	if !jobs[0].FetchedAt.Equal(job.FetchedAt) {
+		t.Fatalf("loaded fetchedAt = %s, want %s", jobs[0].FetchedAt, job.FetchedAt)
+	}
+	if !jobs[0].UpdatedAt.Equal(job.UpdatedAt) {
+		t.Fatalf("loaded updatedAt = %s, want %s", jobs[0].UpdatedAt, job.UpdatedAt)
 	}
 	if got, err := store.UpdatedAt(context.Background()); err != nil {
 		t.Fatalf("UpdatedAt() error = %v", err)

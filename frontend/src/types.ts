@@ -8,6 +8,8 @@ export type Job = {
   number: number
   title: string
   branch?: string
+  fetchedAt?: string
+  updatedAt?: string
 }
 
 export type JobArtifact = {

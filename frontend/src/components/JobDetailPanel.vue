@@ -2,6 +2,7 @@
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import type { Job, JobArtifact, JobDetailResponse } from '../types'
 import { jobStateChipClass } from '../utils/jobState'
+import { jobTimeSummary } from '../utils/jobTime'
 
 const props = defineProps<{
   active: boolean
@@ -369,7 +370,10 @@ onBeforeUnmount(() => {
         </div>
         <div class="detail__meta-item">
           <div class="detail__meta-label">Number</div>
-          <div class="detail__meta-value detail__meta-value--number">#{{ detailJob.number }}</div>
+          <div class="detail__meta-value detail__meta-value--number">
+            <span class="detail__number-text">#{{ detailJob.number }}</span>
+            <span class="job-time-summary">{{ jobTimeSummary(detailJob.fetchedAt, detailJob.updatedAt) }}</span>
+          </div>
         </div>
         <div class="detail__meta-item">
           <div class="detail__meta-label">ブランチ</div>

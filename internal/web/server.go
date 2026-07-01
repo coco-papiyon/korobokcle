@@ -257,7 +257,10 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 					http.Error(w, "invalid state transition", http.StatusBadRequest)
 					return
 				}
-				job.State = req.State
+				if job.State != req.State {
+					job.State = req.State
+					job.UpdatedAt = time.Now().UTC()
+				}
 				if err := store.Upsert(r.Context(), job); err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return
