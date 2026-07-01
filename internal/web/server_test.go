@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,7 @@ func TestJobsAPI(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, store, settingsStore, nil)
+	server := NewServer(cfg, store, settingsStore, nil, testBranchResolver{branch: "issue_#42"}, nil)
 
 	body := map[string]any{
 		"kind":       string(domain.JobKindIssueDesign),
@@ -56,8 +57,8 @@ func TestJobsAPI(t *testing.T) {
 	}
 
 	var resp struct {
-		UpdatedAt string        `json:"updatedAt"`
-		Jobs []domain.Job `json:"jobs"`
+		UpdatedAt string       `json:"updatedAt"`
+		Jobs      []domain.Job `json:"jobs"`
 	}
 	if err := json.Unmarshal(getRec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
@@ -71,6 +72,9 @@ func TestJobsAPI(t *testing.T) {
 	if resp.Jobs[0].Repository != "owner/repo" {
 		t.Fatalf("repository = %q, want owner/repo", resp.Jobs[0].Repository)
 	}
+	if resp.Jobs[0].Branch != "issue_#42" {
+		t.Fatalf("branch = %q, want issue_#42", resp.Jobs[0].Branch)
+	}
 
 	detailReq := httptest.NewRequest(http.MethodGet, "/api/jobs/"+resp.Jobs[0].ID, nil)
 	detailRec := httptest.NewRecorder()
@@ -80,8 +84,9 @@ func TestJobsAPI(t *testing.T) {
 	}
 
 	var detail struct {
-		UpdatedAt string    `json:"updatedAt"`
+		UpdatedAt string     `json:"updatedAt"`
 		Job       domain.Job `json:"job"`
+		Branch    string     `json:"branch"`
 	}
 	if err := json.Unmarshal(detailRec.Body.Bytes(), &detail); err != nil {
 		t.Fatalf("detail json.Unmarshal() error = %v", err)
@@ -91,6 +96,9 @@ func TestJobsAPI(t *testing.T) {
 	}
 	if detail.Job.ID != resp.Jobs[0].ID {
 		t.Fatalf("detail id = %q, want %q", detail.Job.ID, resp.Jobs[0].ID)
+	}
+	if detail.Branch != "issue_#42" {
+		t.Fatalf("detail branch = %q, want issue_#42", detail.Branch)
 	}
 
 	updateReqBody, err := json.Marshal(map[string]any{
@@ -134,7 +142,7 @@ func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, store, settingsStore, nil)
+	server := NewServer(cfg, store, settingsStore, nil, testBranchResolver{branch: "issue_#42"}, nil)
 
 	job := domain.Job{
 		ID:         "job-1",
@@ -163,7 +171,7 @@ func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 }
 
 func TestHealthz(t *testing.T) {
-	server := NewServer(config.Default(), nil, nil, nil)
+	server := NewServer(config.Default(), nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(rec, req)
@@ -183,7 +191,7 @@ func TestArtifactRequestChangesAPI(t *testing.T) {
 			Title:      "review target",
 		},
 	}
-	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions)
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil)
 
 	body := bytes.NewBufferString(`{"comment":"追加でここも修正"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/jobs/pr-12/artifact/request-changes", body)
@@ -223,7 +231,7 @@ func (a *testArtifactActions) RerunArtifact(context.Context, string, string) (do
 
 func TestSkillsAPI(t *testing.T) {
 	actions := &testSkillActions{statuses: []domain.SkillStatus{{Purpose: domain.SkillPurposeIssueDesign, Name: "design-from-issue"}}}
-	server := NewServer(config.Default(), nil, nil, nil, actions)
+	server := NewServer(config.Default(), nil, nil, nil, nil, actions)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
 	getRec := httptest.NewRecorder()
@@ -262,6 +270,15 @@ type testSkillActions struct {
 	generateCalls int
 }
 
+type testBranchResolver struct {
+	branch string
+	err    error
+}
+
+func (r testBranchResolver) ResolveJobBranch(context.Context, domain.Job) (string, error) {
+	return r.branch, r.err
+}
+
 func (a *testSkillActions) SkillStatus(context.Context) ([]domain.SkillStatus, error) {
 	return a.statuses, nil
 }
@@ -282,7 +299,7 @@ func TestSettingsAPI(t *testing.T) {
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-4.1"},
 		},
 	})
-	server := NewServer(config.Default(), nil, store, nil)
+	server := NewServer(config.Default(), nil, store, nil, nil)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
 	getRec := httptest.NewRecorder()
@@ -378,6 +395,72 @@ func TestSettingsAPI(t *testing.T) {
 	}
 }
 
+func TestJobDetailAPIIncludesBranch(t *testing.T) {
+	store := newTestJobStore(filepath.Join(t.TempDir(), "jobs.json"))
+	job := domain.Job{
+		ID:         "pr-7",
+		Kind:       domain.JobKindPRReview,
+		State:      domain.StateReviewRunning,
+		Repository: "owner/repo",
+		Number:     7,
+		Title:      "review target",
+	}
+	if err := store.Upsert(context.Background(), job); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	server := NewServer(config.Default(), store, nil, nil, testBranchResolver{branch: "feature/pr-7"}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var detail struct {
+		Branch string `json:"branch"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if detail.Branch != "feature/pr-7" {
+		t.Fatalf("branch = %q, want feature/pr-7", detail.Branch)
+	}
+}
+
+func TestJobDetailAPIEmptyBranchOnResolverError(t *testing.T) {
+	store := newTestJobStore(filepath.Join(t.TempDir(), "jobs.json"))
+	job := domain.Job{
+		ID:         "issue-1",
+		Kind:       domain.JobKindIssueDesign,
+		State:      domain.StateDetected,
+		Repository: "owner/repo",
+		Number:     1,
+		Title:      "design target",
+	}
+	if err := store.Upsert(context.Background(), job); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	server := NewServer(config.Default(), store, nil, nil, testBranchResolver{err: errors.New("boom")}, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var detail struct {
+		Branch string `json:"branch"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if detail.Branch != "" {
+		t.Fatalf("branch = %q, want empty", detail.Branch)
+	}
+}
+
 func TestStaticAssetsAndSPAFallback(t *testing.T) {
 	dir := t.TempDir()
 	distDir := filepath.Join(dir, "static", "assets")
@@ -393,7 +476,7 @@ func TestStaticAssetsAndSPAFallback(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, nil, nil, nil)
+	server := NewServer(cfg, nil, nil, nil, nil)
 
 	assetReq := httptest.NewRequest(http.MethodGet, "/assets/index-test.js", nil)
 	assetRec := httptest.NewRecorder()

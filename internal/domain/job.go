@@ -205,6 +205,7 @@ type Job struct {
 	Repository string   `json:"repository"`
 	Number     int      `json:"number"`
 	Title      string   `json:"title"`
+	Branch     string   `json:"branch,omitempty"`
 }
 
 func (s JobState) DisplayName() (string, bool) {

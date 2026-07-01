@@ -116,13 +116,14 @@ func Run(ctx context.Context, opts Options) error {
 	if opts.MockMode {
 		skillGenerator = NewMockSkillGenerator(cfg.BaseDir)
 	}
+	branchResolver := NewJobDetailResolver(settingsStore)
 	go func() {
 		if err := poller.Run(ctx); err != nil && ctx.Err() == nil {
 			infoLogger.Printf("poller error: %v", err)
 		}
 	}()
 
-	srv := web.NewServer(cfg, store, settingsStore, artifactActions, skillGenerator)
+	srv := web.NewServer(cfg, store, settingsStore, artifactActions, branchResolver, skillGenerator)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- srv.ListenAndServe()

@@ -28,6 +28,7 @@ describe('JobDetailPanel', () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
         updatedAt: '2026-07-01T00:00:00Z',
+        branch: 'issue_#1',
         job: {
           id: 'job-1',
           kind: 'issue_implementation',
@@ -52,6 +53,8 @@ describe('JobDetailPanel', () => {
     expect(stateChip.classes()).toContain('chip')
     expect(stateChip.classes()).toContain('chip--running')
     expect(stateChip.text()).toBe('実装中')
+    expect(wrapper.text()).toContain('ブランチ')
+    expect(wrapper.text()).toContain('issue_#1')
   })
 
   it('keeps ready states on the existing chip style in detail view', async () => {
@@ -60,6 +63,7 @@ describe('JobDetailPanel', () => {
       .mockResolvedValueOnce(
       jsonResponse({
         updatedAt: '2026-07-01T00:00:00Z',
+        branch: '',
         job: {
           id: 'job-2',
           kind: 'issue_implementation',
@@ -90,6 +94,7 @@ describe('JobDetailPanel', () => {
     expect(stateChip.classes()).toContain('chip')
     expect(stateChip.classes()).not.toContain('chip--running')
     expect(stateChip.text()).toBe('実装完了')
+    expect(wrapper.text()).toContain('-')
   })
 
   it('deletes the current job after confirmation', async () => {
@@ -97,6 +102,7 @@ describe('JobDetailPanel', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
         updatedAt: '2026-07-01T00:00:00Z',
+        branch: 'issue_#3',
         job: {
           id: 'job-3',
           kind: 'issue_implementation',

@@ -27,6 +27,10 @@ type SettingsStore interface {
 	Save(context.Context, domain.WatchSettings) error
 }
 
+type JobBranchResolver interface {
+	ResolveJobBranch(context.Context, domain.Job) (string, error)
+}
+
 type ArtifactActions interface {
 	GetArtifact(context.Context, string) (DesignArtifact, error)
 	ApproveArtifact(context.Context, string, string) (domain.Job, error)
@@ -50,7 +54,7 @@ type Server struct {
 	skillActions    SkillActions
 }
 
-func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, artifactActions ArtifactActions, optionalSkillActions ...SkillActions) *Server {
+func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, artifactActions ArtifactActions, branchResolver JobBranchResolver, optionalSkillActions ...SkillActions) *Server {
 	mux := http.NewServeMux()
 	var skillActions SkillActions
 	if len(optionalSkillActions) > 0 {
@@ -115,6 +119,11 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 				Repository: req.Repository,
 				Number:     req.Number,
 				Title:      req.Title,
+			}
+			if branchResolver != nil {
+				if branch, err := branchResolver.ResolveJobBranch(r.Context(), job); err == nil {
+					job.Branch = strings.TrimSpace(branch)
+				}
 			}
 			if err := store.Upsert(r.Context(), job); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -289,9 +298,16 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		branch := strings.TrimSpace(job.Branch)
+		if branch == "" && branchResolver != nil {
+			if resolved, err := branchResolver.ResolveJobBranch(r.Context(), job); err == nil {
+				branch = strings.TrimSpace(resolved)
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"updatedAt": updatedAt.UTC().Format(time.RFC3339Nano),
 			"job":       job,
+			"branch":    branch,
 		})
 	})
 

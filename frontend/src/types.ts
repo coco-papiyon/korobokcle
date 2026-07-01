@@ -7,6 +7,7 @@ export type Job = {
   repository: string
   number: number
   title: string
+  branch?: string
 }
 
 export type JobArtifact = {
@@ -22,6 +23,7 @@ export type JobListResponse = {
 export type JobDetailResponse = {
   updatedAt: string
   job: Job
+  branch: string
 }
 
 export type SearchCondition = {
