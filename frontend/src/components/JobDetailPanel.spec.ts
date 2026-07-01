@@ -298,20 +298,20 @@ describe('JobDetailPanel', () => {
     expect(wrapper.text()).toContain('設計結果')
   })
 
-  it('shows artifact content for completed jobs', async () => {
+  it('shows design artifacts for completed issue design jobs', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
         jsonResponse({
           updatedAt: '2026-07-01T00:00:00Z',
-          branch: 'issue_#31',
+          branch: 'issue_#16',
           job: {
-            id: 'job-31',
-            kind: 'issue_implementation',
+            id: 'job-16',
+            kind: 'issue_design',
             state: 'completed',
             repository: 'owner/repo',
-            number: 31,
-            title: '完了ジョブ',
-            issueContext: '#31 完了ジョブ\n\n本文',
+            number: 16,
+            title: '完了済み設計ジョブ',
+            issueContext: '#16 完了済み設計ジョブ\n\n設計内容',
             fetchedAt: '2026-07-01T00:00:00Z',
             updatedAt: '2026-07-01T03:04:05Z',
           },
@@ -319,7 +319,7 @@ describe('JobDetailPanel', () => {
       )
       .mockResolvedValueOnce(
         jsonResponse({
-          content: 'artifact content for completed job',
+          content: 'design artifact content',
           path: 'artifact.md',
         }),
       )
@@ -328,15 +328,55 @@ describe('JobDetailPanel', () => {
     const wrapper = mount(JobDetailPanel, {
       props: {
         active: true,
-        jobId: 'job-31',
+        jobId: 'job-16',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('設計結果')
+    expect(wrapper.text()).toContain('design artifact content')
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/jobs/job-16/artifact', { cache: 'no-store' })
+  })
+
+  it('shows implementation artifacts for completed issue implementation jobs', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#17',
+          job: {
+            id: 'job-17',
+            kind: 'issue_implementation',
+            state: 'completed',
+            repository: 'owner/repo',
+            number: 17,
+            title: '完了済み実装ジョブ',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'implementation artifact content',
+          path: 'artifact.md',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-17',
         refreshKey: 0,
       },
     })
     await flushPromises()
 
     expect(wrapper.text()).toContain('実装結果')
-    expect(wrapper.text()).toContain('artifact content for completed job')
-    expect(wrapper.text()).toContain('完了ジョブ')
+    expect(wrapper.text()).toContain('implementation artifact content')
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/jobs/job-17/artifact', { cache: 'no-store' })
   })
 
   it('shows an issue link for issue jobs', async () => {
