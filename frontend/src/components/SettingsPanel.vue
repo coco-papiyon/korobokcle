@@ -259,21 +259,11 @@ defineExpose({
   </div>
 
   <div class="panel__title-row">
-    <h2>監視設定</h2>
-    <span class="panel__hint">Issue / PR watch</span>
+    <h2>実行設定</h2>
+    <span class="panel__hint">Job runtime defaults</span>
   </div>
 
   <div class="form settings-grid">
-    <label class="field field--full">
-      <span>監視リポジトリ</span>
-      <input v-model="settingsForm.repository" class="control" type="text" placeholder="owner/repository" />
-    </label>
-
-    <label class="field field--full">
-      <span>監視間隔（秒）</span>
-      <input v-model.number="settingsForm.pollIntervalSeconds" class="control" type="number" min="1" step="1" />
-    </label>
-
     <label class="field field--full">
       <span>ジョブ多重度</span>
       <input v-model.number="settingsForm.jobConcurrency" class="control" type="number" min="1" step="1" />
@@ -290,6 +280,24 @@ defineExpose({
       <span>ブランチ名ルール</span>
       <input v-model="settingsForm.branchNamePattern" class="control" type="text" placeholder="issue_#&lt;issue番号&gt;" />
       <span class="field-note">&lt;issue番号&gt; を issue 番号に置き換えてブランチを作成する。</span>
+    </label>
+  </div>
+
+  <div class="panel__title-row">
+    <h2>監視設定</h2>
+    <span class="panel__hint">Issue / PR watch</span>
+  </div>
+  <p class="field-note">対象リポジトリと Issue / PR の絞り込み条件を設定する。</p>
+
+  <div class="form settings-grid">
+    <label class="field field--full">
+      <span>監視リポジトリ</span>
+      <input v-model="settingsForm.repository" class="control" type="text" placeholder="owner/repository" />
+    </label>
+
+    <label class="field field--full">
+      <span>監視間隔（秒）</span>
+      <input v-model.number="settingsForm.pollIntervalSeconds" class="control" type="number" min="1" step="1" />
     </label>
 
     <div class="settings-section" :class="{ 'settings-section--disabled': !settingsForm.issueEnabled }">

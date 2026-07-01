@@ -69,8 +69,8 @@ describe('SettingsPanel', () => {
 
     const repoInput = wrapper.get('input[placeholder="owner/repository"]')
     const numberInputs = wrapper.findAll('input[type="number"]')
-    const pollInput = numberInputs[0]
-    const concurrencyInput = numberInputs[1]
+    const concurrencyInput = numberInputs[0]
+    const pollInput = numberInputs[1]
     const baseBranchInput = wrapper.get('input[placeholder="main"]')
     const branchPatternInput = wrapper.get('input[placeholder="issue_#<issue番号>"]')
     const issueIncludeInput = wrapper.get('input[placeholder="bug, ai:design"]')
@@ -87,8 +87,7 @@ describe('SettingsPanel', () => {
     const selects = wrapper.findAll('select')
     const headings = wrapper.findAll('h2').map((heading) => heading.text())
 
-    expect(headings).toContain('プロバイダー設定')
-    expect(headings).toContain('監視設定')
+    expect(headings).toEqual(['プロバイダー設定', '実行設定', '監視設定'])
     expect(conditionToggles).toHaveLength(2)
     expect((conditionToggles[0].element as HTMLInputElement).checked).toBe(false)
     expect((conditionToggles[1].element as HTMLInputElement).checked).toBe(true)

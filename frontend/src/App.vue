@@ -15,7 +15,7 @@ const detailRefreshKey = ref(0)
 const settingsPanelRef = ref<InstanceType<typeof SettingsPanel> | null>(null)
 const skillPanelRef = ref<InstanceType<typeof SkillGeneratorPanel> | null>(null)
 const tabDescriptions: Record<Tab, string> = {
-  settings: 'AI プロバイダーと監視条件をまとめて設定する。',
+  settings: 'AI プロバイダー、実行条件、監視条件を分けて設定する。',
   skills: 'Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。',
   jobs: '監視中のジョブ一覧を確認し、処理対象を選択する。',
 }
