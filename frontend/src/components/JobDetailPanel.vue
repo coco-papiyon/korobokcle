@@ -24,6 +24,8 @@ const deleteLoading = ref(false)
 let detailRequestSequence = 0
 let detailRefreshTimer: number | undefined
 const emit = defineEmits<{
+  (event: 'close'): void
+  (event: 'refresh'): void
   (event: 'deleted', jobId: string): void
 }>()
 
@@ -212,7 +214,8 @@ async function approveArtifact() {
       const message = await res.text()
       throw new Error(message || `HTTP ${res.status}`)
     }
-    await loadJobDetail(detailJob.value.id)
+    emit('refresh')
+    emit('close')
   } catch (err) {
     artifactError.value = err instanceof Error ? err.message : 'unknown error'
   } finally {
@@ -238,7 +241,8 @@ async function requestChanges() {
       const message = await res.text()
       throw new Error(message || `HTTP ${res.status}`)
     }
-    await loadJobDetail(detailJob.value.id)
+    emit('refresh')
+    emit('close')
   } catch (err) {
     artifactError.value = err instanceof Error ? err.message : 'unknown error'
   } finally {
@@ -264,7 +268,8 @@ async function rerunArtifact() {
       const message = await res.text()
       throw new Error(message || `HTTP ${res.status}`)
     }
-    await loadJobDetail(detailJob.value.id)
+    emit('refresh')
+    emit('close')
   } catch (err) {
     artifactError.value = err instanceof Error ? err.message : 'unknown error'
   } finally {
@@ -290,9 +295,11 @@ async function deleteJob() {
       const message = await res.text()
       throw new Error(message || `HTTP ${res.status}`)
     }
+    emit('refresh')
+    emit('deleted', detailJob.value.id)
+    emit('close')
     detailUpdatedAt.value = ''
     detailBranch.value = ''
-    emit('deleted', detailJob.value.id)
     detailJob.value = null
     artifact.value = null
   } catch (err) {

@@ -2,33 +2,46 @@
 import { ref } from 'vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import JobListPanel from './components/JobListPanel.vue'
-import JobDetailPanel from './components/JobDetailPanel.vue'
+import JobDetailModal from './components/JobDetailModal.vue'
 import SkillGeneratorPanel from './components/SkillGeneratorPanel.vue'
 
-type Tab = 'settings' | 'skills' | 'jobs' | 'detail'
+type Tab = 'settings' | 'skills' | 'jobs'
 
 const activeTab = ref<Tab>('jobs')
 const selectedJobId = ref('')
+const isJobDetailOpen = ref(false)
+const jobListRefreshKey = ref(0)
 const detailRefreshKey = ref(0)
 const tabDescriptions: Record<Tab, string> = {
   settings: 'AI プロバイダーと監視条件をまとめて設定する。',
   skills: 'Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。',
   jobs: '監視中のジョブ一覧を確認し、処理対象を選択する。',
-  detail: '選択したジョブの詳細と生成物を確認し、必要なら再実行や承認を行う。',
 }
 
 function selectJob(jobId: string) {
   selectedJobId.value = jobId
+  isJobDetailOpen.value = true
   detailRefreshKey.value += 1
-  activeTab.value = 'detail'
+}
+
+function closeJobDetail() {
+  isJobDetailOpen.value = false
+}
+
+function refreshJobs() {
+  jobListRefreshKey.value += 1
 }
 
 function handleJobDeleted(jobId: string) {
   if (selectedJobId.value === jobId) {
     selectedJobId.value = ''
   }
-  detailRefreshKey.value += 1
-  activeTab.value = 'jobs'
+  refreshJobs()
+  closeJobDetail()
+}
+
+function handleJobDetailRefresh() {
+  refreshJobs()
 }
 
 function selectTab(tab: Tab) {
@@ -71,16 +84,6 @@ function selectTab(tab: Tab) {
           >
             ジョブ一覧
           </button>
-          <button
-            class="tab"
-            :class="{ 'tab--active': activeTab === 'detail' }"
-            type="button"
-            role="tab"
-            :aria-selected="activeTab === 'detail'"
-            @click="selectTab('detail')"
-          >
-            詳細
-          </button>
         </div>
 
         <p class="tab-description" aria-live="polite">
@@ -92,22 +95,27 @@ function selectTab(tab: Tab) {
         </div>
 
         <div v-show="activeTab === 'jobs'" class="tab-panel" role="tabpanel">
-          <JobListPanel :active="activeTab === 'jobs'" :selected-job-id="selectedJobId" @select="selectJob" />
+          <JobListPanel
+            :active="activeTab === 'jobs'"
+            :selected-job-id="selectedJobId"
+            :refresh-key="jobListRefreshKey"
+            @select="selectJob"
+          />
         </div>
 
         <div v-show="activeTab === 'skills'" class="tab-panel" role="tabpanel">
           <SkillGeneratorPanel />
         </div>
-
-        <div v-show="activeTab === 'detail'" class="tab-panel" role="tabpanel">
-          <JobDetailPanel
-            :active="activeTab === 'detail'"
-            :job-id="selectedJobId"
-            :refresh-key="detailRefreshKey"
-            @deleted="handleJobDeleted"
-          />
-        </div>
       </section>
     </main>
+
+    <JobDetailModal
+      v-if="isJobDetailOpen"
+      :job-id="selectedJobId"
+      :refresh-key="detailRefreshKey"
+      @close="closeJobDetail"
+      @deleted="handleJobDeleted"
+      @refresh="handleJobDetailRefresh"
+    />
   </div>
 </template>
