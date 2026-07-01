@@ -294,5 +294,59 @@ describe('JobDetailPanel', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/api/jobs/job-3', { method: 'DELETE' })
     expect(wrapper.text()).toContain('一覧からジョブを選択してください。')
+    expect(wrapper.emitted('deleted')).toEqual([['job-3']])
+    expect(wrapper.emitted('refresh')).toHaveLength(1)
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('emits close and refresh after approving an artifact', async () => {
+    const fetchMock = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#11',
+          job: {
+            id: 'job-11',
+            kind: 'issue_implementation',
+            state: 'implementation_ready',
+            repository: 'owner/repo',
+            number: 11,
+            title: '承認対象',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'artifact content',
+          path: 'artifact.md',
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-11',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('button.button').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/jobs/job-11/artifact', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ comment: '' }),
+    })
+    expect(wrapper.emitted('refresh')).toHaveLength(1)
+    expect(wrapper.emitted('close')).toHaveLength(1)
   })
 })

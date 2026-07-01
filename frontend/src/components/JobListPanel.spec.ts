@@ -43,6 +43,7 @@ describe('JobListPanel', () => {
       props: {
         active: false,
         selectedJobId: '',
+        refreshKey: 0,
       },
     })
     await flushPromises()
@@ -102,6 +103,7 @@ describe('JobListPanel', () => {
       props: {
         active: true,
         selectedJobId: '',
+        refreshKey: 0,
       },
     })
     await flushPromises()
@@ -149,6 +151,7 @@ describe('JobListPanel', () => {
       props: {
         active: true,
         selectedJobId: '',
+        refreshKey: 0,
       },
     })
     await flushPromises()
@@ -183,6 +186,7 @@ describe('JobListPanel', () => {
       props: {
         active: true,
         selectedJobId: '',
+        refreshKey: 0,
       },
     })
     await flushPromises()
@@ -217,6 +221,7 @@ describe('JobListPanel', () => {
       props: {
         active: true,
         selectedJobId: '',
+        refreshKey: 0,
       },
     })
     await flushPromises()
@@ -247,6 +252,7 @@ describe('JobListPanel', () => {
       props: {
         active: true,
         selectedJobId: '',
+        refreshKey: 0,
       },
     })
     await flushPromises()
@@ -299,9 +305,16 @@ describe('JobListPanel', () => {
         props: {
           active: true,
           selectedJobId: '',
+          refreshKey: 0,
         },
       })
       await flushPromises()
+      expect(wrapper.text()).toContain('初回ジョブ')
+
+      await wrapper.setProps({ refreshKey: 1 })
+      await flushPromises()
+
+      expect(fetchMock).toHaveBeenCalledTimes(2)
       expect(wrapper.text()).toContain('初回ジョブ')
 
       intervalHandler?.(0 as never)

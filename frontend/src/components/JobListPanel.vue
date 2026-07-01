@@ -7,6 +7,7 @@ import { jobTimeSummary } from '../utils/jobTime'
 const props = defineProps<{
   active: boolean
   selectedJobId: string
+  refreshKey: number
 }>()
 
 const emit = defineEmits<{
@@ -112,8 +113,8 @@ function jobStateClass(state: string) {
 }
 
 watch(
-  () => props.active,
-  (active) => {
+  () => [props.active, props.refreshKey] as const,
+  ([active]) => {
     if (!active) {
       stopPolling()
       return

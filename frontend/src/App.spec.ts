@@ -2,8 +2,6 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { vi } from 'vitest'
 import App from './App.vue'
-import JobDetailPanel from './components/JobDetailPanel.vue'
-import JobListPanel from './components/JobListPanel.vue'
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -24,7 +22,7 @@ async function flushPromises() {
 }
 
 describe('App', () => {
-  it('shows shared tab descriptions and switches them by tab', async () => {
+  it('shows three tabs and opens the detail modal from the job list', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input)
       if (url === '/api/settings') {
@@ -38,7 +36,39 @@ describe('App', () => {
         return Promise.resolve(jsonResponse({ skills: [] }))
       }
       if (url === '/api/jobs') {
-        return Promise.resolve(jsonResponse({ jobs: [] }))
+        return Promise.resolve(
+          jsonResponse({
+            updatedAt: '2026-07-01T00:00:00Z',
+            jobs: [
+              {
+                id: 'job-1',
+                kind: 'issue_implementation',
+                state: 'implementation_running',
+                repository: 'owner/repo',
+                number: 1,
+                title: '実装中ジョブ',
+              },
+            ],
+          }),
+        )
+      }
+      if (url === '/api/jobs/job-1') {
+        return Promise.resolve(
+          jsonResponse({
+            updatedAt: '2026-07-01T00:00:00Z',
+            branch: 'issue_#1',
+            job: {
+              id: 'job-1',
+              kind: 'issue_implementation',
+              state: 'implementation_running',
+              repository: 'owner/repo',
+              number: 1,
+              title: '実装中ジョブ',
+              fetchedAt: '2026-07-01T00:00:00Z',
+              updatedAt: '2026-07-01T03:04:05Z',
+            },
+          }),
+        )
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`))
     })
@@ -49,29 +79,31 @@ describe('App', () => {
 
     const tabs = wrapper.findAll('button[role="tab"]')
     const description = () => wrapper.get('.tab-description').text()
-    const jobListPanel = () => wrapper.getComponent(JobListPanel)
-    const jobDetailPanel = () => wrapper.getComponent(JobDetailPanel)
 
+    expect(tabs).toHaveLength(3)
     expect(description()).toBe('監視中のジョブ一覧を確認し、処理対象を選択する。')
-    expect(jobListPanel().props('active')).toBe(true)
-    expect(jobDetailPanel().props('active')).toBe(false)
 
     await tabs[1].trigger('click')
     await nextTick()
     expect(description()).toBe('AI プロバイダーと監視条件をまとめて設定する。')
-    expect(jobListPanel().props('active')).toBe(false)
-    expect(jobDetailPanel().props('active')).toBe(false)
 
     await tabs[0].trigger('click')
     await nextTick()
     expect(description()).toBe('Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。')
-    expect(jobListPanel().props('active')).toBe(false)
-    expect(jobDetailPanel().props('active')).toBe(false)
 
-    await tabs[3].trigger('click')
+    await tabs[2].trigger('click')
+    await flushPromises()
+
+    const row = wrapper.get('tbody tr')
+    await row.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="dialog"]').text()).toContain('ジョブ詳細')
+    expect(wrapper.get('tbody tr').classes()).toContain('job-table__row--active')
+
+    await wrapper.get('.modal-dialog__close').trigger('click')
     await nextTick()
-    expect(description()).toBe('選択したジョブの詳細と生成物を確認し、必要なら再実行や承認を行う。')
-    expect(jobListPanel().props('active')).toBe(false)
-    expect(jobDetailPanel().props('active')).toBe(true)
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 })
