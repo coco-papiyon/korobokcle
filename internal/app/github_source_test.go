@@ -77,6 +77,30 @@ func TestGitHubSourceEmptyRepository(t *testing.T) {
 	}
 }
 
+func TestGitHubSourceSkipsDisabledConditions(t *testing.T) {
+	issueDisabled := false
+	prDisabled := false
+	src := NewGitHubSource(&testGitHubSourceSettingsStore{
+		settings: domain.NormalizeWatchSettings(domain.WatchSettings{
+			Repository: "owner/repo",
+			Issue: domain.SearchCondition{
+				Enabled: &issueDisabled,
+			},
+			PullRequest: domain.SearchCondition{
+				Enabled: &prDisabled,
+			},
+		}),
+	}, "", nil)
+
+	jobs, err := src.List(context.Background())
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(jobs) != 0 {
+		t.Fatalf("jobs = %d, want 0", len(jobs))
+	}
+}
+
 func TestJobIDForPRConflict(t *testing.T) {
 	conflict := ghPRRecord{Number: 42, Mergeable: "CONFLICTING"}
 	if got := jobIDForPR(conflict); got != "pr-conflict-42" {
@@ -102,3 +126,17 @@ func TestSearchConditionMatches(t *testing.T) {
 		t.Fatal("expected label include mismatch")
 	}
 }
+
+type testGitHubSourceSettingsStore struct {
+	settings domain.WatchSettings
+}
+
+func (s *testGitHubSourceSettingsStore) Load(context.Context) (domain.WatchSettings, error) {
+	return s.settings, nil
+}
+
+func (s *testGitHubSourceSettingsStore) Save(context.Context, domain.WatchSettings) error {
+	return nil
+}
+
+var _ SettingsStore = (*testGitHubSourceSettingsStore)(nil)

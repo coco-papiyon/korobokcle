@@ -76,6 +76,13 @@ $jobs = @(
     repository = "mock-owner/mock-repo"
     number = 101
     title = "login-page-improvements"
+    issueContext = @"
+#101 login-page-improvements
+
+Improve the login page layout, spacing, and accessibility.
+"@
+    fetchedAt = "2026-07-01T00:00:00Z"
+    updatedAt = "2026-07-01T03:04:05Z"
   },
   @{
     id = "issue-102"
@@ -84,6 +91,13 @@ $jobs = @(
     repository = "mock-owner/mock-repo"
     number = 102
     title = "job-detail-panel-improvements"
+    issueContext = @"
+#102 job-detail-panel-improvements
+
+Refine the job detail panel, align cards, and improve readability.
+"@
+    fetchedAt = "2026-07-01T00:10:00Z"
+    updatedAt = "2026-07-01T03:14:05Z"
   },
   @{
     id = "pr-201"
@@ -92,6 +106,8 @@ $jobs = @(
     repository = "mock-owner/mock-repo"
     number = 201
     title = "add-filter-conditions"
+    fetchedAt = "2026-07-01T00:20:00Z"
+    updatedAt = "2026-07-01T03:24:05Z"
   },
   @{
     id = "pr-202"
@@ -100,6 +116,8 @@ $jobs = @(
     repository = "mock-owner/mock-repo"
     number = 202
     title = "review-feedback-fix"
+    fetchedAt = "2026-07-01T00:30:00Z"
+    updatedAt = "2026-07-01T03:34:05Z"
   }
 )
 Write-TextNoBom -Path (Join-Path $rootPath "db/jobs.json") -Value ($jobs | ConvertTo-Json -Depth 10)
@@ -112,6 +130,13 @@ $mockJobs = @(
     repository = "mock-owner/mock-repo"
     number = 301
     title = "mock-detected-design"
+    issueContext = @"
+#301 mock-detected-design
+
+Mock issue for testing the detected state.
+"@
+    fetchedAt = "2026-07-01T00:40:00Z"
+    updatedAt = "2026-07-01T03:44:05Z"
   },
   @{
     id = "issue-302"
@@ -120,6 +145,13 @@ $mockJobs = @(
     repository = "mock-owner/mock-repo"
     number = 302
     title = "mock-detected-implementation"
+    issueContext = @"
+#302 mock-detected-implementation
+
+Mock issue for testing implementation flow.
+"@
+    fetchedAt = "2026-07-01T00:50:00Z"
+    updatedAt = "2026-07-01T03:54:05Z"
   },
   @{
     id = "pr-401"
@@ -128,6 +160,8 @@ $mockJobs = @(
     repository = "mock-owner/mock-repo"
     number = 401
     title = "mock-pr-review"
+    fetchedAt = "2026-07-01T01:00:00Z"
+    updatedAt = "2026-07-01T04:04:05Z"
   }
 )
 Write-TextNoBom -Path (Join-Path $rootPath "db/mock_jobs.json") -Value ($mockJobs | ConvertTo-Json -Depth 10)

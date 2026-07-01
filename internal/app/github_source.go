@@ -71,18 +71,30 @@ func (s *GitHubSource) List(ctx context.Context) ([]domain.Job, error) {
 	var jobs []domain.Job
 
 	s.infof("github source: list issues repo=%s", repository)
-	issues, err := s.listIssues(ctx, repository, settings.Issue, settings)
-	if err != nil {
-		s.infof("github source: list issues failed repo=%s err=%v", repository, err)
-		return nil, err
+	var issues []domain.Job
+	if settings.Issue.IsEnabled() {
+		var err error
+		issues, err = s.listIssues(ctx, repository, settings.Issue, settings)
+		if err != nil {
+			s.infof("github source: list issues failed repo=%s err=%v", repository, err)
+			return nil, err
+		}
+	} else {
+		s.infof("github source: list issues skipped repo=%s", repository)
 	}
 	jobs = append(jobs, issues...)
 
 	s.infof("github source: list pull requests repo=%s", repository)
-	prs, err := s.listPullRequests(ctx, repository, settings.PullRequest)
-	if err != nil {
-		s.infof("github source: list pull requests failed repo=%s err=%v", repository, err)
-		return nil, err
+	var prs []domain.Job
+	if settings.PullRequest.IsEnabled() {
+		var err error
+		prs, err = s.listPullRequests(ctx, repository, settings.PullRequest)
+		if err != nil {
+			s.infof("github source: list pull requests failed repo=%s err=%v", repository, err)
+			return nil, err
+		}
+	} else {
+		s.infof("github source: list pull requests skipped repo=%s", repository)
 	}
 	jobs = append(jobs, prs...)
 	s.infof("github source: list completed repo=%s issues=%d prs=%d targets=%d", repository, len(issues), len(prs), len(jobs))
@@ -108,13 +120,14 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 	type issueRecord struct {
 		Number    int       `json:"number"`
 		Title     string    `json:"title"`
+		Body      string    `json:"body"`
 		Labels    []ghLabel `json:"labels"`
 		Author    ghUser    `json:"author"`
 		Assignees []ghUser  `json:"assignees"`
 		URL       string    `json:"url"`
 	}
 
-	cmd := exec.CommandContext(ctx, "gh", "issue", "list", "--repo", repository, "--state", "open", "--json", "number,title,labels,url,author,assignees")
+	cmd := exec.CommandContext(ctx, "gh", "issue", "list", "--repo", repository, "--state", "open", "--json", "number,title,body,labels,url,author,assignees")
 	raw, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("gh issue list: %w", err)
@@ -138,13 +151,14 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 		}
 		kind, state := classifyIssue(labels)
 		jobs = append(jobs, domain.Job{
-			ID:         fmt.Sprintf("issue-%d", record.Number),
-			Kind:       kind,
-			State:      state,
-			Repository: repository,
-			Number:     record.Number,
-			Title:      record.Title,
-			Branch:     renderBranchName(settings.BranchNamePattern, record.Number),
+			ID:           fmt.Sprintf("issue-%d", record.Number),
+			Kind:         kind,
+			State:        state,
+			Repository:   repository,
+			Number:       record.Number,
+			Title:        record.Title,
+			Branch:       renderBranchName(settings.BranchNamePattern, record.Number),
+			IssueContext: formatIssueContext(record.Number, record.Title, record.Body),
 		})
 	}
 	s.infof("github source: issues retrieved repo=%s fetched=%d targets=%d", repository, len(records), len(jobs))
@@ -227,6 +241,15 @@ func classifyPullRequest(record ghPRRecord) (domain.JobKind, domain.JobState) {
 	default:
 		return domain.JobKindPRReview, domain.StateReviewRunning
 	}
+}
+
+func formatIssueContext(number int, title string, body string) string {
+	lines := []string{
+		fmt.Sprintf("#%d %s", number, title),
+		"",
+		strings.TrimSpace(body),
+	}
+	return strings.Join(lines, "\n")
 }
 
 func isConflictState(mergeable string, mergeStateStatus string) bool {

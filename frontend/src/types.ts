@@ -8,6 +8,7 @@ export type Job = {
   number: number
   title: string
   branch?: string
+  issueContext?: string
   fetchedAt?: string
   updatedAt?: string
 }
@@ -26,9 +27,11 @@ export type JobDetailResponse = {
   updatedAt: string
   job: Job
   branch: string
+  issueContext?: string
 }
 
 export type SearchCondition = {
+  enabled?: boolean
   labelIncludes: string[]
   labelExcludes: string[]
   titleContains: string[]

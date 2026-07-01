@@ -132,6 +132,7 @@ describe('JobDetailPanel', () => {
           number: 2,
           title: '待機中ジョブ',
           fetchedAt: '2026-07-01T00:00:00Z',
+          updatedAt: '2026-07-01T03:04:05Z',
         },
       }),
     )
@@ -156,7 +157,12 @@ describe('JobDetailPanel', () => {
     expect(stateChip.classes()).toContain('chip')
     expect(stateChip.classes()).not.toContain('chip--running')
     expect(stateChip.text()).toBe('実装完了')
-    expect(wrapper.get('.detail__meta-value--number').text()).toContain('取得時間 2026/07/01 09:00:00 / 更新時間 -')
+    const metaItems = wrapper.findAll('.detail__meta-item')
+    expect(metaItems).toHaveLength(5)
+    expect(metaItems[2].text()).toContain('#2')
+    expect(metaItems[3].text()).toContain('ブランチ')
+    expect(metaItems[4].text()).toContain('取得時間')
+    expect(metaItems[4].text()).toContain('2026/07/01 09:00:00')
   })
 
   it('uses approved chip colors for review approvals in detail view', async () => {
@@ -193,7 +199,7 @@ describe('JobDetailPanel', () => {
     expect(stateChip.text()).toBe('レビュー承認済み')
   })
 
-  it('shows fetched and updated times next to the number', async () => {
+  it('shows fetched time in the detail summary', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
         updatedAt: '2026-07-01T00:00:00Z',
@@ -221,8 +227,114 @@ describe('JobDetailPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.get('.detail__meta-value--number').text()).toContain('#9')
-    expect(wrapper.get('.detail__meta-value--number').text()).toContain('取得時間 2026/07/01 09:00:00 / 更新時間 2026/07/01 12:04:05')
+    const metaItems = wrapper.findAll('.detail__meta-item')
+    expect(metaItems).toHaveLength(5)
+    expect(metaItems[2].text()).toContain('#9')
+    expect(metaItems[3].text()).toContain('issue_#9')
+    expect(metaItems[4].text()).toContain('取得時間')
+    expect(metaItems[4].text()).toContain('2026/07/01 09:00:00')
+  })
+
+  it('shows issue context above the artifact section for issue jobs', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        branch: 'issue_#12',
+        job: {
+          id: 'job-12',
+          kind: 'issue_design',
+          state: 'design_ready',
+          repository: 'owner/repo',
+          number: 12,
+          title: '画面調整',
+          issueContext: '#12 画面調整\n\n詳細な要件',
+          fetchedAt: '2026-07-01T00:00:00Z',
+          updatedAt: '2026-07-01T03:04:05Z',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-12',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    const details = wrapper.get('details.detail-context')
+    expect(details.get('summary').text()).toBe('Issue の内容')
+    expect(wrapper.text()).toContain('#12 画面調整')
+    expect(wrapper.text()).toContain('詳細な要件')
+    expect(wrapper.text()).toContain('設計結果')
+  })
+
+  it('keeps the current view when a refreshed job has the same updatedAt', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#21',
+          job: {
+            id: 'job-21',
+            kind: 'issue_design',
+            state: 'design_ready',
+            repository: 'owner/repo',
+          number: 21,
+          title: '最初の表示',
+          issueContext: '#21 最初の表示\n\n本文A',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'artifact content',
+          path: 'artifact.md',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#21',
+          job: {
+            id: 'job-21',
+            kind: 'issue_design',
+            state: 'design_ready',
+            repository: 'owner/repo',
+          number: 21,
+          title: '更新されない表示',
+          issueContext: '#21 更新されない表示\n\n本文B',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-21',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('最初の表示')
+    expect(wrapper.text()).toContain('本文A')
+
+    await wrapper.setProps({ refreshKey: 1 })
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(wrapper.text()).toContain('最初の表示')
+    expect(wrapper.text()).toContain('本文A')
+    expect(wrapper.text()).not.toContain('更新されない表示')
+    expect(wrapper.text()).not.toContain('本文B')
   })
 
   it('shows placeholders for missing job times in detail view', async () => {
@@ -251,7 +363,10 @@ describe('JobDetailPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.get('.detail__meta-value--number').text()).toContain('取得時間 - / 更新時間 -')
+    const metaItems = wrapper.findAll('.detail__meta-item')
+    expect(metaItems).toHaveLength(5)
+    expect(metaItems[4].text()).toContain('取得時間')
+    expect(metaItems[4].text()).toContain('-')
   })
 
   it('deletes the current job after confirmation', async () => {

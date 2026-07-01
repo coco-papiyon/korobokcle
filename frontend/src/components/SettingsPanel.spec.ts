@@ -40,6 +40,7 @@ describe('SettingsPanel', () => {
           githubCopilot: { mode: 'default', value: '' },
         },
         issue: {
+          enabled: false,
           labelIncludes: ['bug', 'ai:design'],
           labelExcludes: ['wip'],
           titleContains: ['fix'],
@@ -47,6 +48,7 @@ describe('SettingsPanel', () => {
           assignees: ['bob'],
         },
         pullRequest: {
+          enabled: true,
           labelIncludes: ['ready'],
           labelExcludes: ['draft'],
           titleContains: ['update'],
@@ -65,47 +67,63 @@ describe('SettingsPanel', () => {
     const wrapper = mount(SettingsPanel)
     await flushPromises()
 
-    const inputs = wrapper.findAll('input')
+    const repoInput = wrapper.get('input[placeholder="owner/repository"]')
+    const numberInputs = wrapper.findAll('input[type="number"]')
+    const pollInput = numberInputs[0]
+    const concurrencyInput = numberInputs[1]
+    const baseBranchInput = wrapper.get('input[placeholder="main"]')
+    const branchPatternInput = wrapper.get('input[placeholder="issue_#<issue番号>"]')
+    const issueIncludeInput = wrapper.get('input[placeholder="bug, ai:design"]')
+    const issueExcludeInput = wrapper.get('input[placeholder="wip, draft"]')
+    const issueTitleInput = wrapper.get('input[placeholder="fix, refactor"]')
+    const issueAuthorsInput = wrapper.get('input[placeholder="alice, bob"]')
+    const issueAssigneesInput = wrapper.get('input[placeholder="carol, dave"]')
+    const prIncludeInput = wrapper.get('input[placeholder="ready, review"]')
+    const prExcludeInput = wrapper.findAll('input[placeholder="wip, draft"]')[1]
+    const prTitleInput = wrapper.get('input[placeholder="fix, update"]')
+    const prAuthorsInput = wrapper.findAll('input[placeholder="alice, bob"]')[1]
+    const prAssigneesInput = wrapper.findAll('input[placeholder="carol, dave"]')[1]
+    const conditionToggles = wrapper.findAll('input[type="checkbox"]')
     const selects = wrapper.findAll('select')
     const headings = wrapper.findAll('h2').map((heading) => heading.text())
-    const buttons = wrapper.findAll('button')
 
     expect(headings).toContain('プロバイダー設定')
     expect(headings).toContain('監視設定')
-    expect(buttons).toHaveLength(1)
-    expect(buttons[0].text()).toBe('保存')
-    expect(inputs[0].element).toHaveProperty('value', 'owner/repository')
-    expect(inputs[1].element).toHaveProperty('value', '120')
-    expect(inputs[2].element).toHaveProperty('value', '4')
-    expect(inputs[3].element).toHaveProperty('value', 'main')
-    expect(inputs[4].element).toHaveProperty('value', 'issue_#<issue番号>')
-    expect(inputs[5].element).toHaveProperty('value', 'bug, ai:design')
-    expect(inputs[6].element).toHaveProperty('value', 'wip')
-    expect(inputs[7].element).toHaveProperty('value', 'fix')
-    expect(inputs[8].element).toHaveProperty('value', 'alice')
-    expect(inputs[9].element).toHaveProperty('value', 'bob')
-    expect(inputs[10].element).toHaveProperty('value', 'ready')
-    expect(inputs[11].element).toHaveProperty('value', 'draft')
-    expect(inputs[12].element).toHaveProperty('value', 'update')
-    expect(inputs[13].element).toHaveProperty('value', 'carol')
-    expect(inputs[14].element).toHaveProperty('value', 'dave')
+    expect(conditionToggles).toHaveLength(2)
+    expect((conditionToggles[0].element as HTMLInputElement).checked).toBe(false)
+    expect((conditionToggles[1].element as HTMLInputElement).checked).toBe(true)
+    expect(repoInput.element).toHaveProperty('value', 'owner/repository')
+    expect(pollInput.element).toHaveProperty('value', '120')
+    expect(concurrencyInput.element).toHaveProperty('value', '4')
+    expect(baseBranchInput.element).toHaveProperty('value', 'main')
+    expect(branchPatternInput.element).toHaveProperty('value', 'issue_#<issue番号>')
+    expect(issueIncludeInput.element).toHaveProperty('value', 'bug, ai:design')
+    expect(issueExcludeInput.element).toHaveProperty('value', 'wip')
+    expect(issueTitleInput.element).toHaveProperty('value', 'fix')
+    expect(issueAuthorsInput.element).toHaveProperty('value', 'alice')
+    expect(issueAssigneesInput.element).toHaveProperty('value', 'bob')
+    expect(prIncludeInput.element).toHaveProperty('value', 'ready')
+    expect(prExcludeInput.element).toHaveProperty('value', 'draft')
+    expect(prTitleInput.element).toHaveProperty('value', 'update')
+    expect(prAuthorsInput.element).toHaveProperty('value', 'carol')
+    expect(prAssigneesInput.element).toHaveProperty('value', 'dave')
     expect(selects[0].element).toHaveProperty('value', 'codex')
     expect(selects[1].element).toHaveProperty('value', 'gpt-5.5')
     const textareas = wrapper.findAll('textarea')
     expect(textareas[0].element).toHaveProperty('value', 'npm ci\ngo test ./...')
 
-    await inputs[0].setValue(' owner/new-repository ')
-    await inputs[1].setValue('59.7')
-    await inputs[2].setValue('6')
-    await inputs[3].setValue(' release ')
-    await inputs[4].setValue(' issue_#<issue番号> ')
-    await inputs[5].setValue('bug, ai:design, docs')
-    await inputs[10].setValue('ready, review')
+    await repoInput.setValue(' owner/new-repository ')
+    await pollInput.setValue('59.7')
+    await concurrencyInput.setValue('6')
+    await baseBranchInput.setValue(' release ')
+    await branchPatternInput.setValue(' issue_#<issue番号> ')
+    await prIncludeInput.setValue('ready, review')
+    await conditionToggles[0].setChecked(false)
     await textareas[0].setValue('npm ci\nnpm test\n')
     await selects[0].setValue('github_copilot')
     await selects[1].setValue('claude-opus-4.6')
 
-    await wrapper.get('button').trigger('click')
+    await (wrapper.vm as unknown as { saveSettings: () => Promise<void> }).saveSettings()
     await flushPromises()
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -131,13 +149,15 @@ describe('SettingsPanel', () => {
         githubCopilot: { mode: 'custom', value: 'claude-opus-4.6' },
       },
       issue: {
-        labelIncludes: ['bug', 'ai:design', 'docs'],
+        enabled: false,
+        labelIncludes: ['bug', 'ai:design'],
         labelExcludes: ['wip'],
         titleContains: ['fix'],
         authors: ['alice'],
         assignees: ['bob'],
       },
       pullRequest: {
+        enabled: true,
         labelIncludes: ['ready', 'review'],
         labelExcludes: ['draft'],
         titleContains: ['update'],

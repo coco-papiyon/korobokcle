@@ -34,7 +34,8 @@ describe('JobDetailModal', () => {
     await flushPromises()
 
     expect(document.body.classList.contains('modal-open')).toBe(true)
-    expect(wrapper.get('[role="dialog"]').text()).toContain('ジョブ詳細')
+    expect(wrapper.get('[role="dialog"]').exists()).toBe(true)
+    expect(wrapper.get('.modal-dialog__close').text()).toBe('閉じる')
 
     await wrapper.get('.modal-dialog__close').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)

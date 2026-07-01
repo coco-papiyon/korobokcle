@@ -47,10 +47,6 @@ onBeforeUnmount(() => {
   <div class="modal-overlay" @click.self="close">
     <section class="modal-dialog" role="dialog" aria-modal="true" aria-label="ジョブ詳細">
       <div class="modal-dialog__header">
-        <div class="modal-dialog__title">
-          <p class="panel__hint">詳細確認と操作をモーダル内で完結します</p>
-          <h2>ジョブ詳細</h2>
-        </div>
         <button class="button button--ghost modal-dialog__close" type="button" aria-label="閉じる" @click="close">
           閉じる
         </button>

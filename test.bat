@@ -13,22 +13,26 @@ if not exist "frontend\node_modules" (
   popd
 )
 
-echo Building frontend...
-pushd "frontend" || goto :error
-call npm run build
-if errorlevel 1 goto :error
-popd
-
-echo Updating static files...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path 'static') { Remove-Item -Recurse -Force 'static' }; New-Item -ItemType Directory -Path 'static' | Out-Null; Copy-Item -Recurse -Force 'frontend\dist\*' 'static\'"
-if errorlevel 1 goto :error
+set "FRONTEND_RUNNING="
+for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":5173 .*LISTENING"') do (
+  if not defined FRONTEND_RUNNING set "FRONTEND_RUNNING=%%P"
+)
+if defined FRONTEND_RUNNING (
+  echo Frontend is already running on http://localhost:5173 ^(PID: %FRONTEND_RUNNING%^). Skipping startup.
+) else (
+  echo Starting frontend at http://localhost:5173...
+  start "korobokcle frontend" /D "%ROOT_DIR%\frontend" cmd /k npm run dev
+  if errorlevel 1 goto :error
+  echo Frontend source changes are applied automatically by Vite HMR.
+)
+echo Backend runs in this window.
 
 echo Creating test data...
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\create_test_data.ps1" -Root ".\tests"
 if errorlevel 1 goto :error
 
 echo Starting korobokcle in mock mode...
-go run .\cmd\korobokcle --addr :8081 --tool-dir "%ROOT_DIR%" --base-dir "%ROOT_DIR%\tests" --work-dir "%ROOT_DIR%\tests" --mock-mode %*
+go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --base-dir "%ROOT_DIR%\tests" --work-dir "%ROOT_DIR%\tests" --mock-mode %*
 if errorlevel 1 goto :error
 
 popd

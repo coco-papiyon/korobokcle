@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { Job, JobListResponse } from '../types'
 import { jobStateChipClass } from '../utils/jobState'
-import { jobTimeSummary } from '../utils/jobTime'
+import { formatJobTimestampValue } from '../utils/jobTime'
 
 const props = defineProps<{
   active: boolean
@@ -156,6 +156,7 @@ onBeforeUnmount(() => {
             <th scope="col">Number</th>
             <th scope="col">ID</th>
             <th scope="col">タイトル</th>
+            <th scope="col">取得時間</th>
             <th scope="col">ステータス</th>
           </tr>
         </thead>
@@ -173,13 +174,11 @@ onBeforeUnmount(() => {
             <td><code>{{ job.kind }}</code></td>
             <td>#{{ job.number }}</td>
             <td><code>{{ job.id }}</code></td>
-            <td class="job-table__title">
-              <div class="job-table__title-content">
-                <span class="job-table__title-text">{{ job.title || `#${job.number}` }}</span>
-                <span class="job-time-summary">{{ jobTimeSummary(job.fetchedAt, job.updatedAt) }}</span>
-              </div>
+            <td class="job-table__title">{{ job.title || `#${job.number}` }}</td>
+            <td class="job-table__time-cell">{{ formatJobTimestampValue(job.fetchedAt) }}</td>
+            <td>
+              <span :class="jobStateClass(job.state)">{{ jobStateLabel(job.state) }}</span>
             </td>
-            <td><span :class="jobStateClass(job.state)">{{ jobStateLabel(job.state) }}</span></td>
           </tr>
         </tbody>
       </table>

@@ -93,8 +93,6 @@ describe('SkillGeneratorPanel', () => {
     const checkboxes = wrapper.findAll('input[type="checkbox"]')
     expect(checkboxes).toHaveLength(5)
     expect(checkboxes.every((checkbox) => (checkbox.element as HTMLInputElement).checked)).toBe(true)
-    expect(wrapper.get('button:not(.button--ghost)').text()).toContain('選択スキルを生成 (4)')
-    expect(wrapper.findAll('button.button--ghost').at(-1)?.text()).toContain('選択スキルを再生成[上書き] (4)')
   })
 
   it('sends only checked purposes when generating and regenerating skills', async () => {
@@ -107,9 +105,7 @@ describe('SkillGeneratorPanel', () => {
     await checkboxes[1].setChecked(false)
     await wrapper.get('textarea[placeholder^="go test ./..."]').setValue('go test ./...\ngo test ./internal/app')
 
-    expect(wrapper.get('button:not(.button--ghost)').text()).toContain('選択スキルを生成 (3)')
-
-    await wrapper.get('button:not(.button--ghost)').trigger('click')
+    await (wrapper.vm as unknown as { generateSelectedSkills: () => Promise<void> }).generateSelectedSkills()
     await flushPromises()
 
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -130,7 +126,7 @@ describe('SkillGeneratorPanel', () => {
       overwriteExisting: false,
     })
 
-    await wrapper.findAll('button.button--ghost').at(-1)!.trigger('click')
+    await (wrapper.vm as unknown as { regenerateSelectedSkills: () => Promise<void> }).regenerateSelectedSkills()
     await flushPromises()
 
     const regenerateRequest = fetchMock.mock.calls[3]

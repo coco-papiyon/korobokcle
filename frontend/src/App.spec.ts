@@ -78,20 +78,24 @@ describe('App', () => {
     await flushPromises()
 
     const tabs = wrapper.findAll('button[role="tab"]')
-    const description = () => wrapper.get('.tab-description').text()
+    const description = () => wrapper.get('.tab-description__text').text()
 
     expect(tabs).toHaveLength(3)
     expect(description()).toBe('監視中のジョブ一覧を確認し、処理対象を選択する。')
 
     await tabs[1].trigger('click')
     await nextTick()
-    expect(description()).toBe('AI プロバイダーと監視条件をまとめて設定する。')
+    expect(description()).toBe('Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。')
 
     await tabs[0].trigger('click')
     await nextTick()
-    expect(description()).toBe('Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。')
+    expect(description()).toBe('監視中のジョブ一覧を確認し、処理対象を選択する。')
 
     await tabs[2].trigger('click')
+    await nextTick()
+    expect(description()).toBe('AI プロバイダーと監視条件をまとめて設定する。')
+
+    await tabs[0].trigger('click')
     await flushPromises()
 
     const row = wrapper.get('tbody tr')

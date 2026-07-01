@@ -197,7 +197,7 @@ describe('JobListPanel', () => {
     expect(chip.text()).toBe('レビュー承認済み')
   })
 
-  it('shows fetched and updated times beside the title', async () => {
+  it('shows fetched time to the right of the title', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
         updatedAt: '2026-07-01T00:00:00Z',
@@ -226,8 +226,10 @@ describe('JobListPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.get('.job-table__title').text()).toContain('時刻付きジョブ')
-    expect(wrapper.get('.job-table__title').text()).toContain('取得時間 2026/07/01 09:00:00 / 更新時間 2026/07/01 12:04:05')
+    const row = wrapper.get('tbody tr')
+    expect(row.get('td:nth-child(4)').text()).toContain('時刻付きジョブ')
+    expect(row.get('td:nth-child(5)').text()).toBe('2026/07/01 09:00:00')
+    expect(row.get('td:nth-child(6)').text()).toContain('設計中')
   })
 
   it('shows placeholders when job times are missing', async () => {
@@ -257,7 +259,9 @@ describe('JobListPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.get('.job-table__title').text()).toContain('取得時間 - / 更新時間 -')
+    const row = wrapper.get('tbody tr')
+    expect(row.get('td:nth-child(4)').text()).toContain('時刻なしジョブ')
+    expect(row.get('td:nth-child(5)').text()).toBe('-')
   })
 
   it('skips updating visible jobs when updatedAt is unchanged', async () => {

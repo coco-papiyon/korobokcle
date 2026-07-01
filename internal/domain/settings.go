@@ -20,6 +20,7 @@ const (
 )
 
 type SearchCondition struct {
+	Enabled       *bool    `json:"enabled,omitempty"`
 	LabelIncludes []string `json:"labelIncludes,omitempty"`
 	LabelExcludes []string `json:"labelExcludes,omitempty"`
 	TitleContains []string `json:"titleContains,omitempty"`
@@ -73,6 +74,8 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 	settings.CodexAllowedCommands = nil
 	settings.Models.Codex = normalizeModelSelection(settings.Models.Codex)
 	settings.Models.GitHubCopilot = normalizeModelSelection(settings.Models.GitHubCopilot)
+	settings.Issue = normalizeSearchCondition(settings.Issue)
+	settings.PullRequest = normalizeSearchCondition(settings.PullRequest)
 	return settings
 }
 
@@ -116,6 +119,17 @@ func normalizeModelSelection(selection ModelSelection) ModelSelection {
 	return selection
 }
 
+func normalizeSearchCondition(condition SearchCondition) SearchCondition {
+	if condition.Enabled == nil {
+		enabled := true
+		condition.Enabled = &enabled
+		return condition
+	}
+	enabled := *condition.Enabled
+	condition.Enabled = &enabled
+	return condition
+}
+
 func (p AIProvider) IsValid() bool {
 	switch p {
 	case AIProviderCodex, AIProviderGitHubCopilot:
@@ -144,6 +158,9 @@ func (m ModelMode) IsValid() bool {
 }
 
 func (c SearchCondition) Matches(title string, labels []string, author string, assignees []string) bool {
+	if !c.IsEnabled() {
+		return false
+	}
 	if !matchesAll(c.LabelIncludes, labels, true) {
 		return false
 	}
@@ -160,6 +177,10 @@ func (c SearchCondition) Matches(title string, labels []string, author string, a
 		return false
 	}
 	return true
+}
+
+func (c SearchCondition) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
 }
 
 func matchesAll(expected []string, labels []string, mustExist bool) bool {

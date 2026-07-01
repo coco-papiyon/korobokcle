@@ -124,6 +124,12 @@ func (p *WorkflowProcessor) Process(ctx context.Context, job domain.Job) error {
 	if err != nil {
 		return err
 	}
+	if strings.TrimSpace(job.IssueContext) == "" && strings.TrimSpace(contextText) != "" && p.store != nil {
+		job.IssueContext = contextText
+		if err := p.store.Upsert(ctx, job); err != nil {
+			return err
+		}
+	}
 	content, err := p.runAI(ctx, job, settings, feedback, contextText, workDir, branch, runningState, readyState)
 	if err != nil {
 		return err
@@ -184,6 +190,9 @@ func (p *WorkflowProcessor) artifactPath(job domain.Job) (string, error) {
 }
 
 func (p *WorkflowProcessor) loadJobContext(ctx context.Context, job domain.Job) (string, error) {
+	if strings.TrimSpace(job.IssueContext) != "" {
+		return job.IssueContext, nil
+	}
 	if p.contexts == nil {
 		return "", nil
 	}

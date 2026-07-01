@@ -31,6 +31,10 @@ type JobBranchResolver interface {
 	ResolveJobBranch(context.Context, domain.Job) (string, error)
 }
 
+type JobContextLoader interface {
+	Load(context.Context, domain.Job) (string, error)
+}
+
 type ArtifactActions interface {
 	GetArtifact(context.Context, string) (DesignArtifact, error)
 	ApproveArtifact(context.Context, string, string) (domain.Job, error)
@@ -52,9 +56,10 @@ type Server struct {
 	httpServer      *http.Server
 	artifactActions ArtifactActions
 	skillActions    SkillActions
+	detailLoader    JobContextLoader
 }
 
-func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, artifactActions ArtifactActions, branchResolver JobBranchResolver, optionalSkillActions ...SkillActions) *Server {
+func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, artifactActions ArtifactActions, branchResolver JobBranchResolver, detailLoader JobContextLoader, optionalSkillActions ...SkillActions) *Server {
 	mux := http.NewServeMux()
 	var skillActions SkillActions
 	if len(optionalSkillActions) > 0 {
@@ -301,16 +306,33 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		responseUpdatedAt := updatedAt
 		branch := strings.TrimSpace(job.Branch)
 		if branch == "" && branchResolver != nil {
 			if resolved, err := branchResolver.ResolveJobBranch(r.Context(), job); err == nil {
 				branch = strings.TrimSpace(resolved)
 			}
 		}
+		issueContext := strings.TrimSpace(job.IssueContext)
+		if issueContext == "" && detailLoader != nil && isIssueJob(job.Kind) {
+			if loaded, err := detailLoader.Load(r.Context(), job); err == nil {
+				issueContext = strings.TrimSpace(loaded)
+				if issueContext != "" {
+					job.IssueContext = issueContext
+					job.UpdatedAt = time.Now().UTC()
+					responseUpdatedAt = job.UpdatedAt
+					if err := store.Upsert(r.Context(), job); err != nil {
+						http.Error(w, err.Error(), http.StatusInternalServerError)
+						return
+					}
+				}
+			}
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"updatedAt": updatedAt.UTC().Format(time.RFC3339Nano),
-			"job":       job,
-			"branch":    branch,
+			"updatedAt":    responseUpdatedAt.UTC().Format(time.RFC3339Nano),
+			"job":          job,
+			"branch":       branch,
+			"issueContext": issueContext,
 		})
 	})
 
@@ -415,6 +437,16 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 		},
 		artifactActions: artifactActions,
 		skillActions:    skillActions,
+		detailLoader:    detailLoader,
+	}
+}
+
+func isIssueJob(kind domain.JobKind) bool {
+	switch kind {
+	case domain.JobKindIssueDesign, domain.JobKindIssueImplementation:
+		return true
+	default:
+		return false
 	}
 }
 

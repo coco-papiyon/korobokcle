@@ -49,12 +49,7 @@ func loadIssueContext(ctx context.Context, job domain.Job) (string, error) {
 	if err := json.Unmarshal(raw, &issue); err != nil {
 		return "", fmt.Errorf("decode issue context: %w", err)
 	}
-	lines := []string{
-		fmt.Sprintf("Issue: #%d %s", job.Number, issue.Title),
-		"",
-		"Body:",
-		strings.TrimSpace(issue.Body),
-	}
+	lines := issueContextLines(job.Number, issue.Title, issue.Body)
 	if len(issue.Labels) > 0 {
 		var labels []string
 		for _, label := range issue.Labels {
@@ -203,12 +198,7 @@ func loadIssueContextByNumber(ctx context.Context, repository string, issueNumbe
 	if err := json.Unmarshal(raw, &issue); err != nil {
 		return "", fmt.Errorf("decode issue context: %w", err)
 	}
-	lines := []string{
-		fmt.Sprintf("Issue: #%d %s", issueNumber, issue.Title),
-		"",
-		"Body:",
-		strings.TrimSpace(issue.Body),
-	}
+	lines := issueContextLines(issueNumber, issue.Title, issue.Body)
 	if len(issue.Labels) > 0 {
 		var labels []string
 		for _, label := range issue.Labels {
@@ -262,4 +252,12 @@ func oneLine(value string) string {
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\n", " / ")
 	return value
+}
+
+func issueContextLines(number int, title string, body string) []string {
+	return []string{
+		fmt.Sprintf("#%d %s", number, title),
+		"",
+		strings.TrimSpace(body),
+	}
 }

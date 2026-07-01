@@ -2,7 +2,7 @@
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import type { Job, JobArtifact, JobDetailResponse } from '../types'
 import { jobStateChipClass } from '../utils/jobState'
-import { jobTimeSummary } from '../utils/jobTime'
+import { formatJobTimestampValue } from '../utils/jobTime'
 
 const props = defineProps<{
   active: boolean
@@ -72,6 +72,10 @@ const detailTitle = computed(() => {
   return detailJob.value.title || `#${detailJob.value.number}`
 })
 
+const showIssueContext = computed(() => detailJob.value?.kind === 'issue_design' || detailJob.value?.kind === 'issue_implementation')
+
+const issueContext = computed(() => detailJob.value?.issueContext ?? '')
+
 function jobStateLabel(state: string) {
   return stateLabels[state] ?? state
 }
@@ -134,13 +138,14 @@ async function loadJobDetail(id: string) {
     }
     const payload = (await res.json()) as JobDetailResponse
     const branch = payload.branch || payload.job.branch || ''
-    if (
-      requestSequence === detailRequestSequence &&
-      (payload.updatedAt !== detailUpdatedAt.value || detailJob.value?.id !== payload.job.id || branch !== detailBranch.value)
-    ) {
-      detailUpdatedAt.value = payload.updatedAt
-      detailJob.value = payload.job
-      detailBranch.value = branch
+    if (requestSequence === detailRequestSequence) {
+      const isSameRevision =
+        detailJob.value?.id === payload.job.id && payload.updatedAt === detailUpdatedAt.value
+      if (!isSameRevision) {
+        detailUpdatedAt.value = payload.updatedAt
+        detailJob.value = payload.job
+        detailBranch.value = branch
+      }
     }
   } catch (err) {
     if (requestSequence === detailRequestSequence) {
@@ -377,16 +382,24 @@ onBeforeUnmount(() => {
         </div>
         <div class="detail__meta-item">
           <div class="detail__meta-label">Number</div>
-          <div class="detail__meta-value detail__meta-value--number">
-            <span class="detail__number-text">#{{ detailJob.number }}</span>
-            <span class="job-time-summary">{{ jobTimeSummary(detailJob.fetchedAt, detailJob.updatedAt) }}</span>
-          </div>
+          <div class="detail__meta-value detail__meta-value--mono">#{{ detailJob.number }}</div>
         </div>
         <div class="detail__meta-item">
           <div class="detail__meta-label">ブランチ</div>
           <div class="detail__meta-value detail__meta-value--mono">{{ detailBranch || detailJob.branch || '-' }}</div>
         </div>
+        <div class="detail__meta-item">
+          <div class="detail__meta-label">取得時間</div>
+          <div class="detail__meta-value detail__meta-value--mono">
+            {{ formatJobTimestampValue(detailJob.fetchedAt) }}
+          </div>
+        </div>
       </div>
+
+      <details v-if="showIssueContext && issueContext" class="detail-context">
+        <summary>Issue の内容</summary>
+        <pre class="detail-context__body">{{ issueContext }}</pre>
+      </details>
 
       <div v-if="canInspectArtifact(detailJob)" class="detail-artifact">
         <div class="panel__title-row">

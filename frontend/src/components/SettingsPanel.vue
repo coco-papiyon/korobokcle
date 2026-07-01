@@ -21,11 +21,13 @@ const settingsForm = ref({
   issueTitleContainsText: '',
   issueAuthorsText: '',
   issueAssigneesText: '',
+  issueEnabled: true,
   prLabelIncludesText: '',
   prLabelExcludesText: '',
   prTitleContainsText: '',
   prAuthorsText: '',
   prAssigneesText: '',
+  prEnabled: true,
 })
 
 const aiProviderLabels: Record<AIProvider, string> = {
@@ -110,11 +112,13 @@ function settingsToForm(settings: WatchSettings) {
   settingsForm.value.issueTitleContainsText = joinCSV(settings.issue?.titleContains ?? [])
   settingsForm.value.issueAuthorsText = joinCSV(settings.issue?.authors ?? [])
   settingsForm.value.issueAssigneesText = joinCSV(settings.issue?.assignees ?? [])
+  settingsForm.value.issueEnabled = settings.issue?.enabled ?? true
   settingsForm.value.prLabelIncludesText = joinCSV(settings.pullRequest?.labelIncludes ?? [])
   settingsForm.value.prLabelExcludesText = joinCSV(settings.pullRequest?.labelExcludes ?? [])
   settingsForm.value.prTitleContainsText = joinCSV(settings.pullRequest?.titleContains ?? [])
   settingsForm.value.prAuthorsText = joinCSV(settings.pullRequest?.authors ?? [])
   settingsForm.value.prAssigneesText = joinCSV(settings.pullRequest?.assignees ?? [])
+  settingsForm.value.prEnabled = settings.pullRequest?.enabled ?? true
 }
 
 function formToSettings(): WatchSettings {
@@ -142,6 +146,7 @@ function formToSettings(): WatchSettings {
           : { mode: 'custom', value: githubCopilotSelection },
     },
     issue: {
+      enabled: settingsForm.value.issueEnabled,
       labelIncludes: splitCSV(settingsForm.value.issueLabelIncludesText),
       labelExcludes: splitCSV(settingsForm.value.issueLabelExcludesText),
       titleContains: splitCSV(settingsForm.value.issueTitleContainsText),
@@ -149,6 +154,7 @@ function formToSettings(): WatchSettings {
       assignees: splitCSV(settingsForm.value.issueAssigneesText),
     },
     pullRequest: {
+      enabled: settingsForm.value.prEnabled,
       labelIncludes: splitCSV(settingsForm.value.prLabelIncludesText),
       labelExcludes: splitCSV(settingsForm.value.prLabelExcludesText),
       titleContains: splitCSV(settingsForm.value.prTitleContainsText),
@@ -202,23 +208,15 @@ async function saveSettings() {
 onMounted(() => {
   void loadSettings()
 })
+
+defineExpose({
+  saveSettings,
+  settingsSaving,
+})
 </script>
 
 <template>
-  <div class="hero hero--compact">
-    <div class="hero__header">
-      <div class="hero__intro">
-        <p class="hero__lede">AI プロバイダーと監視条件を調整し、保存した内容をすぐ反映する。</p>
-      </div>
-      <div class="hero__actions">
-        <button class="button button--small" type="button" @click="saveSettings" :disabled="settingsSaving">
-          {{ settingsSaving ? '保存中' : '保存' }}
-        </button>
-      </div>
-    </div>
-
-    <p v-if="settingsError" class="error">{{ settingsError }}</p>
-  </div>
+  <p v-if="settingsError" class="error">{{ settingsError }}</p>
 
   <div class="panel__title-row">
     <h2>プロバイダー設定</h2>
@@ -235,16 +233,13 @@ onMounted(() => {
       </select>
     </label>
 
-    <div class="settings-section settings-section--full">
-      <h3>モデル</h3>
-      <label class="field">
-        <span>モデル選択</span>
-        <select v-model="activeModelSelection" class="control">
-          <option v-for="option in activeModelOptions" :key="option.value" :value="option.value">
-            {{ option.label }}
-          </option>
-        </select>
-      </label>
+    <div class="field field--full">
+      <span>モデル選択</span>
+      <select v-model="activeModelSelection" class="control">
+        <option v-for="option in activeModelOptions" :key="option.value" :value="option.value">
+          {{ option.label }}
+        </option>
+      </select>
       <p class="field-note">
         プロバイダーに応じて候補が切り替わる。<template v-if="settingsForm.aiProvider === 'codex'">Codex</template><template v-else>GitHub Copilot</template>
         の既定値もここに含まれる。
@@ -297,51 +292,63 @@ onMounted(() => {
       <span class="field-note">&lt;issue番号&gt; を issue 番号に置き換えてブランチを作成する。</span>
     </label>
 
-    <div class="settings-section">
-      <h3>Issue 条件</h3>
+    <div class="settings-section" :class="{ 'settings-section--disabled': !settingsForm.issueEnabled }">
+      <div class="settings-section__header">
+        <h3>Issue 条件</h3>
+        <label class="settings-section__toggle">
+          <input v-model="settingsForm.issueEnabled" type="checkbox" />
+          <span>有効にする</span>
+        </label>
+      </div>
       <label class="field">
         <span>含めるラベル</span>
-        <input v-model="settingsForm.issueLabelIncludesText" class="control" type="text" placeholder="bug, ai:design" />
+        <input v-model="settingsForm.issueLabelIncludesText" class="control" type="text" placeholder="bug, ai:design" :disabled="!settingsForm.issueEnabled" />
       </label>
       <label class="field">
         <span>除外するラベル</span>
-        <input v-model="settingsForm.issueLabelExcludesText" class="control" type="text" placeholder="wip, draft" />
+        <input v-model="settingsForm.issueLabelExcludesText" class="control" type="text" placeholder="wip, draft" :disabled="!settingsForm.issueEnabled" />
       </label>
       <label class="field">
         <span>タイトルに含める語</span>
-        <input v-model="settingsForm.issueTitleContainsText" class="control" type="text" placeholder="fix, refactor" />
+        <input v-model="settingsForm.issueTitleContainsText" class="control" type="text" placeholder="fix, refactor" :disabled="!settingsForm.issueEnabled" />
       </label>
       <label class="field">
         <span>作者</span>
-        <input v-model="settingsForm.issueAuthorsText" class="control" type="text" placeholder="alice, bob" />
+        <input v-model="settingsForm.issueAuthorsText" class="control" type="text" placeholder="alice, bob" :disabled="!settingsForm.issueEnabled" />
       </label>
       <label class="field">
         <span>担当者</span>
-        <input v-model="settingsForm.issueAssigneesText" class="control" type="text" placeholder="carol, dave" />
+        <input v-model="settingsForm.issueAssigneesText" class="control" type="text" placeholder="carol, dave" :disabled="!settingsForm.issueEnabled" />
       </label>
     </div>
 
-    <div class="settings-section">
-      <h3>PR 条件</h3>
+    <div class="settings-section" :class="{ 'settings-section--disabled': !settingsForm.prEnabled }">
+      <div class="settings-section__header">
+        <h3>PR 条件</h3>
+        <label class="settings-section__toggle">
+          <input v-model="settingsForm.prEnabled" type="checkbox" />
+          <span>有効にする</span>
+        </label>
+      </div>
       <label class="field">
         <span>含めるラベル</span>
-        <input v-model="settingsForm.prLabelIncludesText" class="control" type="text" placeholder="ready, review" />
+        <input v-model="settingsForm.prLabelIncludesText" class="control" type="text" placeholder="ready, review" :disabled="!settingsForm.prEnabled" />
       </label>
       <label class="field">
         <span>除外するラベル</span>
-        <input v-model="settingsForm.prLabelExcludesText" class="control" type="text" placeholder="wip, draft" />
+        <input v-model="settingsForm.prLabelExcludesText" class="control" type="text" placeholder="wip, draft" :disabled="!settingsForm.prEnabled" />
       </label>
       <label class="field">
         <span>タイトルに含める語</span>
-        <input v-model="settingsForm.prTitleContainsText" class="control" type="text" placeholder="fix, update" />
+        <input v-model="settingsForm.prTitleContainsText" class="control" type="text" placeholder="fix, update" :disabled="!settingsForm.prEnabled" />
       </label>
       <label class="field">
         <span>作者</span>
-        <input v-model="settingsForm.prAuthorsText" class="control" type="text" placeholder="alice, bob" />
+        <input v-model="settingsForm.prAuthorsText" class="control" type="text" placeholder="alice, bob" :disabled="!settingsForm.prEnabled" />
       </label>
       <label class="field">
         <span>担当者</span>
-        <input v-model="settingsForm.prAssigneesText" class="control" type="text" placeholder="carol, dave" />
+        <input v-model="settingsForm.prAssigneesText" class="control" type="text" placeholder="carol, dave" :disabled="!settingsForm.prEnabled" />
       </label>
     </div>
   </div>

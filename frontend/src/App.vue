@@ -12,6 +12,8 @@ const selectedJobId = ref('')
 const isJobDetailOpen = ref(false)
 const jobListRefreshKey = ref(0)
 const detailRefreshKey = ref(0)
+const settingsPanelRef = ref<InstanceType<typeof SettingsPanel> | null>(null)
+const skillPanelRef = ref<InstanceType<typeof SkillGeneratorPanel> | null>(null)
 const tabDescriptions: Record<Tab, string> = {
   settings: 'AI プロバイダーと監視条件をまとめて設定する。',
   skills: 'Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。',
@@ -47,6 +49,22 @@ function handleJobDetailRefresh() {
 function selectTab(tab: Tab) {
   activeTab.value = tab
 }
+
+function saveSettings() {
+  void settingsPanelRef.value?.saveSettings()
+}
+
+function refreshSkills() {
+  void skillPanelRef.value?.loadSkills()
+}
+
+function generateSkills() {
+  void skillPanelRef.value?.generateSelectedSkills()
+}
+
+function regenerateSkills() {
+  void skillPanelRef.value?.regenerateSelectedSkills()
+}
 </script>
 
 <template>
@@ -54,6 +72,16 @@ function selectTab(tab: Tab) {
     <main class="dashboard">
       <section class="panel">
         <div class="tabs" role="tablist" aria-label="korobokcle views">
+          <button
+            class="tab"
+            :class="{ 'tab--active': activeTab === 'jobs' }"
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === 'jobs'"
+            @click="selectTab('jobs')"
+          >
+            ジョブ一覧
+          </button>
           <button
             class="tab"
             :class="{ 'tab--active': activeTab === 'skills' }"
@@ -74,24 +102,47 @@ function selectTab(tab: Tab) {
           >
             設定
           </button>
-          <button
-            class="tab"
-            :class="{ 'tab--active': activeTab === 'jobs' }"
-            type="button"
-            role="tab"
-            :aria-selected="activeTab === 'jobs'"
-            @click="selectTab('jobs')"
-          >
-            ジョブ一覧
-          </button>
         </div>
 
-        <p class="tab-description" aria-live="polite">
-          {{ tabDescriptions[activeTab] }}
-        </p>
-
-        <div v-show="activeTab === 'settings'" class="tab-panel" role="tabpanel">
-          <SettingsPanel />
+        <div class="tab-description" aria-live="polite">
+          <span class="tab-description__text">{{ tabDescriptions[activeTab] }}</span>
+          <div class="tab-description__actions">
+            <button
+              v-if="activeTab === 'settings'"
+              class="button button--small"
+              type="button"
+              :disabled="settingsPanelRef?.settingsSaving"
+              @click="saveSettings"
+            >
+              {{ settingsPanelRef?.settingsSaving ? '保存中' : '保存' }}
+            </button>
+            <template v-else-if="activeTab === 'skills'">
+              <button
+                class="button button--ghost button--small"
+                type="button"
+                :disabled="skillPanelRef?.loading || skillPanelRef?.generating"
+                @click="refreshSkills"
+              >
+                {{ skillPanelRef?.loading ? '確認中' : '再確認' }}
+              </button>
+              <button
+                class="button button--small"
+                type="button"
+                :disabled="skillPanelRef?.generating || (skillPanelRef?.selectedCount ?? 0) === 0"
+                @click="generateSkills"
+              >
+                {{ skillPanelRef?.generating ? 'AIで生成中' : `選択スキルを生成 (${skillPanelRef?.selectedCount ?? 0})` }}
+              </button>
+              <button
+                class="button button--ghost button--small"
+                type="button"
+                :disabled="skillPanelRef?.generating || (skillPanelRef?.selectedCount ?? 0) === 0"
+                @click="regenerateSkills"
+              >
+                {{ skillPanelRef?.generating ? '再生成中' : `選択スキルを再生成[上書き] (${skillPanelRef?.selectedCount ?? 0})` }}
+              </button>
+            </template>
+          </div>
         </div>
 
         <div v-show="activeTab === 'jobs'" class="tab-panel" role="tabpanel">
@@ -104,7 +155,11 @@ function selectTab(tab: Tab) {
         </div>
 
         <div v-show="activeTab === 'skills'" class="tab-panel" role="tabpanel">
-          <SkillGeneratorPanel />
+          <SkillGeneratorPanel ref="skillPanelRef" />
+        </div>
+
+        <div v-show="activeTab === 'settings'" class="tab-panel" role="tabpanel">
+          <SettingsPanel ref="settingsPanelRef" />
         </div>
       </section>
     </main>

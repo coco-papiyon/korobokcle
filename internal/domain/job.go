@@ -202,15 +202,16 @@ var allowedTransitions = map[JobState]map[JobState]struct{}{
 }
 
 type Job struct {
-	ID         string    `json:"id"`
-	Kind       JobKind   `json:"kind"`
-	State      JobState  `json:"state"`
-	Repository string    `json:"repository"`
-	Number     int       `json:"number"`
-	Title      string    `json:"title"`
-	Branch     string    `json:"branch,omitempty"`
-	FetchedAt  time.Time `json:"fetchedAt,omitempty"`
-	UpdatedAt  time.Time `json:"updatedAt,omitempty"`
+	ID           string    `json:"id"`
+	Kind         JobKind   `json:"kind"`
+	State        JobState  `json:"state"`
+	Repository   string    `json:"repository"`
+	Number       int       `json:"number"`
+	Title        string    `json:"title"`
+	Branch       string    `json:"branch,omitempty"`
+	IssueContext string    `json:"issueContext,omitempty"`
+	FetchedAt    time.Time `json:"fetchedAt,omitempty"`
+	UpdatedAt    time.Time `json:"updatedAt,omitempty"`
 }
 
 func (s JobState) DisplayName() (string, bool) {
