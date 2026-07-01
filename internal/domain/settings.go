@@ -20,12 +20,14 @@ const (
 )
 
 type SearchCondition struct {
-	Enabled       *bool    `json:"enabled,omitempty"`
-	LabelIncludes []string `json:"labelIncludes,omitempty"`
-	LabelExcludes []string `json:"labelExcludes,omitempty"`
-	TitleContains []string `json:"titleContains,omitempty"`
-	Authors       []string `json:"authors,omitempty"`
-	Assignees     []string `json:"assignees,omitempty"`
+	Enabled       *bool          `json:"enabled,omitempty"`
+	AIProvider    AIProvider     `json:"aiProvider,omitempty"`
+	AIModel       ModelSelection `json:"aiModel,omitempty"`
+	LabelIncludes []string       `json:"labelIncludes,omitempty"`
+	LabelExcludes []string       `json:"labelExcludes,omitempty"`
+	TitleContains []string       `json:"titleContains,omitempty"`
+	Authors       []string       `json:"authors,omitempty"`
+	Assignees     []string       `json:"assignees,omitempty"`
 }
 
 type WatchSettings struct {
@@ -123,10 +125,14 @@ func normalizeSearchCondition(condition SearchCondition) SearchCondition {
 	if condition.Enabled == nil {
 		enabled := true
 		condition.Enabled = &enabled
-		return condition
+	} else {
+		enabled := *condition.Enabled
+		condition.Enabled = &enabled
 	}
-	enabled := *condition.Enabled
-	condition.Enabled = &enabled
+	if !condition.AIProvider.IsValid() {
+		condition.AIProvider = ""
+	}
+	condition.AIModel = normalizeModelSelection(condition.AIModel)
 	return condition
 }
 

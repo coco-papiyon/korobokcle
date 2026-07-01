@@ -16,12 +16,16 @@ const settingsForm = ref({
   aiAllowedCommandsText: '',
   codexModelSelection: 'default',
   githubCopilotModelSelection: 'default',
+  issueAiProviderSelection: '' as AIProvider | '',
+  issueAiModelSelection: 'default',
   issueLabelIncludesText: '',
   issueLabelExcludesText: '',
   issueTitleContainsText: '',
   issueAuthorsText: '',
   issueAssigneesText: '',
   issueEnabled: true,
+  prAiProviderSelection: '' as AIProvider | '',
+  prAiModelSelection: 'default',
   prLabelIncludesText: '',
   prLabelExcludesText: '',
   prTitleContainsText: '',
@@ -72,6 +76,32 @@ const activeModelSelection = computed({
   },
 })
 
+const issueEffectiveProvider = computed(() => settingsForm.value.issueAiProviderSelection || settingsForm.value.aiProvider)
+const issueActiveModelOptions = computed(() => modelOptions[issueEffectiveProvider.value])
+const issueActiveModelSelection = computed({
+  get() {
+    const selection = settingsForm.value.issueAiModelSelection
+    return issueActiveModelOptions.value.some((option) => option.value === selection) ? selection : 'default'
+  },
+  set(value: string) {
+    const normalized = issueActiveModelOptions.value.some((option) => option.value === value) ? value : 'default'
+    settingsForm.value.issueAiModelSelection = normalized
+  },
+})
+
+const prEffectiveProvider = computed(() => settingsForm.value.prAiProviderSelection || settingsForm.value.aiProvider)
+const prActiveModelOptions = computed(() => modelOptions[prEffectiveProvider.value])
+const prActiveModelSelection = computed({
+  get() {
+    const selection = settingsForm.value.prAiModelSelection
+    return prActiveModelOptions.value.some((option) => option.value === selection) ? selection : 'default'
+  },
+  set(value: string) {
+    const normalized = prActiveModelOptions.value.some((option) => option.value === value) ? value : 'default'
+    settingsForm.value.prAiModelSelection = normalized
+  },
+})
+
 function splitCSV(value: string) {
   return value
     .split(',')
@@ -97,6 +127,8 @@ function joinLines(values: string[]) {
 function settingsToForm(settings: WatchSettings) {
   const codexModel = settings.models?.codex
   const githubCopilotModel = settings.models?.githubCopilot
+  const issueModel = settings.issue?.aiModel
+  const pullRequestModel = settings.pullRequest?.aiModel
   settingsForm.value.repository = settings.repository ?? ''
   settingsForm.value.aiProvider = settings.aiProvider ?? 'codex'
   settingsForm.value.pollIntervalSeconds = settings.pollIntervalSeconds ?? 120
@@ -107,12 +139,17 @@ function settingsToForm(settings: WatchSettings) {
   settingsForm.value.codexModelSelection = codexModel?.mode === 'custom' && codexModel.value ? codexModel.value : 'default'
   settingsForm.value.githubCopilotModelSelection =
     githubCopilotModel?.mode === 'custom' && githubCopilotModel.value ? githubCopilotModel.value : 'default'
+  settingsForm.value.issueAiProviderSelection = settings.issue?.aiProvider ?? ''
+  settingsForm.value.issueAiModelSelection = issueModel?.mode === 'custom' && issueModel.value ? issueModel.value : 'default'
   settingsForm.value.issueLabelIncludesText = joinCSV(settings.issue?.labelIncludes ?? [])
   settingsForm.value.issueLabelExcludesText = joinCSV(settings.issue?.labelExcludes ?? [])
   settingsForm.value.issueTitleContainsText = joinCSV(settings.issue?.titleContains ?? [])
   settingsForm.value.issueAuthorsText = joinCSV(settings.issue?.authors ?? [])
   settingsForm.value.issueAssigneesText = joinCSV(settings.issue?.assignees ?? [])
   settingsForm.value.issueEnabled = settings.issue?.enabled ?? true
+  settingsForm.value.prAiProviderSelection = settings.pullRequest?.aiProvider ?? ''
+  settingsForm.value.prAiModelSelection =
+    pullRequestModel?.mode === 'custom' && pullRequestModel.value ? pullRequestModel.value : 'default'
   settingsForm.value.prLabelIncludesText = joinCSV(settings.pullRequest?.labelIncludes ?? [])
   settingsForm.value.prLabelExcludesText = joinCSV(settings.pullRequest?.labelExcludes ?? [])
   settingsForm.value.prTitleContainsText = joinCSV(settings.pullRequest?.titleContains ?? [])
@@ -147,6 +184,11 @@ function formToSettings(): WatchSettings {
     },
     issue: {
       enabled: settingsForm.value.issueEnabled,
+      aiProvider: settingsForm.value.issueAiProviderSelection || undefined,
+      aiModel:
+        settingsForm.value.issueAiModelSelection === 'default'
+          ? { mode: 'default', value: '' }
+          : { mode: 'custom', value: settingsForm.value.issueAiModelSelection },
       labelIncludes: splitCSV(settingsForm.value.issueLabelIncludesText),
       labelExcludes: splitCSV(settingsForm.value.issueLabelExcludesText),
       titleContains: splitCSV(settingsForm.value.issueTitleContainsText),
@@ -155,6 +197,11 @@ function formToSettings(): WatchSettings {
     },
     pullRequest: {
       enabled: settingsForm.value.prEnabled,
+      aiProvider: settingsForm.value.prAiProviderSelection || undefined,
+      aiModel:
+        settingsForm.value.prAiModelSelection === 'default'
+          ? { mode: 'default', value: '' }
+          : { mode: 'custom', value: settingsForm.value.prAiModelSelection },
       labelIncludes: splitCSV(settingsForm.value.prLabelIncludesText),
       labelExcludes: splitCSV(settingsForm.value.prLabelExcludesText),
       titleContains: splitCSV(settingsForm.value.prTitleContainsText),
@@ -328,6 +375,32 @@ defineExpose({
         <span>担当者</span>
         <input v-model="settingsForm.issueAssigneesText" class="control" type="text" placeholder="carol, dave" :disabled="!settingsForm.issueEnabled" />
       </label>
+      <label class="field">
+        <span>AI プロバイダー</span>
+        <select v-model="settingsForm.issueAiProviderSelection" class="control" :disabled="!settingsForm.issueEnabled">
+          <option value="">プロバイダー設定を使用</option>
+          <option v-for="(label, value) in aiProviderLabels" :key="value" :value="value">
+            {{ label }} ({{ value }})
+          </option>
+        </select>
+      </label>
+      <label class="field">
+        <span>モデル選択</span>
+        <select v-model="issueActiveModelSelection" class="control" :disabled="!settingsForm.issueEnabled">
+          <option value="default">プロバイダー設定を使用</option>
+          <option v-for="option in issueActiveModelOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+        <p class="field-note">
+          <template v-if="settingsForm.issueAiProviderSelection === ''">
+            Issue 監視で使う AI 設定は、上の「プロバイダー設定」を引き継ぐ。
+          </template>
+          <template v-else>
+            ここで選んだプロバイダーのモデルを使う。`default` は、そのプロバイダーの「プロバイダー設定」を使う。
+          </template>
+        </p>
+      </label>
     </div>
 
     <div class="settings-section" :class="{ 'settings-section--disabled': !settingsForm.prEnabled }">
@@ -357,6 +430,32 @@ defineExpose({
       <label class="field">
         <span>担当者</span>
         <input v-model="settingsForm.prAssigneesText" class="control" type="text" placeholder="carol, dave" :disabled="!settingsForm.prEnabled" />
+      </label>
+      <label class="field">
+        <span>AI プロバイダー</span>
+        <select v-model="settingsForm.prAiProviderSelection" class="control" :disabled="!settingsForm.prEnabled">
+          <option value="">プロバイダー設定を使用</option>
+          <option v-for="(label, value) in aiProviderLabels" :key="value" :value="value">
+            {{ label }} ({{ value }})
+          </option>
+        </select>
+      </label>
+      <label class="field">
+        <span>モデル選択</span>
+        <select v-model="prActiveModelSelection" class="control" :disabled="!settingsForm.prEnabled">
+          <option value="default">プロバイダー設定を使用</option>
+          <option v-for="option in prActiveModelOptions" :key="option.value" :value="option.value">
+            {{ option.label }}
+          </option>
+        </select>
+        <p class="field-note">
+          <template v-if="settingsForm.prAiProviderSelection === ''">
+            PR 監視で使う AI 設定は、上の「プロバイダー設定」を引き継ぐ。
+          </template>
+          <template v-else>
+            ここで選んだプロバイダーのモデルを使う。`default` は、そのプロバイダーの「プロバイダー設定」を使う。
+          </template>
+        </p>
       </label>
     </div>
   </div>

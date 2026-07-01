@@ -234,10 +234,10 @@ func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings 
 	defer stdoutLog.Close()
 	defer stderrLog.Close()
 
-	model := selectedModel(settings, providerKey(settings.AIProvider))
+	provider, model := resolveJobAISelection(settings, job)
 	prompt := p.buildPrompt(job, settings, feedback, contextText, workDir, branch, runningState, readyState)
 	req := AIRequest{
-		Provider:        settings.AIProvider,
+		Provider:        provider,
 		Model:           model,
 		System:          systemPromptForJob(job),
 		Prompt:          prompt,
@@ -248,7 +248,7 @@ func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings 
 		AllowedCommands: settings.AIAllowedCommands,
 	}
 	p.appendIssueAILog(job, "request", strings.Join([]string{
-		fmt.Sprintf("provider: %s", settings.AIProvider),
+		fmt.Sprintf("provider: %s", provider),
 		fmt.Sprintf("model: %s", displayModel(model)),
 		fmt.Sprintf("working_dir: %s", workDir),
 		fmt.Sprintf("branch: %s", branch),
@@ -315,6 +315,7 @@ func (p *WorkflowProcessor) openAIProcessLogs(job domain.Job) (*os.File, *os.Fil
 
 func (p *WorkflowProcessor) buildPrompt(job domain.Job, settings domain.WatchSettings, feedback string, contextText string, workDir string, branch string, runningState, readyState domain.JobState) string {
 	phase := artifactSubdir(job)
+	provider, model := resolveJobAISelection(settings, job)
 	lines := []string{
 		fmt.Sprintf("phase: %s", phase),
 		fmt.Sprintf("job_id: %s", job.ID),
@@ -322,8 +323,8 @@ func (p *WorkflowProcessor) buildPrompt(job domain.Job, settings domain.WatchSet
 		fmt.Sprintf("repository: %s", job.Repository),
 		fmt.Sprintf("number: %d", job.Number),
 		fmt.Sprintf("title: %s", job.Title),
-		fmt.Sprintf("provider: %s", settings.AIProvider),
-		fmt.Sprintf("model: %s", displayModel(selectedModel(settings, providerKey(settings.AIProvider)))),
+		fmt.Sprintf("provider: %s", provider),
+		fmt.Sprintf("model: %s", displayModel(model)),
 		fmt.Sprintf("running_state: %s", runningState),
 		fmt.Sprintf("ready_state: %s", readyState),
 		fmt.Sprintf("working_dir: %s", workDir),

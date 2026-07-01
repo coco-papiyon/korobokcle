@@ -34,6 +34,8 @@ export type JobDetailResponse = {
 
 export type SearchCondition = {
   enabled?: boolean
+  aiProvider?: AIProvider
+  aiModel?: ModelSelection
   labelIncludes: string[]
   labelExcludes: string[]
   titleContains: string[]

@@ -40,7 +40,9 @@ describe('SettingsPanel', () => {
           githubCopilot: { mode: 'default', value: '' },
         },
         issue: {
-          enabled: false,
+          enabled: true,
+          aiProvider: 'github_copilot',
+          aiModel: { mode: 'custom', value: 'gpt-4.1' },
           labelIncludes: ['bug', 'ai:design'],
           labelExcludes: ['wip'],
           titleContains: ['fix'],
@@ -49,6 +51,8 @@ describe('SettingsPanel', () => {
         },
         pullRequest: {
           enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
           labelIncludes: ['ready'],
           labelExcludes: ['draft'],
           titleContains: ['update'],
@@ -89,7 +93,7 @@ describe('SettingsPanel', () => {
 
     expect(headings).toEqual(['プロバイダー設定', '実行設定', '監視設定'])
     expect(conditionToggles).toHaveLength(2)
-    expect((conditionToggles[0].element as HTMLInputElement).checked).toBe(false)
+    expect((conditionToggles[0].element as HTMLInputElement).checked).toBe(true)
     expect((conditionToggles[1].element as HTMLInputElement).checked).toBe(true)
     expect(repoInput.element).toHaveProperty('value', 'owner/repository')
     expect(pollInput.element).toHaveProperty('value', '120')
@@ -108,6 +112,10 @@ describe('SettingsPanel', () => {
     expect(prAssigneesInput.element).toHaveProperty('value', 'dave')
     expect(selects[0].element).toHaveProperty('value', 'codex')
     expect(selects[1].element).toHaveProperty('value', 'gpt-5.5')
+    expect(selects[2].element).toHaveProperty('value', 'github_copilot')
+    expect(selects[3].element).toHaveProperty('value', 'gpt-4.1')
+    expect(selects[4].element).toHaveProperty('value', '')
+    expect(selects[5].element).toHaveProperty('value', 'default')
     const textareas = wrapper.findAll('textarea')
     expect(textareas[0].element).toHaveProperty('value', 'npm ci\ngo test ./...')
 
@@ -117,6 +125,10 @@ describe('SettingsPanel', () => {
     await baseBranchInput.setValue(' release ')
     await branchPatternInput.setValue(' issue_#<issue番号> ')
     await prIncludeInput.setValue('ready, review')
+    await selects[2].setValue('codex')
+    await selects[3].setValue('gpt-5.4-mini')
+    await selects[4].setValue('github_copilot')
+    await selects[5].setValue('claude-opus-4.6')
     await conditionToggles[0].setChecked(false)
     await textareas[0].setValue('npm ci\nnpm test\n')
     await selects[0].setValue('github_copilot')
@@ -149,6 +161,8 @@ describe('SettingsPanel', () => {
       },
       issue: {
         enabled: false,
+        aiProvider: 'codex',
+        aiModel: { mode: 'custom', value: 'gpt-5.4-mini' },
         labelIncludes: ['bug', 'ai:design'],
         labelExcludes: ['wip'],
         titleContains: ['fix'],
@@ -157,6 +171,8 @@ describe('SettingsPanel', () => {
       },
       pullRequest: {
         enabled: true,
+        aiProvider: 'github_copilot',
+        aiModel: { mode: 'custom', value: 'claude-opus-4.6' },
         labelIncludes: ['ready', 'review'],
         labelExcludes: ['draft'],
         titleContains: ['update'],

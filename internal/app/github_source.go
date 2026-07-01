@@ -88,7 +88,7 @@ func (s *GitHubSource) List(ctx context.Context) ([]domain.Job, error) {
 	var prs []domain.Job
 	if settings.PullRequest.IsEnabled() {
 		var err error
-		prs, err = s.listPullRequests(ctx, repository, settings.PullRequest)
+		prs, err = s.listPullRequests(ctx, repository, settings.PullRequest, settings)
 		if err != nil {
 			s.infof("github source: list pull requests failed repo=%s err=%v", repository, err)
 			return nil, err
@@ -150,6 +150,7 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 			continue
 		}
 		kind, state := classifyIssue(labels)
+		provider, model := resolveConditionAISelection(settings, rule)
 		jobs = append(jobs, domain.Job{
 			ID:           fmt.Sprintf("issue-%d", record.Number),
 			Kind:         kind,
@@ -158,6 +159,8 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 			Number:       record.Number,
 			Title:        record.Title,
 			Branch:       renderBranchName(settings.BranchNamePattern, record.Number),
+			AIProvider:   provider,
+			AIModel:      model,
 			IssueContext: formatIssueContext(record.Number, record.Title, record.Body),
 		})
 	}
@@ -165,7 +168,7 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 	return jobs, nil
 }
 
-func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, rule domain.SearchCondition) ([]domain.Job, error) {
+func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, rule domain.SearchCondition, settings domain.WatchSettings) ([]domain.Job, error) {
 	cmd := exec.CommandContext(ctx, "gh", "pr", "list", "--repo", repository, "--state", "open", "--json", "number,title,labels,url,isDraft,author,assignees,mergeable,mergeStateStatus,headRefName,baseRefName")
 	raw, err := cmd.Output()
 	if err != nil {
@@ -192,6 +195,7 @@ func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, 
 			continue
 		}
 		kind, state := classifyPullRequest(record)
+		provider, model := resolveConditionAISelection(settings, rule)
 		jobs = append(jobs, domain.Job{
 			ID:         jobIDForPR(record),
 			Kind:       kind,
@@ -200,6 +204,8 @@ func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, 
 			Number:     record.Number,
 			Title:      record.Title,
 			Branch:     strings.TrimSpace(record.HeadRefName),
+			AIProvider: provider,
+			AIModel:    model,
 		})
 	}
 	s.infof("github source: pull requests retrieved repo=%s fetched=%d targets=%d", repository, len(records), len(jobs))
