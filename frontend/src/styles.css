@@ -727,6 +727,44 @@ h1 {
   border-top: 1px solid rgba(18, 32, 51, 0.1);
 }
 
+.detail-links {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid rgba(18, 32, 51, 0.08);
+  border-radius: 18px;
+  background: rgba(248, 250, 253, 0.86);
+}
+
+.detail-links__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.detail-links h3 {
+  margin: 0;
+  font-size: 0.98rem;
+}
+
+.detail-links__link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(47, 91, 234, 0.1);
+  color: #2345b4;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.detail-links__link:hover {
+  background: rgba(47, 91, 234, 0.16);
+  text-decoration: underline;
+}
+
 .detail-context {
   display: grid;
   gap: 12px;
