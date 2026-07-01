@@ -22,21 +22,57 @@ async function flushPromises() {
 }
 
 describe('App', () => {
-  it('shows shared tab descriptions and switches them by tab', async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+  it('keeps the tab navigation and opens job details in a modal from the job list', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/settings') {
-        return Promise.resolve(
-          jsonResponse({
-            aiProvider: 'codex',
-          }),
-        )
+        return Promise.resolve(jsonResponse({ aiProvider: 'codex' }))
       }
       if (url === '/api/skills') {
         return Promise.resolve(jsonResponse({ skills: [] }))
       }
       if (url === '/api/jobs') {
-        return Promise.resolve(jsonResponse({ jobs: [] }))
+        return Promise.resolve(
+          jsonResponse({
+            updatedAt: '2026-07-01T00:00:00Z',
+            jobs: [
+              {
+                id: 'job-1',
+                kind: 'issue_implementation',
+                state: 'implementation_ready',
+                repository: 'owner/repo',
+                number: 1,
+                title: '一覧から開くジョブ',
+              },
+            ],
+          }),
+        )
+      }
+      if (url === '/api/jobs/job-1') {
+        return Promise.resolve(
+          jsonResponse({
+            updatedAt: '2026-07-01T00:00:00Z',
+            job: {
+              id: 'job-1',
+              kind: 'issue_implementation',
+              state: 'implementation_ready',
+              repository: 'owner/repo',
+              number: 1,
+              title: '一覧から開くジョブ',
+            },
+          }),
+        )
+      }
+      if (url === '/api/jobs/job-1/artifact') {
+        if (init?.method === 'POST' || init?.method === 'PATCH') {
+          return Promise.resolve(new Response(null, { status: 204 }))
+        }
+        return Promise.resolve(
+          jsonResponse({
+            content: 'artifact content',
+            path: 'artifact.md',
+          }),
+        )
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`))
     })
@@ -46,20 +82,31 @@ describe('App', () => {
     await flushPromises()
 
     const tabs = wrapper.findAll('button[role="tab"]')
-    const description = () => wrapper.get('.tab-description').text()
-
-    expect(description()).toBe('監視中のジョブ一覧を確認し、処理対象を選択する。')
+    expect(tabs).toHaveLength(3)
+    expect(wrapper.get('.tab-description').text()).toBe('監視中のジョブ一覧を確認し、処理対象を選択する。')
 
     await tabs[1].trigger('click')
     await nextTick()
-    expect(description()).toBe('AI プロバイダーと監視条件をまとめて設定する。')
+    expect(wrapper.get('.tab-description').text()).toBe('AI プロバイダーと監視条件をまとめて設定する。')
 
     await tabs[0].trigger('click')
     await nextTick()
-    expect(description()).toBe('Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。')
+    expect(wrapper.get('.tab-description').text()).toBe('Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。')
 
-    await tabs[3].trigger('click')
+    await tabs[2].trigger('click')
     await nextTick()
-    expect(description()).toBe('選択したジョブの詳細と生成物を確認し、必要なら再実行や承認を行う。')
+    expect(wrapper.get('.tab-description').text()).toBe('監視中のジョブ一覧を確認し、処理対象を選択する。')
+
+    await wrapper.get('tbody tr').trigger('click')
+    await flushPromises()
+
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.text()).toContain('一覧から開くジョブ')
+    expect(dialog.text()).toContain('artifact content')
+
+    await wrapper.get('button[aria-label="閉じる"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 })

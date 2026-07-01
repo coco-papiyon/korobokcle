@@ -19,8 +19,11 @@ const artifactUserComment = ref('')
 const artifactActionLoading = ref(false)
 const deleteLoading = ref(false)
 let detailRequestSequence = 0
+
 const emit = defineEmits<{
   (event: 'deleted', jobId: string): void
+  (event: 'close'): void
+  (event: 'refresh'): void
 }>()
 
 const stateLabels: Record<string, string> = {
@@ -108,7 +111,7 @@ function artifactTitle(job: Job | null) {
 }
 
 async function loadJobDetail(id: string) {
-	const requestSequence = ++detailRequestSequence
+  const requestSequence = ++detailRequestSequence
   if (!id) {
     detailJob.value = null
     return
@@ -168,10 +171,11 @@ async function approveArtifact() {
   if (!detailJob.value) {
     return
   }
+  const jobId = detailJob.value.id
   artifactActionLoading.value = true
   artifactError.value = ''
   try {
-    const res = await fetch(`/api/jobs/${encodeURIComponent(detailJob.value.id)}/artifact`, {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/artifact`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -182,7 +186,8 @@ async function approveArtifact() {
       const message = await res.text()
       throw new Error(message || `HTTP ${res.status}`)
     }
-    await loadJobDetail(detailJob.value.id)
+    emit('refresh')
+    emit('close')
   } catch (err) {
     artifactError.value = err instanceof Error ? err.message : 'unknown error'
   } finally {
@@ -194,10 +199,11 @@ async function requestChanges() {
   if (!detailJob.value) {
     return
   }
+  const jobId = detailJob.value.id
   artifactActionLoading.value = true
   artifactError.value = ''
   try {
-    const res = await fetch(`/api/jobs/${encodeURIComponent(detailJob.value.id)}/artifact/request-changes`, {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/artifact/request-changes`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -208,7 +214,8 @@ async function requestChanges() {
       const message = await res.text()
       throw new Error(message || `HTTP ${res.status}`)
     }
-    await loadJobDetail(detailJob.value.id)
+    emit('refresh')
+    emit('close')
   } catch (err) {
     artifactError.value = err instanceof Error ? err.message : 'unknown error'
   } finally {
@@ -220,10 +227,11 @@ async function rerunArtifact() {
   if (!detailJob.value) {
     return
   }
+  const jobId = detailJob.value.id
   artifactActionLoading.value = true
   artifactError.value = ''
   try {
-    const res = await fetch(`/api/jobs/${encodeURIComponent(detailJob.value.id)}/artifact`, {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/artifact`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -234,7 +242,8 @@ async function rerunArtifact() {
       const message = await res.text()
       throw new Error(message || `HTTP ${res.status}`)
     }
-    await loadJobDetail(detailJob.value.id)
+    emit('refresh')
+    emit('close')
   } catch (err) {
     artifactError.value = err instanceof Error ? err.message : 'unknown error'
   } finally {
@@ -246,14 +255,15 @@ async function deleteJob() {
   if (!detailJob.value) {
     return
   }
-  const confirmed = window.confirm(`ジョブ ${detailJob.value.id} を削除します。よろしいですか?`)
+  const jobId = detailJob.value.id
+  const confirmed = window.confirm(`ジョブ ${jobId} を削除します。よろしいですか?`)
   if (!confirmed) {
     return
   }
   deleteLoading.value = true
   artifactError.value = ''
   try {
-    const res = await fetch(`/api/jobs/${encodeURIComponent(detailJob.value.id)}`, {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
       method: 'DELETE',
     })
     if (!res.ok && res.status !== 204) {
@@ -261,7 +271,9 @@ async function deleteJob() {
       throw new Error(message || `HTTP ${res.status}`)
     }
     detailUpdatedAt.value = ''
-    emit('deleted', detailJob.value.id)
+    emit('deleted', jobId)
+    emit('refresh')
+    emit('close')
     detailJob.value = null
     artifact.value = null
   } catch (err) {

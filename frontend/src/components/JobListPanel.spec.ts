@@ -178,4 +178,55 @@ describe('JobListPanel', () => {
       vi.restoreAllMocks()
     }
   })
+
+  it('reloads when the refresh key changes', async () => {
+    const fetchMock = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          jobs: [
+            {
+              id: 'job-1',
+              kind: 'issue_design',
+              state: 'design_running',
+              repository: 'owner/repo',
+              number: 1,
+              title: '初回ジョブ',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:01Z',
+          jobs: [
+            {
+              id: 'job-1',
+              kind: 'issue_design',
+              state: 'design_running',
+              repository: 'owner/repo',
+              number: 1,
+              title: '再読込ジョブ',
+            },
+          ],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobListPanel, {
+      props: {
+        selectedJobId: '',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('初回ジョブ')
+
+    await wrapper.setProps({ refreshKey: 1 })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('再読込ジョブ')
+  })
 })

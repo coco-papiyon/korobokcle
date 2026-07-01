@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Job, JobListResponse } from '../types'
 import { jobStateChipClass } from '../utils/jobState'
 
 const props = defineProps<{
   selectedJobId: string
+  refreshKey?: number
 }>()
 
 const emit = defineEmits<{
@@ -98,6 +99,13 @@ onMounted(() => {
     void loadJobs()
   }, 5000)
 })
+
+watch(
+  () => props.refreshKey,
+  () => {
+    void loadJobs()
+  },
+)
 
 onBeforeUnmount(() => {
   if (refreshTimer !== undefined) {

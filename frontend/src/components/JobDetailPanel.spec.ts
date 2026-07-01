@@ -54,28 +54,29 @@ describe('JobDetailPanel', () => {
     expect(stateChip.text()).toBe('実装中')
   })
 
-  it('keeps ready states on the existing chip style in detail view', async () => {
+  it('emits close and refresh after approving the artifact', async () => {
     const fetchMock = vi.fn()
     fetchMock
       .mockResolvedValueOnce(
-      jsonResponse({
-        updatedAt: '2026-07-01T00:00:00Z',
-        job: {
-          id: 'job-2',
-          kind: 'issue_implementation',
-          state: 'implementation_ready',
-          repository: 'owner/repo',
-          number: 2,
-          title: '待機中ジョブ',
-        },
-      }),
-    )
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          job: {
+            id: 'job-2',
+            kind: 'issue_implementation',
+            state: 'implementation_ready',
+            repository: 'owner/repo',
+            number: 2,
+            title: '承認対象',
+          },
+        }),
+      )
       .mockResolvedValueOnce(
         jsonResponse({
           content: 'artifact content',
           path: 'artifact.md',
         }),
       )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mount(JobDetailPanel, {
@@ -86,10 +87,12 @@ describe('JobDetailPanel', () => {
     })
     await flushPromises()
 
-    const stateChip = wrapper.get('.detail__header-actions span')
-    expect(stateChip.classes()).toContain('chip')
-    expect(stateChip.classes()).not.toContain('chip--running')
-    expect(stateChip.text()).toBe('実装完了')
+    await wrapper.get('button.button').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/jobs/job-2/artifact', expect.objectContaining({ method: 'POST' }))
+    expect(wrapper.emitted('refresh')).toHaveLength(1)
+    expect(wrapper.emitted('close')).toHaveLength(1)
   })
 
   it('deletes the current job after confirmation', async () => {
@@ -129,6 +132,7 @@ describe('JobDetailPanel', () => {
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/api/jobs/job-3', { method: 'DELETE' })
-    expect(wrapper.text()).toContain('一覧からジョブを選択してください。')
+    expect(wrapper.emitted('deleted')?.[0]).toEqual(['job-3'])
+    expect(wrapper.emitted('close')).toHaveLength(1)
   })
 })
