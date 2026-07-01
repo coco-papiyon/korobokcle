@@ -28,6 +28,33 @@ describe('JobDetailPanel', () => {
     vi.restoreAllMocks()
   })
 
+  it('shows a failed job error with the failed chip style', async () => {
+	const fetchMock = vi.fn().mockResolvedValueOnce(
+	  jsonResponse({
+		updatedAt: '2026-07-01T00:00:00Z',
+		job: {
+		  id: 'job-failed',
+		  kind: 'issue_implementation',
+		  state: 'failed',
+		  repository: 'owner/repo',
+		  number: 500,
+		  title: '失敗ジョブ',
+		  errorMessage: 'copilot permission denied: execute: npm test',
+		},
+	  }),
+	)
+	vi.stubGlobal('fetch', fetchMock)
+
+	const wrapper = mount(JobDetailPanel, {
+	  props: { active: true, jobId: 'job-failed', refreshKey: 0 },
+	})
+	await flushPromises()
+
+	expect(wrapper.find('.chip--failed').text()).toBe('失敗')
+	expect(wrapper.find('.detail__error').text()).toContain('copilot permission denied: execute: npm test')
+	expect(wrapper.find('.detail__retry').text()).toBe('再実行')
+  })
+
   it('only refreshes while active', async () => {
     let intervalHandler: TimerHandler | undefined
     const fetchMock = vi.fn().mockImplementation(() =>
@@ -269,6 +296,47 @@ describe('JobDetailPanel', () => {
     expect(wrapper.text()).toContain('#12 画面調整')
     expect(wrapper.text()).toContain('詳細な要件')
     expect(wrapper.text()).toContain('設計結果')
+  })
+
+  it('shows artifact content for completed jobs', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#31',
+          job: {
+            id: 'job-31',
+            kind: 'issue_implementation',
+            state: 'completed',
+            repository: 'owner/repo',
+            number: 31,
+            title: '完了ジョブ',
+            issueContext: '#31 完了ジョブ\n\n本文',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'artifact content for completed job',
+          path: 'artifact.md',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-31',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('実装結果')
+    expect(wrapper.text()).toContain('artifact content for completed job')
+    expect(wrapper.text()).toContain('完了ジョブ')
   })
 
   it('shows an issue link for issue jobs', async () => {

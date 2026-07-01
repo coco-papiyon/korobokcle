@@ -63,6 +63,7 @@ const inspectableStates = new Set([
   'review_ready',
   'review_fix_implementation_ready',
   'pr_conflict_ready',
+  'completed',
 ])
 
 const detailTitle = computed(() => {
@@ -392,6 +393,14 @@ onBeforeUnmount(() => {
         <div class="detail__header-actions">
           <span :class="jobStateClass(detailJob.state)">{{ jobStateLabel(detailJob.state) }}</span>
         </div>
+      </div>
+
+      <div v-if="detailJob.state === 'failed' && detailJob.errorMessage" class="error detail__error">
+        <strong>エラー内容</strong>
+        <pre>{{ detailJob.errorMessage }}</pre>
+        <button class="button button--danger detail__retry" type="button" @click="rerunArtifact" :disabled="artifactActionLoading">
+          再実行
+        </button>
       </div>
 
       <div class="detail__meta" aria-label="ジョブ詳細の要約">

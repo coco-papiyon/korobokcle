@@ -7,6 +7,9 @@ const runningStates = new Set([
 ])
 
 export function jobStateChipClass(state: string) {
+  if (state === 'failed') {
+    return 'chip chip--failed'
+  }
   if (state === 'review_approved') {
     return 'chip chip--approved'
   }

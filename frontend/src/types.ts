@@ -9,6 +9,8 @@ export type Job = {
   title: string
   branch?: string
   issueContext?: string
+  errorMessage?: string
+  failedFromState?: string
   fetchedAt?: string
   updatedAt?: string
 }

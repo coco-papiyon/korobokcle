@@ -83,7 +83,7 @@ func (p *WorkflowProcessor) Stop(ctx context.Context) error {
 	return runner.Stop(ctx)
 }
 
-func (p *WorkflowProcessor) Process(ctx context.Context, job domain.Job) error {
+func (p *WorkflowProcessor) Process(ctx context.Context, job domain.Job) (retErr error) {
 	runningState := domain.RunningStateForKind(job.Kind, job.State)
 	readyState := domain.ReadyStateForKind(job.Kind, job.State)
 	if runningState == domain.StateFailed || readyState == domain.StateFailed {
@@ -95,11 +95,24 @@ func (p *WorkflowProcessor) Process(ctx context.Context, job domain.Job) error {
 		p.logger.Debugf("workflow job detail id=%s repository=%s number=%d title=%q", job.ID, job.Repository, job.Number, job.Title)
 	}
 
+	job.ErrorMessage = ""
+	job.FailedFromState = ""
 	updated, err := p.transitionState(ctx, job, runningState)
 	if err != nil {
 		return err
 	}
 	job = updated
+	defer func() {
+		if retErr == nil || p.store == nil {
+			return
+		}
+		job.FailedFromState = job.State
+		job = markJobState(job, domain.StateFailed)
+		job.ErrorMessage = retErr.Error()
+		if err := p.store.Upsert(context.Background(), job); err != nil && p.logger != nil {
+			p.logger.Infof("persist workflow failure failed job=%s error=%v", job.ID, err)
+		}
+	}()
 
 	settings, err := p.loadSettings(ctx)
 	if err != nil {
@@ -313,11 +326,22 @@ func (p *WorkflowProcessor) buildPrompt(job domain.Job, settings domain.WatchSet
 		fmt.Sprintf("model: %s", displayModel(selectedModel(settings, providerKey(settings.AIProvider)))),
 		fmt.Sprintf("running_state: %s", runningState),
 		fmt.Sprintf("ready_state: %s", readyState),
-		fmt.Sprintf("base_dir: %s", p.baseDir),
 		fmt.Sprintf("working_dir: %s", workDir),
 	}
 	if branch != "" {
 		lines = append(lines, fmt.Sprintf("branch: %s", branch))
+	}
+	if skillName := skillNameForJob(job); skillName != "" {
+		if skill := p.loadSkillInstructions(workDir, skillName); skill != "" {
+			lines = append(lines,
+				"",
+				fmt.Sprintf("Mandatory Agent Skill instructions (%s):", skillName),
+				skill,
+				"",
+				"Follow all processing steps and the required output format above.",
+				"Do not return progress updates as the final response. Complete the work and return only the required final Markdown.",
+			)
+		}
 	}
 	lines = append(lines,
 		"",
@@ -326,6 +350,12 @@ func (p *WorkflowProcessor) buildPrompt(job domain.Job, settings domain.WatchSet
 	)
 
 	if implementationJob(job) {
+		lines = append(lines,
+			"",
+			"All repository file reads, edits, and commands must use working_dir as the repository root.",
+			"Do not access the original repository root or any path outside working_dir.",
+			"Use paths relative to working_dir whenever possible.",
+		)
 		if job.Kind == domain.JobKindPRConflict {
 			lines = append(lines,
 				"",
@@ -359,6 +389,39 @@ func (p *WorkflowProcessor) buildPrompt(job domain.Job, settings domain.WatchSet
 		lines = append(lines, "", "User comment:", strings.TrimSpace(feedback))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func skillNameForJob(job domain.Job) string {
+	switch job.Kind {
+	case domain.JobKindIssueDesign:
+		return "design-from-issue"
+	case domain.JobKindIssueImplementation:
+		return "implement-from-design"
+	case domain.JobKindPRReview:
+		return "review-pull-request"
+	case domain.JobKindPRFeedback:
+		return "review-comment-fix"
+	case domain.JobKindPRConflict:
+		return "resolve-pr-conflicts"
+	default:
+		return ""
+	}
+}
+
+func (p *WorkflowProcessor) loadSkillInstructions(workDir, skillName string) string {
+	for _, root := range []string{workDir, p.baseDir} {
+		if strings.TrimSpace(root) == "" {
+			continue
+		}
+		for _, parent := range []string{".agents", ".github"} {
+			path := filepath.Join(root, parent, "skills", skillName, "SKILL.md")
+			raw, err := os.ReadFile(path)
+			if err == nil && strings.TrimSpace(string(raw)) != "" {
+				return strings.TrimSpace(string(raw))
+			}
+		}
+	}
+	return ""
 }
 
 func (p *WorkflowProcessor) decorateArtifact(job domain.Job, artifact string) string {
