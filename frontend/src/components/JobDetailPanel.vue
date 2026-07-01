@@ -76,6 +76,29 @@ const showIssueContext = computed(() => detailJob.value?.kind === 'issue_design'
 
 const issueContext = computed(() => detailJob.value?.issueContext ?? '')
 
+const relatedLink = computed(() => {
+  const job = detailJob.value
+  if (!job || !job.repository || !job.number) {
+    return null
+  }
+
+  let pathType: 'issues' | 'pull' | null = null
+  if (job.kind === 'issue_design' || job.kind === 'issue_implementation') {
+    pathType = 'issues'
+  } else if (job.kind === 'pr_review' || job.kind === 'pr_feedback' || job.kind === 'pr_conflict') {
+    pathType = 'pull'
+  }
+
+  if (!pathType) {
+    return null
+  }
+
+  return {
+    label: pathType === 'issues' ? 'Issue を開く' : 'PR を開く',
+    href: `https://github.com/${job.repository}/${pathType}/${job.number}`,
+  }
+})
+
 function jobStateLabel(state: string) {
   return stateLabels[state] ?? state
 }
@@ -446,6 +469,21 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+
+      <section v-if="relatedLink" class="detail-links" aria-label="関連リンク">
+        <div class="detail-links__header">
+          <h3>関連リンク</h3>
+          <span class="panel__hint">GitHub</span>
+        </div>
+        <a
+          class="detail-links__link"
+          :href="relatedLink.href"
+          target="_blank"
+          rel="noreferrer"
+        >
+          {{ relatedLink.label }}
+        </a>
+      </section>
     </div>
 
     <div v-else class="empty-state">一覧からジョブを選択してください。</div>

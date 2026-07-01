@@ -271,6 +271,125 @@ describe('JobDetailPanel', () => {
     expect(wrapper.text()).toContain('設計結果')
   })
 
+  it('shows an issue link for issue jobs', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        branch: 'issue_#13',
+        job: {
+          id: 'job-13',
+          kind: 'issue_implementation',
+          state: 'implementation_ready',
+          repository: 'owner/repo',
+          number: 13,
+          title: 'Issue リンク',
+          fetchedAt: '2026-07-01T00:00:00Z',
+          updatedAt: '2026-07-01T03:04:05Z',
+        },
+      }),
+    )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'artifact content',
+          path: 'artifact.md',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-13',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    const link = wrapper.get('.detail-links__link')
+    expect(link.text()).toBe('Issue を開く')
+    expect(link.attributes('href')).toBe('https://github.com/owner/repo/issues/13')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noreferrer')
+  })
+
+  it('shows a PR link for PR jobs', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        branch: 'pr-14',
+        job: {
+          id: 'job-14',
+          kind: 'pr_conflict',
+          state: 'pr_conflict_ready',
+          repository: 'owner/repo',
+          number: 14,
+          title: 'PR リンク',
+          fetchedAt: '2026-07-01T00:00:00Z',
+          updatedAt: '2026-07-01T03:04:05Z',
+        },
+      }),
+    )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'artifact content',
+          path: 'artifact.md',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-14',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    const link = wrapper.get('.detail-links__link')
+    expect(link.text()).toBe('PR を開く')
+    expect(link.attributes('href')).toBe('https://github.com/owner/repo/pull/14')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.attributes('rel')).toBe('noreferrer')
+  })
+
+  it('hides the link section when repository data is missing', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        branch: 'issue_#15',
+        job: {
+          id: 'job-15',
+          kind: 'issue_implementation',
+          state: 'implementation_ready',
+          repository: '',
+          number: 15,
+          title: 'リンク非表示',
+          fetchedAt: '2026-07-01T00:00:00Z',
+          updatedAt: '2026-07-01T03:04:05Z',
+        },
+      }),
+    )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'artifact content',
+          path: 'artifact.md',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-15',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.detail-links').exists()).toBe(false)
+  })
+
   it('keeps the current view when a refreshed job has the same updatedAt', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
