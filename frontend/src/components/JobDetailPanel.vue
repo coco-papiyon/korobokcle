@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import type { Job, JobArtifact, JobDetailResponse } from '../types'
 import { jobStateChipClass } from '../utils/jobState'
 
 const props = defineProps<{
+  active: boolean
   jobId: string
   refreshKey: number
 }>()
@@ -20,6 +21,7 @@ const artifactUserComment = ref('')
 const artifactActionLoading = ref(false)
 const deleteLoading = ref(false)
 let detailRequestSequence = 0
+let detailRefreshTimer: number | undefined
 const emit = defineEmits<{
   (event: 'deleted', jobId: string): void
 }>()
@@ -111,6 +113,8 @@ function artifactTitle(job: Job | null) {
 async function loadJobDetail(id: string) {
   const requestSequence = ++detailRequestSequence
   if (!id) {
+    detailLoading.value = false
+    detailError.value = ''
     detailJob.value = null
     detailBranch.value = ''
     return
@@ -146,6 +150,26 @@ async function loadJobDetail(id: string) {
       detailLoading.value = false
     }
   }
+}
+
+function startPolling() {
+  if (detailRefreshTimer !== undefined) {
+    return
+  }
+  detailRefreshTimer = window.setInterval(() => {
+    if (!props.active || !props.jobId) {
+      return
+    }
+    void loadJobDetail(props.jobId)
+  }, 5000)
+}
+
+function stopPolling() {
+  if (detailRefreshTimer === undefined) {
+    return
+  }
+  window.clearInterval(detailRefreshTimer)
+  detailRefreshTimer = undefined
 }
 
 async function loadArtifact() {
@@ -278,9 +302,19 @@ async function deleteJob() {
 }
 
 watch(
-  () => [props.jobId, props.refreshKey] as const,
-  ([jobId]) => {
+  () => [props.active, props.jobId, props.refreshKey] as const,
+  ([active, jobId]) => {
+    if (!active) {
+      stopPolling()
+      return
+    }
+    if (!jobId) {
+      stopPolling()
+      void loadJobDetail(jobId)
+      return
+    }
     void loadJobDetail(jobId)
+    startPolling()
   },
   { immediate: true },
 )
@@ -298,6 +332,10 @@ watch(
   },
   { immediate: true },
 )
+
+onBeforeUnmount(() => {
+  stopPolling()
+})
 </script>
 
 <template>
