@@ -571,6 +571,11 @@ h1 {
   color: #7a5600;
 }
 
+.chip--approved {
+  background: rgba(51, 138, 70, 0.18);
+  color: #1f6a31;
+}
+
 .meta {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -161,6 +161,38 @@ describe('JobListPanel', () => {
     expect(rows[1].get('span').classes()).not.toContain('chip--running')
   })
 
+  it('uses approved chip colors for review approvals', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [
+          {
+            id: 'job-1',
+            kind: 'pr_review',
+            state: 'review_approved',
+            repository: 'owner/repo',
+            number: 1,
+            title: '承認済みPR',
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobListPanel, {
+      props: {
+        active: true,
+        selectedJobId: '',
+      },
+    })
+    await flushPromises()
+
+    const chip = wrapper.get('tbody tr span')
+    expect(chip.classes()).toContain('chip')
+    expect(chip.classes()).toContain('chip--approved')
+    expect(chip.text()).toBe('レビュー承認済み')
+  })
+
   it('skips updating visible jobs when updatedAt is unchanged', async () => {
     try {
       let intervalHandler: TimerHandler | undefined

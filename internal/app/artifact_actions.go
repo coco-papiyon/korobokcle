@@ -119,6 +119,11 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		if err := s.updateTargetLabels(ctx, job, latestLabels, stateLabelsExcept(latestLabels...)); err != nil {
 			return domain.Job{}, err
 		}
+	} else if job.Kind == domain.JobKindPRReview {
+		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
+			return domain.Job{}, err
+		}
+		job.State = domain.StateReviewApproved
 	} else {
 		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
 			return domain.Job{}, err
@@ -137,7 +142,9 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 			return domain.Job{}, err
 		}
 	}
-	job.State = domain.StateCompleted
+	if job.Kind != domain.JobKindPRReview {
+		job.State = domain.StateCompleted
+	}
 	if err := s.completeApproval(ctx, job); err != nil {
 		return domain.Job{}, err
 	}

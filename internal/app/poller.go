@@ -105,8 +105,16 @@ func (p *Poller) poll(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list jobs: %w", err)
 	}
+	sourceIDs := make(map[string]struct{}, len(jobs))
 
 	for _, job := range jobs {
+		sourceIDs[job.ID] = struct{}{}
+
+		if p.store != nil {
+			if existing, ok, err := p.store.Get(ctx, job.ID); err == nil && ok && shouldKeepApprovedPR(existing, job) {
+				continue
+			}
+		}
 		key := p.jobKey(job)
 		if p.alreadySeen(key) {
 			continue
@@ -120,7 +128,50 @@ func (p *Poller) poll(ctx context.Context) error {
 			return err
 		}
 	}
+
+	if err := p.completeMissingPRJobs(ctx, sourceIDs); err != nil {
+		return err
+	}
 	return nil
+}
+
+func shouldKeepApprovedPR(existing domain.Job, source domain.Job) bool {
+	return existing.Kind == domain.JobKindPRReview && existing.State == domain.StateReviewApproved && source.Kind == domain.JobKindPRReview
+}
+
+func (p *Poller) completeMissingPRJobs(ctx context.Context, sourceIDs map[string]struct{}) error {
+	if p.store == nil {
+		return nil
+	}
+	jobs, err := p.store.List(ctx)
+	if err != nil {
+		return fmt.Errorf("list stored jobs: %w", err)
+	}
+	for _, job := range jobs {
+		if !isTrackedPRJob(job) {
+			continue
+		}
+		if job.State == domain.StateCompleted {
+			continue
+		}
+		if _, ok := sourceIDs[job.ID]; ok {
+			continue
+		}
+		job.State = domain.StateCompleted
+		if err := p.store.Upsert(ctx, job); err != nil {
+			return fmt.Errorf("complete missing job %s: %w", job.ID, err)
+		}
+	}
+	return nil
+}
+
+func isTrackedPRJob(job domain.Job) bool {
+	switch job.Kind {
+	case domain.JobKindPRReview, domain.JobKindPRFeedback, domain.JobKindPRConflict:
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Poller) jobKey(job domain.Job) string {

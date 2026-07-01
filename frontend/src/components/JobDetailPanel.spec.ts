@@ -156,6 +156,38 @@ describe('JobDetailPanel', () => {
     expect(wrapper.text()).toContain('-')
   })
 
+  it('uses approved chip colors for review approvals in detail view', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        branch: 'pr-1',
+        job: {
+          id: 'job-4',
+          kind: 'pr_review',
+          state: 'review_approved',
+          repository: 'owner/repo',
+          number: 4,
+          title: '承認済みPR',
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-4',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    const stateChip = wrapper.get('.detail__header-actions span')
+    expect(stateChip.classes()).toContain('chip')
+    expect(stateChip.classes()).toContain('chip--approved')
+    expect(stateChip.text()).toBe('レビュー承認済み')
+  })
+
   it('deletes the current job after confirmation', async () => {
     const fetchMock = vi.fn()
     fetchMock.mockResolvedValueOnce(

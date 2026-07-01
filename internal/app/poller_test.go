@@ -98,6 +98,74 @@ func TestPollerAllowsNewStateForSameJob(t *testing.T) {
 	}
 }
 
+func TestPollerKeepsApprovedPRUntilMissing(t *testing.T) {
+	cfg := config.Default()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	manager := NewWorkerManager(cfg, nil, func(_ context.Context, job domain.Job) error {
+		return nil
+	})
+	if err := manager.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	store := newMemoryJobStore()
+	approved := domain.Job{
+		ID:         "pr-1",
+		Kind:       domain.JobKindPRReview,
+		State:      domain.StateReviewApproved,
+		Repository: "owner/repo",
+		Number:     1,
+		Title:      "reviewed PR",
+	}
+	if err := store.Upsert(ctx, approved); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	poller := NewPoller(cfg, NewStaticJobSource([]domain.Job{
+		{
+			ID:         "pr-1",
+			Kind:       domain.JobKindPRReview,
+			State:      domain.StateReviewRunning,
+			Repository: "owner/repo",
+			Number:     1,
+			Title:      "reviewed PR",
+		},
+	}), store, nil, manager)
+
+	if err := poller.poll(ctx); err != nil {
+		t.Fatalf("poll() error = %v", err)
+	}
+
+	updated, ok, err := store.Get(ctx, "pr-1")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("job not found")
+	}
+	if updated.State != domain.StateReviewApproved {
+		t.Fatalf("state = %s, want %s", updated.State, domain.StateReviewApproved)
+	}
+
+	poller.source = NewStaticJobSource(nil)
+	if err := poller.poll(ctx); err != nil {
+		t.Fatalf("missing poll() error = %v", err)
+	}
+
+	updated, ok, err = store.Get(ctx, "pr-1")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("job not found after missing poll")
+	}
+	if updated.State != domain.StateCompleted {
+		t.Fatalf("state after missing = %s, want %s", updated.State, domain.StateCompleted)
+	}
+}
+
 type memoryJobStore struct {
 	mu        sync.Mutex
 	jobs      map[string]domain.Job
