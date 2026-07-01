@@ -99,8 +99,9 @@ func TestPollerAllowsNewStateForSameJob(t *testing.T) {
 }
 
 type memoryJobStore struct {
-	mu   sync.Mutex
-	jobs map[string]domain.Job
+	mu        sync.Mutex
+	jobs      map[string]domain.Job
+	updatedAt time.Time
 }
 
 func newMemoryJobStore() *memoryJobStore {
@@ -128,7 +129,22 @@ func (s *memoryJobStore) Upsert(_ context.Context, job domain.Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.jobs[job.ID] = job
+	s.updatedAt = time.Now().UTC()
 	return nil
+}
+
+func (s *memoryJobStore) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.jobs, id)
+	s.updatedAt = time.Now().UTC()
+	return nil
+}
+
+func (s *memoryJobStore) UpdatedAt(context.Context) (time.Time, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.updatedAt, nil
 }
 
 var _ JobStore = (*memoryJobStore)(nil)

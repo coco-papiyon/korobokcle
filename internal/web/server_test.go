@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
@@ -55,10 +56,14 @@ func TestJobsAPI(t *testing.T) {
 	}
 
 	var resp struct {
+		UpdatedAt string        `json:"updatedAt"`
 		Jobs []domain.Job `json:"jobs"`
 	}
 	if err := json.Unmarshal(getRec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if resp.UpdatedAt == "" {
+		t.Fatal("updatedAt is empty")
 	}
 	if len(resp.Jobs) != 1 {
 		t.Fatalf("jobs = %d, want 1", len(resp.Jobs))
@@ -74,12 +79,18 @@ func TestJobsAPI(t *testing.T) {
 		t.Fatalf("detail status = %d, want %d", detailRec.Code, http.StatusOK)
 	}
 
-	var detail domain.Job
+	var detail struct {
+		UpdatedAt string    `json:"updatedAt"`
+		Job       domain.Job `json:"job"`
+	}
 	if err := json.Unmarshal(detailRec.Body.Bytes(), &detail); err != nil {
 		t.Fatalf("detail json.Unmarshal() error = %v", err)
 	}
-	if detail.ID != resp.Jobs[0].ID {
-		t.Fatalf("detail id = %q, want %q", detail.ID, resp.Jobs[0].ID)
+	if detail.UpdatedAt == "" {
+		t.Fatal("detail updatedAt is empty")
+	}
+	if detail.Job.ID != resp.Jobs[0].ID {
+		t.Fatalf("detail id = %q, want %q", detail.Job.ID, resp.Jobs[0].ID)
 	}
 
 	updateReqBody, err := json.Marshal(map[string]any{
@@ -88,7 +99,7 @@ func TestJobsAPI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	updateReq := httptest.NewRequest(http.MethodPatch, "/api/jobs/"+detail.ID+"/state", bytes.NewReader(updateReqBody))
+	updateReq := httptest.NewRequest(http.MethodPatch, "/api/jobs/"+detail.Job.ID+"/state", bytes.NewReader(updateReqBody))
 	updateRec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(updateRec, updateReq)
 	if updateRec.Code != http.StatusOK {
@@ -101,6 +112,18 @@ func TestJobsAPI(t *testing.T) {
 	}
 	if updated.State != domain.StateDesignRunning {
 		t.Fatalf("updated state = %s, want %s", updated.State, domain.StateDesignRunning)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/jobs/"+detail.Job.ID, nil)
+	deleteRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d", deleteRec.Code, http.StatusNoContent)
+	}
+	if _, ok, err := store.Get(context.Background(), detail.Job.ID); err != nil {
+		t.Fatalf("Get() after delete error = %v", err)
+	} else if ok {
+		t.Fatal("job still exists after delete")
 	}
 }
 
@@ -396,8 +419,9 @@ func TestStaticAssetsAndSPAFallback(t *testing.T) {
 type testJobStore struct {
 	path string
 
-	mu   sync.Mutex
-	jobs map[string]domain.Job
+	mu        sync.Mutex
+	jobs      map[string]domain.Job
+	updatedAt time.Time
 }
 
 func newTestJobStore(path string) *testJobStore {
@@ -425,6 +449,7 @@ func (s *testJobStore) Upsert(_ context.Context, job domain.Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.jobs[job.ID] = job
+	s.updatedAt = time.Now().UTC()
 	raw, err := json.MarshalIndent(s.jobs, "", "  ")
 	if err != nil {
 		return err
@@ -436,6 +461,30 @@ func (s *testJobStore) Upsert(_ context.Context, job domain.Job) error {
 		return err
 	}
 	return nil
+}
+
+func (s *testJobStore) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.jobs, id)
+	s.updatedAt = time.Now().UTC()
+	raw, err := json.MarshalIndent(s.jobs, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(s.path, raw, 0o644); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *testJobStore) UpdatedAt(context.Context) (time.Time, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.updatedAt, nil
 }
 
 var _ JobStore = (*testJobStore)(nil)

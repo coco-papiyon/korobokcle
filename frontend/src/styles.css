@@ -313,6 +313,11 @@ h1 {
   color: #122033;
 }
 
+.button--danger {
+  background: linear-gradient(135deg, #cf3b3b, #b42318);
+  color: #fff;
+}
+
 .error {
   margin: 16px 0 0;
   padding: 12px 14px;
@@ -670,7 +675,14 @@ h1 {
 
 .modal__actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.modal__actions-group {
+  display: flex;
   gap: 12px;
   flex-wrap: wrap;
 }
@@ -741,5 +753,13 @@ h1 {
 
   .modal__actions {
     justify-content: stretch;
+  }
+
+  .modal__actions-group {
+    width: 100%;
+  }
+
+  .modal__actions > .button--danger {
+    margin-left: auto;
   }
 }

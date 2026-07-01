@@ -14,6 +14,16 @@ export type JobArtifact = {
   path: string
 }
 
+export type JobListResponse = {
+  updatedAt: string
+  jobs?: Job[]
+}
+
+export type JobDetailResponse = {
+  updatedAt: string
+  job: Job
+}
+
 export type SearchCondition = {
   labelIncludes: string[]
   labelExcludes: string[]

@@ -27,12 +27,15 @@ describe('JobDetailPanel', () => {
   it('uses running chip colors for running states in detail view', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
-        id: 'job-1',
-        kind: 'issue_implementation',
-        state: 'implementation_running',
-        repository: 'owner/repo',
-        number: 1,
-        title: '実装中ジョブ',
+        updatedAt: '2026-07-01T00:00:00Z',
+        job: {
+          id: 'job-1',
+          kind: 'issue_implementation',
+          state: 'implementation_running',
+          repository: 'owner/repo',
+          number: 1,
+          title: '実装中ジョブ',
+        },
       }),
     )
     vi.stubGlobal('fetch', fetchMock)
@@ -55,15 +58,18 @@ describe('JobDetailPanel', () => {
     const fetchMock = vi.fn()
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse({
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        job: {
           id: 'job-2',
           kind: 'issue_implementation',
           state: 'implementation_ready',
           repository: 'owner/repo',
           number: 2,
           title: '待機中ジョブ',
-        }),
-      )
+        },
+      }),
+    )
       .mockResolvedValueOnce(
         jsonResponse({
           content: 'artifact content',
@@ -84,5 +90,45 @@ describe('JobDetailPanel', () => {
     expect(stateChip.classes()).toContain('chip')
     expect(stateChip.classes()).not.toContain('chip--running')
     expect(stateChip.text()).toBe('実装完了')
+  })
+
+  it('deletes the current job after confirmation', async () => {
+    const fetchMock = vi.fn()
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        job: {
+          id: 'job-3',
+          kind: 'issue_implementation',
+          state: 'implementation_ready',
+          repository: 'owner/repo',
+          number: 3,
+          title: '削除対象',
+        },
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        content: 'artifact content',
+        path: 'artifact.md',
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        jobId: 'job-3',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    await wrapper.get('button.button--danger').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/jobs/job-3', { method: 'DELETE' })
+    expect(wrapper.text()).toContain('一覧からジョブを選択してください。')
   })
 })

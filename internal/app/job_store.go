@@ -7,21 +7,30 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
 
 type JobStore interface {
 	List(context.Context) ([]domain.Job, error)
+	UpdatedAt(context.Context) (time.Time, error)
 	Get(context.Context, string) (domain.Job, bool, error)
 	Upsert(context.Context, domain.Job) error
+	Delete(context.Context, string) error
 }
 
 type FileJobStore struct {
 	path string
 
-	mu   sync.Mutex
-	jobs map[string]domain.Job
+	mu        sync.Mutex
+	jobs      map[string]domain.Job
+	updatedAt time.Time
+}
+
+type jobStoreFile struct {
+	UpdatedAt time.Time       `json:"updatedAt"`
+	Jobs      []domain.Job    `json:"jobs"`
 }
 
 func NewFileJobStore(path string) (*FileJobStore, error) {
@@ -46,6 +55,12 @@ func (s *FileJobStore) List(context.Context) ([]domain.Job, error) {
 	return out, nil
 }
 
+func (s *FileJobStore) UpdatedAt(context.Context) (time.Time, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.updatedAt, nil
+}
+
 func (s *FileJobStore) Get(_ context.Context, id string) (domain.Job, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -62,6 +77,16 @@ func (s *FileJobStore) Upsert(_ context.Context, job domain.Job) error {
 		return fmt.Errorf("job id is required")
 	}
 	s.jobs[job.ID] = job
+	s.updatedAt = time.Now().UTC()
+	return s.saveLocked()
+}
+
+func (s *FileJobStore) Delete(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.jobs, id)
+	s.updatedAt = time.Now().UTC()
 	return s.saveLocked()
 }
 
@@ -74,13 +99,24 @@ func (s *FileJobStore) load() error {
 		return fmt.Errorf("read jobs store: %w", err)
 	}
 
-	var stored []domain.Job
+	var stored jobStoreFile
 	if err := json.Unmarshal(raw, &stored); err != nil {
-		return fmt.Errorf("decode jobs store: %w", err)
+		var jobs []domain.Job
+		if err := json.Unmarshal(raw, &jobs); err != nil {
+			return fmt.Errorf("decode jobs store: %w", err)
+		}
+		for _, job := range jobs {
+			s.jobs[job.ID] = job
+		}
+		if info, statErr := os.Stat(s.path); statErr == nil {
+			s.updatedAt = info.ModTime().UTC()
+		}
+		return nil
 	}
-	for _, job := range stored {
+	for _, job := range stored.Jobs {
 		s.jobs[job.ID] = job
 	}
+	s.updatedAt = stored.UpdatedAt.UTC()
 	return nil
 }
 
@@ -94,7 +130,10 @@ func (s *FileJobStore) saveLocked() error {
 		stored = append(stored, job)
 	}
 
-	raw, err := json.MarshalIndent(stored, "", "  ")
+	raw, err := json.MarshalIndent(jobStoreFile{
+		UpdatedAt: s.updatedAt,
+		Jobs:      stored,
+	}, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode jobs store: %w", err)
 	}

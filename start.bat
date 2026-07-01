@@ -14,7 +14,7 @@ if not exist "frontend\node_modules" (
 )
 
 set "FRONTEND_RUNNING="
-for /f "tokens=5" %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess"') do set "FRONTEND_RUNNING=%%P"
+for /f "tokens=1" %%P in ('powershell -NoProfile -ExecutionPolicy Bypass -Command "$p = Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue ^| Select-Object -First 1 -ExpandProperty OwningProcess; if ($p) { Write-Output $p }"') do set "FRONTEND_RUNNING=%%P"
 if defined FRONTEND_RUNNING (
   echo Frontend is already running on http://localhost:5173 ^(PID: %FRONTEND_RUNNING%^). Skipping startup.
 ) else (

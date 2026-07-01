@@ -23,6 +23,14 @@ function selectJob(jobId: string) {
   activeTab.value = 'detail'
 }
 
+function handleJobDeleted(jobId: string) {
+  if (selectedJobId.value === jobId) {
+    selectedJobId.value = ''
+  }
+  detailRefreshKey.value += 1
+  activeTab.value = 'jobs'
+}
+
 function selectTab(tab: Tab) {
   activeTab.value = tab
 }
@@ -92,7 +100,7 @@ function selectTab(tab: Tab) {
         </div>
 
         <div v-show="activeTab === 'detail'" class="tab-panel" role="tabpanel">
-          <JobDetailPanel :job-id="selectedJobId" :refresh-key="detailRefreshKey" />
+          <JobDetailPanel :job-id="selectedJobId" :refresh-key="detailRefreshKey" @deleted="handleJobDeleted" />
         </div>
       </section>
     </main>

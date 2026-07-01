@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { Job, JobArtifact } from '../types'
+import type { Job, JobArtifact, JobDetailResponse } from '../types'
 import { jobStateChipClass } from '../utils/jobState'
 
 const props = defineProps<{
@@ -11,12 +11,17 @@ const props = defineProps<{
 const detailLoading = ref(false)
 const detailError = ref('')
 const detailJob = ref<Job | null>(null)
+const detailUpdatedAt = ref('')
 const artifactLoading = ref(false)
 const artifactError = ref('')
 const artifact = ref<JobArtifact | null>(null)
 const artifactUserComment = ref('')
 const artifactActionLoading = ref(false)
+const deleteLoading = ref(false)
 let detailRequestSequence = 0
+const emit = defineEmits<{
+  (event: 'deleted', jobId: string): void
+}>()
 
 const stateLabels: Record<string, string> = {
   detected: '検知済み',
@@ -108,16 +113,23 @@ async function loadJobDetail(id: string) {
     detailJob.value = null
     return
   }
-  detailLoading.value = true
+  const showLoading = detailJob.value?.id !== id || detailJob.value == null
+  if (showLoading) {
+    detailLoading.value = true
+  }
   detailError.value = ''
   try {
     const res = await fetch(`/api/jobs/${encodeURIComponent(id)}`, { cache: 'no-store' })
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`)
     }
-    const job = (await res.json()) as Job
-    if (requestSequence === detailRequestSequence) {
-      detailJob.value = job
+    const payload = (await res.json()) as JobDetailResponse
+    if (
+      requestSequence === detailRequestSequence &&
+      (payload.updatedAt !== detailUpdatedAt.value || detailJob.value?.id !== payload.job.id)
+    ) {
+      detailUpdatedAt.value = payload.updatedAt
+      detailJob.value = payload.job
     }
   } catch (err) {
     if (requestSequence === detailRequestSequence) {
@@ -125,7 +137,7 @@ async function loadJobDetail(id: string) {
       detailJob.value = null
     }
   } finally {
-    if (requestSequence === detailRequestSequence) {
+    if (requestSequence === detailRequestSequence && showLoading) {
       detailLoading.value = false
     }
   }
@@ -230,6 +242,35 @@ async function rerunArtifact() {
   }
 }
 
+async function deleteJob() {
+  if (!detailJob.value) {
+    return
+  }
+  const confirmed = window.confirm(`ジョブ ${detailJob.value.id} を削除します。よろしいですか?`)
+  if (!confirmed) {
+    return
+  }
+  deleteLoading.value = true
+  artifactError.value = ''
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(detailJob.value.id)}`, {
+      method: 'DELETE',
+    })
+    if (!res.ok && res.status !== 204) {
+      const message = await res.text()
+      throw new Error(message || `HTTP ${res.status}`)
+    }
+    detailUpdatedAt.value = ''
+    emit('deleted', detailJob.value.id)
+    detailJob.value = null
+    artifact.value = null
+  } catch (err) {
+    artifactError.value = err instanceof Error ? err.message : 'unknown error'
+  } finally {
+    deleteLoading.value = false
+  }
+}
+
 watch(
   () => [props.jobId, props.refreshKey] as const,
   ([jobId]) => {
@@ -310,20 +351,25 @@ watch(
           </label>
 
           <div class="modal__actions">
-            <button class="button button--ghost" type="button" @click="rerunArtifact" :disabled="artifactActionLoading">
-              再実行
-            </button>
-            <button
-              v-if="canRequestChanges(detailJob)"
-              class="button button--ghost"
-              type="button"
-              @click="requestChanges"
-              :disabled="artifactActionLoading"
-            >
-              修正依頼
-            </button>
-            <button class="button" type="button" @click="approveArtifact" :disabled="artifactActionLoading">
-              承認
+            <div class="modal__actions-group">
+              <button class="button" type="button" @click="approveArtifact" :disabled="artifactActionLoading">
+                承認
+              </button>
+              <button
+                v-if="canRequestChanges(detailJob)"
+                class="button button--ghost"
+                type="button"
+                @click="requestChanges"
+                :disabled="artifactActionLoading"
+              >
+                修正依頼
+              </button>
+              <button class="button button--ghost" type="button" @click="rerunArtifact" :disabled="artifactActionLoading">
+                再実行
+              </button>
+            </div>
+            <button class="button button--danger" type="button" @click="deleteJob" :disabled="artifactActionLoading || deleteLoading">
+              削除
             </button>
           </div>
         </div>

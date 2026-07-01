@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/config"
 	"github.com/coco-papiyon/korobokcle/internal/domain"
@@ -15,8 +16,10 @@ import (
 
 type JobStore interface {
 	List(context.Context) ([]domain.Job, error)
+	UpdatedAt(context.Context) (time.Time, error)
 	Get(context.Context, string) (domain.Job, bool, error)
 	Upsert(context.Context, domain.Job) error
+	Delete(context.Context, string) error
 }
 
 type SettingsStore interface {
@@ -73,7 +76,15 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"jobs": jobs})
+			updatedAt, err := store.UpdatedAt(r.Context())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"updatedAt": updatedAt.UTC().Format(time.RFC3339Nano),
+				"jobs":      jobs,
+			})
 		case http.MethodPost:
 			var req struct {
 				ID         string          `json:"id"`
@@ -248,6 +259,14 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 			}
 			return
 		}
+		if r.Method == http.MethodDelete {
+			if err := store.Delete(r.Context(), id); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -265,7 +284,15 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 			http.NotFound(w, r)
 			return
 		}
-		_ = json.NewEncoder(w).Encode(job)
+		updatedAt, err := store.UpdatedAt(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"updatedAt": updatedAt.UTC().Format(time.RFC3339Nano),
+			"job":       job,
+		})
 	})
 
 	mux.HandleFunc("/api/settings", func(w http.ResponseWriter, r *http.Request) {

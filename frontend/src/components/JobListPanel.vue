@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { Job } from '../types'
+import type { Job, JobListResponse } from '../types'
 import { jobStateChipClass } from '../utils/jobState'
 
 const props = defineProps<{
@@ -12,6 +12,7 @@ const emit = defineEmits<{
 }>()
 
 const jobs = ref<Job[]>([])
+const jobsUpdatedAt = ref('')
 const loadingJobs = ref(false)
 const error = ref('')
 const showCompletedJobs = ref(false)
@@ -59,19 +60,27 @@ const visibleJobs = computed(() => {
 })
 
 async function loadJobs() {
-  loadingJobs.value = true
+  const showLoading = jobsUpdatedAt.value === '' && jobs.value.length === 0
+  if (showLoading) {
+    loadingJobs.value = true
+  }
   error.value = ''
   try {
     const res = await fetch('/api/jobs')
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`)
     }
-    const payload = (await res.json()) as { jobs?: Job[] }
-    jobs.value = payload.jobs ?? []
+    const payload = (await res.json()) as JobListResponse
+    if (payload.updatedAt !== jobsUpdatedAt.value) {
+      jobs.value = payload.jobs ?? []
+      jobsUpdatedAt.value = payload.updatedAt
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'unknown error'
   } finally {
-    loadingJobs.value = false
+    if (showLoading) {
+      loadingJobs.value = false
+    }
   }
 }
 
