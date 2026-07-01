@@ -68,9 +68,12 @@ describe('SettingsPanel', () => {
     const inputs = wrapper.findAll('input')
     const selects = wrapper.findAll('select')
     const headings = wrapper.findAll('h2').map((heading) => heading.text())
+    const buttons = wrapper.findAll('button')
 
     expect(headings).toContain('プロバイダー設定')
     expect(headings).toContain('監視設定')
+    expect(buttons).toHaveLength(1)
+    expect(buttons[0].text()).toBe('保存')
     expect(inputs[0].element).toHaveProperty('value', 'owner/repository')
     expect(inputs[1].element).toHaveProperty('value', '120')
     expect(inputs[2].element).toHaveProperty('value', '4')
@@ -102,7 +105,7 @@ describe('SettingsPanel', () => {
     await selects[0].setValue('github_copilot')
     await selects[1].setValue('claude-opus-4.6')
 
-    await wrapper.get('button:not(.button--ghost)').trigger('click')
+    await wrapper.get('button').trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenNthCalledWith(

@@ -207,11 +207,11 @@ onMounted(() => {
 <template>
   <div class="hero hero--compact">
     <div class="hero__header">
+      <div class="hero__intro">
+        <p class="hero__lede">AI プロバイダーと監視条件を調整し、保存した内容をすぐ反映する。</p>
+      </div>
       <div class="hero__actions">
-        <button class="button button--ghost" type="button" @click="loadSettings" :disabled="settingsLoading">
-          {{ settingsLoading ? '読込中' : '再読込' }}
-        </button>
-        <button class="button" type="button" @click="saveSettings" :disabled="settingsSaving">
+        <button class="button button--small" type="button" @click="saveSettings" :disabled="settingsSaving">
           {{ settingsSaving ? '保存中' : '保存' }}
         </button>
       </div>
