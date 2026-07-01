@@ -180,7 +180,8 @@ var allowedTransitions = map[JobState]map[JobState]struct{}{
 		StateFailed:      {},
 	},
 	StateReviewFixed: {
-		StateFailed: {},
+		StateReviewRunning: {},
+		StateFailed:        {},
 	},
 	StateReviewRunning: {
 		StateReviewReady: {},
@@ -276,6 +277,8 @@ func RunningStateForKind(kind JobKind, state JobState) JobState {
 		switch state {
 		case StateReviewFixDesignApproved, StateReviewFixImplementationReady, StateReviewFixImplementationRunning, StateReviewFixImplementationApproved:
 			return StateReviewFixImplementationRunning
+		case StateReviewFixed:
+			return StateReviewRunning
 		default:
 			return StateReviewFixImplementationRunning
 		}
@@ -298,6 +301,8 @@ func ReadyStateForKind(kind JobKind, state JobState) JobState {
 		switch state {
 		case StateReviewFixDesignApproved, StateReviewFixImplementationRunning, StateReviewFixImplementationReady, StateReviewFixImplementationApproved:
 			return StateReviewFixImplementationReady
+		case StateReviewFixed:
+			return StateReviewReady
 		default:
 			return StateReviewFixImplementationReady
 		}

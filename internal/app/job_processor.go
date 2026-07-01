@@ -380,7 +380,7 @@ func systemPromptForJob(job domain.Job) string {
 }
 
 func implementationJob(job domain.Job) bool {
-	return job.Kind == domain.JobKindIssueImplementation || job.Kind == domain.JobKindPRConflict || (job.Kind == domain.JobKindPRFeedback && (job.State == domain.StatePRReviewComment || job.State == domain.StateReviewFixImplementationRunning || job.State == domain.StateReviewFixImplementationReady || job.State == domain.StateReviewFixImplementationApproved || job.State == domain.StateReviewFixDesignApproved || job.State == domain.StateReviewFixed))
+	return job.Kind == domain.JobKindIssueImplementation || job.Kind == domain.JobKindPRConflict || (job.Kind == domain.JobKindPRFeedback && (job.State == domain.StatePRReviewComment || job.State == domain.StateReviewFixImplementationRunning || job.State == domain.StateReviewFixImplementationReady || job.State == domain.StateReviewFixImplementationApproved || job.State == domain.StateReviewFixDesignApproved))
 }
 
 func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, settings domain.WatchSettings) (string, string, error) {

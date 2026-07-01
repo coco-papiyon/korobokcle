@@ -343,6 +343,13 @@ func TestAppendIssueAILog(t *testing.T) {
 	}
 }
 
+func TestImplementationJobExcludesReviewFixed(t *testing.T) {
+	job := domain.Job{Kind: domain.JobKindPRFeedback, State: domain.StateReviewFixed}
+	if implementationJob(job) {
+		t.Fatal("expected review_fixed to be treated as review workflow, not implementation workflow")
+	}
+}
+
 func TestStripLeadingH1(t *testing.T) {
 	artifact := "# 画面構成変更 設計\n\n## 概要\n設計結果"
 	want := "## 概要\n設計結果"

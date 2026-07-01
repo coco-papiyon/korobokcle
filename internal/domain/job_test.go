@@ -105,3 +105,15 @@ func TestPRFeedbackReviewCommentStartsImplementation(t *testing.T) {
 		t.Fatalf("ReadyStateForKind() = %s, want %s", got, StateReviewFixImplementationReady)
 	}
 }
+
+func TestPRFeedbackReviewFixedStartsReview(t *testing.T) {
+	if got := RunningStateForKind(JobKindPRFeedback, StateReviewFixed); got != StateReviewRunning {
+		t.Fatalf("RunningStateForKind() = %s, want %s", got, StateReviewRunning)
+	}
+	if got := ReadyStateForKind(JobKindPRFeedback, StateReviewFixed); got != StateReviewReady {
+		t.Fatalf("ReadyStateForKind() = %s, want %s", got, StateReviewReady)
+	}
+	if !StateReviewFixed.CanTransitionTo(StateReviewRunning) {
+		t.Fatal("expected review_fixed -> review_running to be allowed")
+	}
+}
