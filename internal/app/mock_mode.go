@@ -144,7 +144,7 @@ func (p *MockWorkflowProcessor) Process(ctx context.Context, job domain.Job) err
 	if !job.State.CanTransitionTo(runningState) && job.State != runningState {
 		return fmt.Errorf("invalid mock transition: %s -> %s", job.State, runningState)
 	}
-	job.State = runningState
+	job = markJobState(job, runningState)
 	if err := p.store.Upsert(ctx, job); err != nil {
 		return err
 	}
@@ -158,7 +158,7 @@ func (p *MockWorkflowProcessor) Process(ctx context.Context, job domain.Job) err
 	if err := os.WriteFile(artifactPath, []byte(p.mockArtifact(ctx, job)), 0o644); err != nil {
 		return fmt.Errorf("write mock artifact: %w", err)
 	}
-	job.State = readyState
+	job = markJobState(job, readyState)
 	if err := p.store.Upsert(ctx, job); err != nil {
 		return err
 	}
@@ -253,7 +253,7 @@ func (s *MockArtifactActionService) RerunArtifact(ctx context.Context, id, userC
 			return domain.Job{}, err
 		}
 	}
-	job.State = domain.RunningStateForReadyState(job.State)
+	job = markJobState(job, domain.RunningStateForReadyState(job.State))
 	if err := s.store.Upsert(ctx, job); err != nil {
 		return domain.Job{}, err
 	}
@@ -277,7 +277,7 @@ func (s *MockArtifactActionService) completeReadyJob(ctx context.Context, id str
 	if !isReadyState(job.State) {
 		return domain.Job{}, fmt.Errorf("job is not ready for approval")
 	}
-	job.State = domain.StateCompleted
+	job = markJobState(job, domain.StateCompleted)
 	if err := s.store.Upsert(ctx, job); err != nil {
 		return domain.Job{}, err
 	}

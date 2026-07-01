@@ -121,6 +121,9 @@ func TestJobsAPI(t *testing.T) {
 	if updated.State != domain.StateDesignRunning {
 		t.Fatalf("updated state = %s, want %s", updated.State, domain.StateDesignRunning)
 	}
+	if updated.UpdatedAt.IsZero() {
+		t.Fatal("updatedAt is zero after state patch")
+	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/jobs/"+detail.Job.ID, nil)
 	deleteRec := httptest.NewRecorder()

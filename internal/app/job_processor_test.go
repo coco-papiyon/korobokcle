@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
@@ -45,6 +46,8 @@ func TestWorkflowProcessorProcessesDesignJob(t *testing.T) {
 		Repository: "owner/repo",
 		Number:     114,
 		Title:      "画面構成変更",
+		FetchedAt:  time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 7, 1, 1, 0, 0, 0, time.UTC),
 	}
 
 	if err := processor(context.Background(), job); err != nil {
@@ -60,6 +63,12 @@ func TestWorkflowProcessorProcessesDesignJob(t *testing.T) {
 	}
 	if updated.State != domain.StateDesignReady {
 		t.Fatalf("updated state = %s, want %s", updated.State, domain.StateDesignReady)
+	}
+	if !updated.FetchedAt.Equal(job.FetchedAt) {
+		t.Fatalf("fetchedAt = %s, want %s", updated.FetchedAt, job.FetchedAt)
+	}
+	if updated.UpdatedAt.Equal(job.UpdatedAt) || updated.UpdatedAt.IsZero() {
+		t.Fatalf("updatedAt = %s, want a new timestamp", updated.UpdatedAt)
 	}
 
 	artifactPath := filepath.Join(baseDir, ".workspace", "design", "114_画面構成変更.md")
@@ -148,6 +157,8 @@ func TestWorkflowProcessorProcessesImplementationJob(t *testing.T) {
 		Repository: "owner/repo",
 		Number:     114,
 		Title:      "画面構成変更",
+		FetchedAt:  time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+		UpdatedAt:  time.Date(2026, 7, 1, 1, 0, 0, 0, time.UTC),
 	}
 	if err := processor(context.Background(), job); err != nil {
 		t.Fatalf("processor() error = %v", err)
@@ -162,6 +173,12 @@ func TestWorkflowProcessorProcessesImplementationJob(t *testing.T) {
 	}
 	if updated.State != domain.StateImplementationReady {
 		t.Fatalf("updated state = %s, want %s", updated.State, domain.StateImplementationReady)
+	}
+	if !updated.FetchedAt.Equal(job.FetchedAt) {
+		t.Fatalf("fetchedAt = %s, want %s", updated.FetchedAt, job.FetchedAt)
+	}
+	if updated.UpdatedAt.Equal(job.UpdatedAt) || updated.UpdatedAt.IsZero() {
+		t.Fatalf("updatedAt = %s, want a new timestamp", updated.UpdatedAt)
 	}
 
 	worktreePath := implementationWorktreePath(toolDir, job)

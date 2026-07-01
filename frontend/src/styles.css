@@ -508,6 +508,30 @@ h1 {
   font-weight: 700;
 }
 
+.job-table__title-content {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.job-table__title-text {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.job-time-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: rgba(18, 32, 51, 0.58);
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .job-card {
   padding: 18px 18px 16px;
   border: 1px solid rgba(18, 32, 51, 0.08);
@@ -662,6 +686,15 @@ h1 {
 
 .detail__meta-value--number {
   color: rgba(18, 32, 51, 0.72);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.detail__number-text {
+  min-width: 0;
 }
 
 .detail-artifact {
