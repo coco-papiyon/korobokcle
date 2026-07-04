@@ -41,7 +41,7 @@ Issue / PR の取得で `gh` の API を使います。必要に応じて `read:
 start.bat
 ```
 
-バックエンド（`http://localhost:8080`）と Vite 開発サーバー（`http://localhost:5173`）が別ウィンドウで起動します。画面は `http://localhost:5173` を開いてください。フロントエンドのソース変更は Vite HMR により自動反映されます。
+バックエンド（既定 `http://localhost:8080`）と Vite 開発サーバー（`http://localhost:5173`）が別ウィンドウで起動します。画面は `http://localhost:5173` を開いてください。フロントエンドのソース変更は Vite HMR により自動反映されます。
 
 以下は個別に起動する場合の手順です。
 
@@ -67,10 +67,10 @@ npm run build
 go run ./cmd/korobokcle --tool-dir . --work-dir .
 ```
 
-引数で `base_dir`、`tool_dir`、`work_dir` を変えられます。
+引数で `base_dir`、`tool_dir`、`work_dir`、`addr` を変えられます。`addr` の既定は `:8080` です。
 
 ```bash
-go run ./cmd/korobokcle --base-dir C:\path\to\repo --tool-dir C:\path\to\korobokcle --work-dir C:\path\to\korobokcle-data
+go run ./cmd/korobokcle --base-dir C:\path\to\repo --tool-dir C:\path\to\korobokcle --work-dir C:\path\to\korobokcle-data --addr :8082
 ```
 
 ## API
@@ -93,7 +93,7 @@ cd frontend
 npm run dev
 ```
 
-Vite は `/api` と `/healthz` を `http://127.0.0.1:8080` に proxy します。
+Vite は `/api` と `/healthz` を `http://127.0.0.1:8080` に proxy します。`KOROBOKCLE_BACKEND_PORT` を設定すると、起動ポートに追従します。
 
 ジョブ一覧では `Kind` と状態グループを選んで絞り込めます。既定では `完了` は非表示で、条件不一致時は「条件に一致するジョブがありません。」と表示します。
 

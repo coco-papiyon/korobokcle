@@ -8,7 +8,7 @@ pushd "%ROOT%" || exit /b 1
 if not exist "frontend\node_modules" (
   echo Installing frontend dependencies...
   pushd "frontend" || goto :error
-  call npm install
+  call npm ci
   if errorlevel 1 goto :error
   popd
 )

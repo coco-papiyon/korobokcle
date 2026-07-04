@@ -1,40 +1,62 @@
 @echo off
-setlocal EnableExtensions
+setlocal EnableExtensions EnableDelayedExpansion
 
 set "ROOT=%~dp0"
-set "ROOT_DIR=%ROOT:~0,-1%"
 pushd "%ROOT%" || exit /b 1
+
+set "BACKEND_PORT=8081"
+set "FORWARD_ARGS="
+set "NEXT_IS_BACKEND_PORT="
+for %%A in (%*) do (
+  if defined NEXT_IS_BACKEND_PORT (
+    set "BACKEND_PORT=%%~A"
+    set "NEXT_IS_BACKEND_PORT="
+  ) else if /I "%%~A"=="--backend-port" (
+    set "NEXT_IS_BACKEND_PORT=1"
+  ) else if /I "%%~A"=="-p" (
+    set "NEXT_IS_BACKEND_PORT=1"
+  ) else (
+    set "FORWARD_ARGS=!FORWARD_ARGS! %%~A"
+  )
+)
+if "%BACKEND_PORT:~0,1%"==":" set "BACKEND_PORT=%BACKEND_PORT:~1%"
 
 if not exist "frontend\node_modules" (
   echo Installing frontend dependencies...
   pushd "frontend" || goto :error
-  call npm install
+  call npm ci
   if errorlevel 1 goto :error
   popd
 )
 
-set "FRONTEND_RUNNING="
-for /f "tokens=5" %%P in ('netstat -ano ^| findstr /R /C:":5173 .*LISTENING"') do (
-  if not defined FRONTEND_RUNNING set "FRONTEND_RUNNING=%%P"
-)
-if defined FRONTEND_RUNNING (
-  echo Frontend is already running on http://localhost:5173 ^(PID: %FRONTEND_RUNNING%^). Skipping startup.
-) else (
-  echo Starting frontend at http://localhost:5173...
-  start "korobokcle frontend" /D "%ROOT_DIR%\frontend" cmd /k npm run dev
-  if errorlevel 1 goto :error
-  echo Frontend source changes are applied automatically by Vite HMR.
-)
-echo Backend runs in this window.
+echo Building frontend...
+pushd "frontend" || goto :error
+call npm run build
+if errorlevel 1 goto :error
+popd
+
+echo Syncing frontend build to tests static contents...
+if not exist "tests\static" mkdir "tests\static"
+robocopy "frontend\dist" "tests\static" /MIR /NFL /NDL /NJH /NJS /NC /NS /NP
+set "ROBOCOPY_EXIT=%errorlevel%"
+if %ROBOCOPY_EXIT% GEQ 8 goto :error
+
+echo Building backend executable...
+go build -o "tests\korobokcle.exe" .\cmd\korobokcle
+if errorlevel 1 goto :error
+
+echo Running korobokcle from tests directory...
+pushd "tests" || goto :error
 
 echo Creating test data...
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\create_test_data.ps1" -Root ".\tests"
+powershell -NoProfile -ExecutionPolicy Bypass -File "..\create_test_data.ps1" -Root "."
 if errorlevel 1 goto :error
 
 echo Starting korobokcle in mock mode...
-go run .\cmd\korobokcle --tool-dir "%ROOT_DIR%" --base-dir "%ROOT_DIR%\tests" --work-dir "%ROOT_DIR%\tests" --mock-mode %*
+.\korobokcle.exe --addr :%BACKEND_PORT% --mock-mode %FORWARD_ARGS%
 if errorlevel 1 goto :error
 
+popd
 popd
 exit /b 0
 
