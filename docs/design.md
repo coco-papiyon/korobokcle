@@ -432,6 +432,8 @@ AI の主出力は Markdown とする。
 
 NG の場合は、ユーザの指示文を追加で受け取り、再実行する。
 
+完了済み・承認済みのジョブでも、`design_approved`、`implementation_approved`、`review_approved`、`review_fixed`、`pr_created`、`pr_conflict_resolved`、`completed` などの最終状態に到達した成果物は詳細画面で閲覧対象とする。
+
 ### 10.2 GitHub 反映
 
 承認が通ったら、次を行う。

@@ -22,6 +22,7 @@ const artifactUserComment = ref('')
 const artifactActionLoading = ref(false)
 const deleteLoading = ref(false)
 let detailRequestSequence = 0
+let artifactRequestSequence = 0
 let detailRefreshTimer: number | undefined
 const emit = defineEmits<{
   (event: 'close'): void
@@ -59,10 +60,18 @@ const stateLabels: Record<string, string> = {
 
 const inspectableStates = new Set([
   'design_ready',
+  'design_approved',
   'implementation_ready',
+  'implementation_approved',
+  'pr_created',
   'review_ready',
+  'review_approved',
+  'review_fixed',
   'review_fix_implementation_ready',
+  'review_fix_implementation_approved',
+  'review_fix_design_approved',
   'pr_conflict_ready',
+  'pr_conflict_resolved',
   'completed',
 ])
 
@@ -148,6 +157,11 @@ async function loadJobDetail(id: string) {
     detailError.value = ''
     detailJob.value = null
     detailBranch.value = ''
+    artifactRequestSequence += 1
+    artifactLoading.value = false
+    artifactError.value = ''
+    artifact.value = null
+    artifactUserComment.value = ''
     return
   }
   const showLoading = detailJob.value?.id !== id || detailJob.value == null
@@ -169,6 +183,15 @@ async function loadJobDetail(id: string) {
         detailUpdatedAt.value = payload.updatedAt
         detailJob.value = payload.job
         detailBranch.value = branch
+        artifactUserComment.value = ''
+      }
+      if (canInspectArtifact(payload.job)) {
+        void loadArtifact(payload.job.id)
+      } else {
+        artifactRequestSequence += 1
+        artifactLoading.value = false
+        artifactError.value = ''
+        artifact.value = null
       }
     }
   } catch (err) {
@@ -176,6 +199,11 @@ async function loadJobDetail(id: string) {
       detailError.value = err instanceof Error ? err.message : 'unknown error'
       detailJob.value = null
       detailBranch.value = ''
+      artifactRequestSequence += 1
+      artifactLoading.value = false
+      artifactError.value = ''
+      artifact.value = null
+      artifactUserComment.value = ''
     }
   } finally {
     if (requestSequence === detailRequestSequence && showLoading) {
@@ -204,24 +232,32 @@ function stopPolling() {
   detailRefreshTimer = undefined
 }
 
-async function loadArtifact() {
-  if (!detailJob.value) {
+async function loadArtifact(jobId: string) {
+  if (!jobId) {
     return
   }
+  const requestSequence = ++artifactRequestSequence
   artifactLoading.value = true
   artifactError.value = ''
   artifact.value = null
   try {
-    const res = await fetch(`/api/jobs/${encodeURIComponent(detailJob.value.id)}/artifact`, { cache: 'no-store' })
+    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/artifact`, { cache: 'no-store' })
     if (!res.ok) {
       const message = await res.text()
       throw new Error(message || `HTTP ${res.status}`)
     }
-    artifact.value = (await res.json()) as JobArtifact
+    const payload = (await res.json()) as JobArtifact
+    if (requestSequence === artifactRequestSequence) {
+      artifact.value = payload
+    }
   } catch (err) {
-    artifactError.value = err instanceof Error ? err.message : 'unknown error'
+    if (requestSequence === artifactRequestSequence) {
+      artifactError.value = err instanceof Error ? err.message : 'unknown error'
+    }
   } finally {
-    artifactLoading.value = false
+    if (requestSequence === artifactRequestSequence) {
+      artifactLoading.value = false
+    }
   }
 }
 
@@ -352,20 +388,6 @@ watch(
     }
     void loadJobDetail(jobId)
     startPolling()
-  },
-  { immediate: true },
-)
-
-watch(
-  detailJob,
-  (job) => {
-    artifact.value = null
-    artifactError.value = ''
-    artifactLoading.value = false
-    artifactUserComment.value = ''
-    if (job && canInspectArtifact(job)) {
-      void loadArtifact()
-    }
   },
   { immediate: true },
 )
