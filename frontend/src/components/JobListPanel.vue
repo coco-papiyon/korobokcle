@@ -35,22 +35,42 @@ const loadingJobs = ref(false)
 const error = ref('')
 const selectedKindFilter = ref<(typeof kindFilterDefinitions)[number]['value']>('all')
 const selectedStateFilter = ref<JobStateFilterValue>('unfinished')
+const selectedSortOrder = ref<'fetchedAtDesc' | 'fetchedAtAsc'>('fetchedAtDesc')
 let refreshTimer: number | undefined
 
 const filteredJobs = computed(() => {
-  return jobs.value.filter((job) => {
-    const kindMatches = selectedKindFilter.value === 'all' || job.kind === selectedKindFilter.value
-    const stateMatches = jobStateMatchesFilter(job.state, selectedStateFilter.value)
-    return kindMatches && stateMatches
-  })
+  return jobs.value
+    .map((job, index) => ({ job, index }))
+    .filter(({ job }) => {
+      const kindMatches = selectedKindFilter.value === 'all' || job.kind === selectedKindFilter.value
+      const stateMatches = jobStateMatchesFilter(job.state, selectedStateFilter.value)
+      return kindMatches && stateMatches
+    })
 })
 
+function compareFetchedAt(a: Job, b: Job) {
+  const fetchedAtA = Date.parse(a.fetchedAt ?? '')
+  const fetchedAtB = Date.parse(b.fetchedAt ?? '')
+  const hasFetchedAtA = Number.isFinite(fetchedAtA)
+  const hasFetchedAtB = Number.isFinite(fetchedAtB)
+
+  if (hasFetchedAtA && hasFetchedAtB && fetchedAtA !== fetchedAtB) {
+    return selectedSortOrder.value === 'fetchedAtDesc' ? fetchedAtB - fetchedAtA : fetchedAtA - fetchedAtB
+  }
+
+  return 0
+}
+
 const visibleJobs = computed(() => {
-  return [...filteredJobs.value].sort((a, b) => {
-    if (a.repository !== b.repository) return a.repository.localeCompare(b.repository)
-    if (a.number !== b.number) return a.number - b.number
-    return a.kind.localeCompare(b.kind)
-  })
+  return [...filteredJobs.value]
+    .sort((a, b) => {
+      const fetchedAtOrder = compareFetchedAt(a.job, b.job)
+      if (fetchedAtOrder !== 0) {
+        return fetchedAtOrder
+      }
+      return a.index - b.index
+    })
+    .map(({ job }) => job)
 })
 
 const jobsSummary = computed(() => `${visibleJobs.value.length} / ${jobs.value.length} 件`)
@@ -149,6 +169,16 @@ onBeforeUnmount(() => {
             <option v-for="option in jobStateFilterDefinitions" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
+          </select>
+        </div>
+      </section>
+
+      <section class="job-list-panel__filter-group">
+        <div class="job-list-panel__filter-row">
+          <h3>並び順</h3>
+          <select v-model="selectedSortOrder" class="control job-list-panel__filter-select" aria-label="並び順">
+            <option value="fetchedAtDesc">取得日時の新しい順</option>
+            <option value="fetchedAtAsc">取得日時の古い順</option>
           </select>
         </div>
       </section>

@@ -386,6 +386,97 @@ describe('JobListPanel', () => {
     expect(row.get('td:nth-child(6)').text()).toContain('設計中')
   })
 
+  it('sorts jobs by fetchedAt descending by default and keeps the selected order after refresh', async () => {
+    const fetchMock = vi.fn()
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          jobs: [
+            {
+              id: 'job-1',
+              kind: 'issue_design',
+              state: 'design_running',
+              repository: 'owner/repo',
+              number: 1,
+              title: '同時刻の先頭ジョブ',
+              fetchedAt: '2026-07-01T09:00:00Z',
+            },
+            {
+              id: 'job-2',
+              kind: 'issue_design',
+              state: 'design_running',
+              repository: 'owner/repo',
+              number: 2,
+              title: '同時刻の後続ジョブ',
+              fetchedAt: '2026-07-01T10:00:00Z',
+            },
+            {
+              id: 'job-3',
+              kind: 'issue_design',
+              state: 'design_running',
+              repository: 'owner/repo',
+              number: 3,
+              title: '最新ジョブ',
+              fetchedAt: '2026-07-01T12:00:00Z',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T01:00:00Z',
+          jobs: [
+            {
+              id: 'job-3',
+              kind: 'issue_design',
+              state: 'design_running',
+              repository: 'owner/repo',
+              number: 3,
+              title: '最新ジョブ',
+              fetchedAt: '2026-07-01T12:00:00Z',
+            },
+            {
+              id: 'job-2',
+              kind: 'issue_design',
+              state: 'design_running',
+              repository: 'owner/repo',
+              number: 2,
+              title: '同時刻の後続ジョブ',
+              fetchedAt: '2026-07-01T10:00:00Z',
+            },
+            {
+              id: 'job-1',
+              kind: 'issue_design',
+              state: 'design_running',
+              repository: 'owner/repo',
+              number: 1,
+              title: '同時刻の先頭ジョブ',
+              fetchedAt: '2026-07-01T09:00:00Z',
+            },
+          ],
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const titles = () => wrapper.findAll('tbody tr').map((row) => row.get('td:nth-child(4)').text())
+
+    expect(titles()).toEqual(['最新ジョブ', '同時刻の後続ジョブ', '同時刻の先頭ジョブ'])
+
+    await wrapper.get('select[aria-label="並び順"]').setValue('fetchedAtAsc')
+    await flushPromises()
+
+    expect(titles()).toEqual(['同時刻の先頭ジョブ', '同時刻の後続ジョブ', '最新ジョブ'])
+
+    await wrapper.setProps({ refreshKey: 1 })
+    await flushPromises()
+
+    expect(titles()).toEqual(['同時刻の先頭ジョブ', '同時刻の後続ジョブ', '最新ジョブ'])
+  })
+
   it('skips updating visible jobs when updatedAt is unchanged', async () => {
     try {
       let intervalHandler: TimerHandler | undefined
