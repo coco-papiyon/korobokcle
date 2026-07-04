@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
 import { vi } from 'vitest'
+import { nextTick } from 'vue'
 import App from './App.vue'
 import JobListPanel from './components/JobListPanel.vue'
 
@@ -94,7 +94,7 @@ describe('App', () => {
 
     await tabs[2].trigger('click')
     await nextTick()
-    expect(description()).toBe('Korobokcleの動作に関する設定（AIプロバイダー、実行条件、監視条件など）を管理します。')
+    expect(description()).toBe('Korobokcleの動作に関する設定（AIプロバイダー、実行条件、監視条件など）を管理する。')
 
     await tabs[0].trigger('click')
     await flushPromises()

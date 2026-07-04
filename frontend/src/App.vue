@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import SettingsPanel from './components/SettingsPanel.vue'
-import JobListPanel from './components/JobListPanel.vue'
 import JobDetailModal from './components/JobDetailModal.vue'
+import JobListPanel from './components/JobListPanel.vue'
+import SettingsPanel from './components/SettingsPanel.vue'
 import SkillGeneratorPanel from './components/SkillGeneratorPanel.vue'
 
 type Tab = 'settings' | 'skills' | 'jobs'
@@ -16,7 +16,7 @@ const settingsPanelRef = ref<InstanceType<typeof SettingsPanel> | null>(null)
 const skillPanelRef = ref<InstanceType<typeof SkillGeneratorPanel> | null>(null)
 const isJobListActive = computed(() => activeTab.value === 'jobs' && !isJobDetailOpen.value)
 const tabDescriptions: Record<Tab, string> = {
-  settings: 'Korobokcleの動作に関する設定（AIプロバイダー、実行条件、監視条件など）を管理します。',
+  settings: 'Korobokcleの動作に関する設定（AIプロバイダー、実行条件、監視条件など）を管理する。',
   skills: 'Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。',
   jobs: '監視中のジョブ一覧を確認し、処理対象を選択する。',
 }
