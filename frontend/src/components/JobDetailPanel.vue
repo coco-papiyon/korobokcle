@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
-import type { Job, JobArtifact, JobDetailResponse } from '../types'
+import type { Job, JobArtifact, JobDetailResponse, JobLogGroup } from '../types'
 import { jobStateChipClass, jobStateLabel as formatJobStateLabel } from '../utils/jobState'
 import { formatJobTimestampValue } from '../utils/jobTime'
 
@@ -15,9 +15,11 @@ const detailError = ref('')
 const detailJob = ref<Job | null>(null)
 const detailUpdatedAt = ref('')
 const detailBranch = ref('')
+const detailLogs = ref<JobLogGroup[]>([])
 const artifactLoading = ref(false)
 const artifactError = ref('')
 const artifact = ref<JobArtifact | null>(null)
+const artifactJobId = ref('')
 const artifactUserComment = ref('')
 const artifactActionLoading = ref(false)
 const deleteLoading = ref(false)
@@ -57,6 +59,7 @@ const detailTitle = computed(() => {
 const showIssueContext = computed(() => detailJob.value?.kind === 'issue_design' || detailJob.value?.kind === 'issue_implementation')
 
 const issueContext = computed(() => detailJob.value?.issueContext ?? '')
+const hasLogs = computed(() => detailLogs.value.length > 0)
 
 const relatedLink = computed(() => {
   const job = detailJob.value
@@ -118,6 +121,10 @@ function artifactTitle(job: Job | null) {
   return '結果'
 }
 
+function logGroupTitle(group: JobLogGroup) {
+  return `${group.roleLabel} / 試行 ${group.attempt}`
+}
+
 async function loadJobDetail(id: string) {
   const requestSequence = ++detailRequestSequence
   if (!id) {
@@ -125,10 +132,12 @@ async function loadJobDetail(id: string) {
     detailError.value = ''
     detailJob.value = null
     detailBranch.value = ''
+    detailLogs.value = []
     artifactRequestSequence += 1
     artifactLoading.value = false
     artifactError.value = ''
     artifact.value = null
+    artifactJobId.value = ''
     artifactUserComment.value = ''
     return
   }
@@ -145,6 +154,7 @@ async function loadJobDetail(id: string) {
     const payload = (await res.json()) as JobDetailResponse
     const branch = payload.branch || payload.job.branch || ''
     if (requestSequence === detailRequestSequence) {
+      detailLogs.value = payload.logs ?? []
       const isSameRevision =
         detailJob.value?.id === payload.job.id && payload.updatedAt === detailUpdatedAt.value
       if (!isSameRevision) {
@@ -160,6 +170,7 @@ async function loadJobDetail(id: string) {
         artifactLoading.value = false
         artifactError.value = ''
         artifact.value = null
+        artifactJobId.value = ''
       }
     }
   } catch (err) {
@@ -167,10 +178,12 @@ async function loadJobDetail(id: string) {
       detailError.value = err instanceof Error ? err.message : 'unknown error'
       detailJob.value = null
       detailBranch.value = ''
+      detailLogs.value = []
       artifactRequestSequence += 1
       artifactLoading.value = false
       artifactError.value = ''
       artifact.value = null
+      artifactJobId.value = ''
       artifactUserComment.value = ''
     }
   } finally {
@@ -205,9 +218,12 @@ async function loadArtifact(jobId: string) {
     return
   }
   const requestSequence = ++artifactRequestSequence
-  artifactLoading.value = true
   artifactError.value = ''
-  artifact.value = null
+  const hasCurrentArtifact = artifactJobId.value === jobId && artifact.value !== null
+  if (!hasCurrentArtifact) {
+    artifactLoading.value = true
+    artifact.value = null
+  }
   try {
     const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/artifact`, { cache: 'no-store' })
     if (!res.ok) {
@@ -217,6 +233,7 @@ async function loadArtifact(jobId: string) {
     const payload = (await res.json()) as JobArtifact
     if (requestSequence === artifactRequestSequence) {
       artifact.value = payload
+      artifactJobId.value = jobId
     }
   } catch (err) {
     if (requestSequence === artifactRequestSequence) {
@@ -429,9 +446,9 @@ onBeforeUnmount(() => {
           <span class="panel__hint">GET /api/jobs/:id/artifact</span>
         </div>
 
-        <div v-if="artifactLoading" class="empty-state">読み込み中...</div>
-        <div v-else-if="artifactError" class="error">{{ artifactError }}</div>
-        <div v-else>
+        <div v-if="artifactLoading && !artifact" class="empty-state">読み込み中...</div>
+        <div v-if="artifactError" class="error">{{ artifactError }}</div>
+        <div v-if="artifact">
           <pre class="artifact-view">{{ artifact?.content }}</pre>
 
           <label class="field">
@@ -468,6 +485,39 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+
+      <section class="detail-logs" aria-label="ログ">
+        <div class="panel__title-row">
+          <h3>ログ</h3>
+          <span class="panel__hint">役割別 / 試行別</span>
+        </div>
+        <div v-if="hasLogs" class="detail-logs__list">
+          <details
+            v-for="group in detailLogs"
+            :key="`${group.attempt}-${group.role}`"
+            class="detail-log-card"
+          >
+            <summary class="detail-log-card__summary">
+              <span>{{ logGroupTitle(group) }}</span>
+              <span class="detail-log-card__summary-count">{{ group.files.length }}ファイル</span>
+            </summary>
+            <div class="detail-log-card__files">
+              <article
+                v-for="file in group.files"
+                :key="file.path"
+                class="detail-log-card__file"
+              >
+                <div class="detail-log-card__file-header">
+                  <strong>{{ file.label }}</strong>
+                  <code>{{ file.path }}</code>
+                </div>
+                <pre class="detail-log-card__content">{{ file.content || '（空）' }}</pre>
+              </article>
+            </div>
+          </details>
+        </div>
+        <div v-else class="empty-state">ログはまだありません。</div>
+      </section>
 
       <section v-if="relatedLink" class="detail-links" aria-label="関連リンク">
         <div class="detail-links__header">

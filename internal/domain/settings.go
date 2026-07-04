@@ -31,17 +31,18 @@ type SearchCondition struct {
 }
 
 type WatchSettings struct {
-	Repository           string          `json:"repository"`
-	AIProvider           AIProvider      `json:"aiProvider,omitempty"`
-	PollIntervalSeconds  int             `json:"pollIntervalSeconds,omitempty"`
-	JobConcurrency       int             `json:"jobConcurrency,omitempty"`
-	BaseBranch           string          `json:"baseBranch,omitempty"`
-	BranchNamePattern    string          `json:"branchNamePattern,omitempty"`
-	AIAllowedCommands    []string        `json:"aiAllowedCommands,omitempty"`
-	CodexAllowedCommands []string        `json:"codexAllowedCommands,omitempty"`
-	Models               AIModels        `json:"models,omitempty"`
-	Issue                SearchCondition `json:"issue"`
-	PullRequest          SearchCondition `json:"pullRequest"`
+	Repository              string          `json:"repository"`
+	AIProvider              AIProvider      `json:"aiProvider,omitempty"`
+	PollIntervalSeconds     int             `json:"pollIntervalSeconds,omitempty"`
+	JobConcurrency          int             `json:"jobConcurrency,omitempty"`
+	ImplementationLoopCount int             `json:"implementationLoopCount,omitempty"`
+	BaseBranch              string          `json:"baseBranch,omitempty"`
+	BranchNamePattern       string          `json:"branchNamePattern,omitempty"`
+	AIAllowedCommands       []string        `json:"aiAllowedCommands,omitempty"`
+	CodexAllowedCommands    []string        `json:"codexAllowedCommands,omitempty"`
+	Models                  AIModels        `json:"models,omitempty"`
+	Issue                   SearchCondition `json:"issue"`
+	PullRequest             SearchCondition `json:"pullRequest"`
 }
 
 type ModelSelection struct {
@@ -63,6 +64,12 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 	}
 	if settings.JobConcurrency <= 0 {
 		settings.JobConcurrency = 4
+	}
+	if settings.ImplementationLoopCount <= 0 {
+		settings.ImplementationLoopCount = 3
+	}
+	if settings.ImplementationLoopCount > 10 {
+		settings.ImplementationLoopCount = 10
 	}
 	if strings.TrimSpace(settings.BaseBranch) == "" {
 		settings.BaseBranch = "main"

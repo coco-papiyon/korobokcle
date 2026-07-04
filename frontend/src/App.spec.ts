@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { vi } from 'vitest'
 import App from './App.vue'
+import JobListPanel from './components/JobListPanel.vue'
 
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -104,10 +105,12 @@ describe('App', () => {
 
     expect(wrapper.get('[role="dialog"]').text()).toContain('ジョブ詳細')
     expect(wrapper.get('tbody tr').classes()).toContain('job-table__row--active')
+    expect(wrapper.findComponent(JobListPanel).props('active')).toBe(false)
 
     await wrapper.get('.modal-dialog__close').trigger('click')
     await nextTick()
 
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.findComponent(JobListPanel).props('active')).toBe(true)
   })
 })

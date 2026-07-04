@@ -32,6 +32,7 @@ describe('SettingsPanel', () => {
         aiProvider: 'codex',
         pollIntervalSeconds: 120,
         jobConcurrency: 4,
+        implementationLoopCount: 3,
         baseBranch: 'main',
         branchNamePattern: 'issue_#<issue番号>',
         aiAllowedCommands: ['npm ci', 'go test ./...'],
@@ -74,7 +75,8 @@ describe('SettingsPanel', () => {
     const repoInput = wrapper.get('input[placeholder="owner/repository"]')
     const numberInputs = wrapper.findAll('input[type="number"]')
     const concurrencyInput = numberInputs[0]
-    const pollInput = numberInputs[1]
+    const implementationLoopInput = numberInputs[1]
+    const pollInput = numberInputs[2]
     const baseBranchInput = wrapper.get('input[placeholder="main"]')
     const branchPatternInput = wrapper.get('input[placeholder="issue_#<issue番号>"]')
     const issueIncludeInput = wrapper.get('input[placeholder="bug, ai:design"]')
@@ -98,6 +100,7 @@ describe('SettingsPanel', () => {
     expect(repoInput.element).toHaveProperty('value', 'owner/repository')
     expect(pollInput.element).toHaveProperty('value', '120')
     expect(concurrencyInput.element).toHaveProperty('value', '4')
+    expect(implementationLoopInput.element).toHaveProperty('value', '3')
     expect(baseBranchInput.element).toHaveProperty('value', 'main')
     expect(branchPatternInput.element).toHaveProperty('value', 'issue_#<issue番号>')
     expect(issueIncludeInput.element).toHaveProperty('value', 'bug, ai:design')
@@ -122,6 +125,7 @@ describe('SettingsPanel', () => {
     await repoInput.setValue(' owner/new-repository ')
     await pollInput.setValue('59.7')
     await concurrencyInput.setValue('6')
+    await implementationLoopInput.setValue('5')
     await baseBranchInput.setValue(' release ')
     await branchPatternInput.setValue(' issue_#<issue番号> ')
     await prIncludeInput.setValue('ready, review')
@@ -152,6 +156,7 @@ describe('SettingsPanel', () => {
       aiProvider: 'github_copilot',
       pollIntervalSeconds: 59,
       jobConcurrency: 6,
+      implementationLoopCount: 5,
       baseBranch: 'release',
       branchNamePattern: 'issue_#<issue番号>',
       aiAllowedCommands: ['npm ci', 'npm test'],

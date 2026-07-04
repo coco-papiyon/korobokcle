@@ -11,6 +11,7 @@ const settingsForm = ref({
   aiProvider: 'codex' as AIProvider,
   pollIntervalSeconds: 120,
   jobConcurrency: 4,
+  implementationLoopCount: 3,
   baseBranch: 'main',
   branchNamePattern: 'issue_#<issue番号>',
   aiAllowedCommandsText: '',
@@ -133,6 +134,7 @@ function settingsToForm(settings: WatchSettings) {
   settingsForm.value.aiProvider = settings.aiProvider ?? 'codex'
   settingsForm.value.pollIntervalSeconds = settings.pollIntervalSeconds ?? 120
   settingsForm.value.jobConcurrency = settings.jobConcurrency ?? 4
+  settingsForm.value.implementationLoopCount = settings.implementationLoopCount ?? 3
   settingsForm.value.baseBranch = settings.baseBranch?.trim() || 'main'
   settingsForm.value.branchNamePattern = settings.branchNamePattern?.trim() || 'issue_#<issue番号>'
   settingsForm.value.aiAllowedCommandsText = joinLines(settings.aiAllowedCommands ?? settings.codexAllowedCommands ?? [])
@@ -172,6 +174,10 @@ function formToSettings(): WatchSettings {
       Number.isFinite(settingsForm.value.jobConcurrency) && settingsForm.value.jobConcurrency > 0
         ? Math.floor(settingsForm.value.jobConcurrency)
         : 4,
+    implementationLoopCount:
+      Number.isFinite(settingsForm.value.implementationLoopCount) && settingsForm.value.implementationLoopCount > 0
+        ? Math.min(10, Math.floor(settingsForm.value.implementationLoopCount))
+        : 3,
     baseBranch: settingsForm.value.baseBranch.trim() || 'main',
     branchNamePattern: settingsForm.value.branchNamePattern.trim() || 'issue_#<issue番号>',
     aiAllowedCommands: splitLines(settingsForm.value.aiAllowedCommandsText),
@@ -315,6 +321,12 @@ defineExpose({
       <span>ジョブ多重度</span>
       <input v-model.number="settingsForm.jobConcurrency" class="control" type="number" min="1" step="1" />
       <span class="field-note">同時に実行できるジョブ数。デフォルトは4。</span>
+    </label>
+
+    <label class="field field--full">
+      <span>実装・検証ループ回数</span>
+      <input v-model.number="settingsForm.implementationLoopCount" class="control" type="number" min="1" max="10" step="1" />
+      <span class="field-note">実装者と検証者が反復する最大回数。検証に合格した時点で終了する。デフォルトは3。</span>
     </label>
 
     <label class="field field--full">

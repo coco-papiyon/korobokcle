@@ -513,6 +513,70 @@ func TestJobDetailAPIIncludesIssueContext(t *testing.T) {
 	}
 }
 
+func TestJobDetailAPIIncludesLogs(t *testing.T) {
+	dir := t.TempDir()
+	store := newTestJobStore(filepath.Join(dir, "jobs.json"))
+	job := domain.Job{
+		ID:         "job-log",
+		Kind:       domain.JobKindIssueImplementation,
+		State:      domain.StateCompleted,
+		Repository: "owner/repo",
+		Number:     2,
+		Title:      "log target",
+	}
+	if err := store.Upsert(context.Background(), job); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	logDir := jobWorkspaceLogDir(dir, job)
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	files := map[string]string{
+		"implementation_attempt-1_agent.log":           "agent request\nagent response",
+		"implementation_attempt-1_agent_stdout.log":    "stdout 1",
+		"implementation_attempt-1_agent_stderr.log":    "stderr 1",
+		"implementation_attempt-1_verifier.log":        "verifier summary",
+		"implementation_attempt-1_verifier_stdout.log": "verifier stdout",
+		"implementation_attempt-1_verifier_stderr.log": "verifier stderr",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(logDir, name), []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile(%s) error = %v", name, err)
+		}
+	}
+
+	cfg := config.Default()
+	cfg.ToolDir = dir
+	cfg.WorkDir = dir
+	server := NewServer(cfg, store, nil, nil, testBranchResolver{branch: "issue_#2"}, nil, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("detail status = %d, want %d", rec.Code, http.StatusOK)
+	}
+
+	var detail struct {
+		Logs []JobLogGroup `json:"logs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(detail.Logs) != 2 {
+		t.Fatalf("logs = %d, want 2", len(detail.Logs))
+	}
+	if detail.Logs[0].RoleLabel != "実装者" || detail.Logs[0].Attempt != 1 {
+		t.Fatalf("first log group = %+v, want 実装者 attempt 1", detail.Logs[0])
+	}
+	if len(detail.Logs[0].Files) != 3 {
+		t.Fatalf("first log files = %d, want 3", len(detail.Logs[0].Files))
+	}
+	if detail.Logs[1].RoleLabel != "検証者" || detail.Logs[1].Attempt != 1 {
+		t.Fatalf("second log group = %+v, want 検証者 attempt 1", detail.Logs[1])
+	}
+}
+
 func TestJobDetailAPIEmptyBranchOnResolverError(t *testing.T) {
 	store := newTestJobStore(filepath.Join(t.TempDir(), "jobs.json"))
 	job := domain.Job{

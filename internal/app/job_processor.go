@@ -27,6 +27,7 @@ type WorkflowProcessor struct {
 	toolDir  string
 	logger   workflowLogger
 	runner   AIRunner
+	verifier AIRunner
 	contexts JobContextLoader
 }
 
@@ -37,17 +38,29 @@ type managedAIRunner interface {
 
 func NewWorkflowProcessorFactory(store JobStore, settings SettingsStore, feedback DesignFeedbackStore, baseDir, toolDir string, logger workflowLogger) WorkerProcessorFactory {
 	return func() WorkerProcessor {
-		return newWorkflowProcessor(store, settings, feedback, baseDir, toolDir, logger, NewHTTPAIRunner(nil, logger), &GitHubJobContextLoader{})
+		return newWorkflowProcessorWithVerifier(store, settings, feedback, baseDir, toolDir, logger, NewHTTPAIRunner(nil, logger), NewHTTPAIRunner(nil, logger), &GitHubJobContextLoader{})
 	}
 }
 
 func NewWorkflowProcessor(store JobStore, settings SettingsStore, feedback DesignFeedbackStore, baseDir, toolDir string, logger workflowLogger) JobProcessor {
-	return NewWorkflowProcessorWithDeps(store, settings, feedback, baseDir, toolDir, logger, NewHTTPAIRunner(nil, logger), &GitHubJobContextLoader{})
+	processor := newWorkflowProcessorWithVerifier(store, settings, feedback, baseDir, toolDir, logger, NewHTTPAIRunner(nil, logger), NewHTTPAIRunner(nil, logger), &GitHubJobContextLoader{})
+	return processor.Process
+}
+
+func NewWorkflowProcessorWithLoopDeps(store JobStore, settings SettingsStore, feedback DesignFeedbackStore, baseDir, toolDir string, logger workflowLogger, implementer, verifier AIRunner, contexts JobContextLoader) JobProcessor {
+	processor := newWorkflowProcessorWithVerifier(store, settings, feedback, baseDir, toolDir, logger, implementer, verifier, contexts)
+	return processor.Process
 }
 
 func NewWorkflowProcessorWithDeps(store JobStore, settings SettingsStore, feedback DesignFeedbackStore, baseDir, toolDir string, logger workflowLogger, runner AIRunner, contexts JobContextLoader) JobProcessor {
 	processor := newWorkflowProcessor(store, settings, feedback, baseDir, toolDir, logger, runner, contexts)
 	return processor.Process
+}
+
+func newWorkflowProcessorWithVerifier(store JobStore, settings SettingsStore, feedback DesignFeedbackStore, baseDir, toolDir string, logger workflowLogger, runner, verifier AIRunner, contexts JobContextLoader) *WorkflowProcessor {
+	processor := newWorkflowProcessor(store, settings, feedback, baseDir, toolDir, logger, runner, contexts)
+	processor.verifier = verifier
+	return processor
 }
 
 func newWorkflowProcessor(store JobStore, settings SettingsStore, feedback DesignFeedbackStore, baseDir, toolDir string, logger workflowLogger, runner AIRunner, contexts JobContextLoader) *WorkflowProcessor {
@@ -72,7 +85,18 @@ func (p *WorkflowProcessor) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return runner.Start(ctx, settings.AIProvider, p.baseDir)
+	if err := runner.Start(ctx, settings.AIProvider, p.baseDir); err != nil {
+		return err
+	}
+	verifier, ok := p.verifier.(managedAIRunner)
+	if !ok {
+		return nil
+	}
+	if err := verifier.Start(ctx, settings.AIProvider, p.baseDir); err != nil {
+		_ = runner.Stop(context.Background())
+		return fmt.Errorf("start verifier: %w", err)
+	}
+	return nil
 }
 
 func (p *WorkflowProcessor) Stop(ctx context.Context) error {
@@ -80,7 +104,12 @@ func (p *WorkflowProcessor) Stop(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	return runner.Stop(ctx)
+	implementerErr := runner.Stop(ctx)
+	var verifierErr error
+	if verifier, ok := p.verifier.(managedAIRunner); ok {
+		verifierErr = verifier.Stop(ctx)
+	}
+	return errors.Join(implementerErr, verifierErr)
 }
 
 func (p *WorkflowProcessor) Process(ctx context.Context, job domain.Job) (retErr error) {
@@ -224,10 +253,17 @@ func (p *WorkflowProcessor) loadFeedback(ctx context.Context, jobID string) (str
 }
 
 func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings domain.WatchSettings, feedback string, contextText string, workDir string, branch string, runningState, readyState domain.JobState) (string, error) {
+	if job.Kind == domain.JobKindIssueImplementation && p.verifier != nil {
+		return p.runImplementationLoop(ctx, job, settings, feedback, contextText, workDir, branch, runningState, readyState)
+	}
+	return p.runSingleAI(ctx, job, settings, feedback, contextText, workDir, branch, runningState, readyState, 1, "agent")
+}
+
+func (p *WorkflowProcessor) runSingleAI(ctx context.Context, job domain.Job, settings domain.WatchSettings, feedback string, contextText string, workDir string, branch string, runningState, readyState domain.JobState, attempt int, role string) (string, error) {
 	if p.runner == nil {
 		return "", fmt.Errorf("AI runner is not configured")
 	}
-	stdoutLog, stderrLog, err := p.openAIProcessLogs(job)
+	stdoutLog, stderrLog, err := p.openAIProcessLogs(job, attempt, role)
 	if err != nil {
 		return "", err
 	}
@@ -247,7 +283,7 @@ func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings 
 		Stderr:          stderrLog,
 		AllowedCommands: settings.AIAllowedCommands,
 	}
-	p.appendIssueAILog(job, "request", strings.Join([]string{
+	p.appendIssueAILog(job, attempt, role, "request", strings.Join([]string{
 		fmt.Sprintf("provider: %s", provider),
 		fmt.Sprintf("model: %s", displayModel(model)),
 		fmt.Sprintf("working_dir: %s", workDir),
@@ -262,18 +298,18 @@ func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings 
 	response, err := p.runner.Run(ctx, req)
 	if err != nil {
 		if parseErr, ok := err.(*AIResponseParseError); ok {
-			p.appendIssueAILog(job, "response_error", strings.Join([]string{
+			p.appendIssueAILog(job, attempt, role, "response_error", strings.Join([]string{
 				fmt.Sprintf("error: %s", parseErr.Error()),
 				"",
 				"[raw_response]",
 				parseErr.RawOutput,
 			}, "\n"))
 		} else {
-			p.appendIssueAILog(job, "response_error", fmt.Sprintf("error: %v", err))
+			p.appendIssueAILog(job, attempt, role, "response_error", fmt.Sprintf("error: %v", err))
 		}
 		return "", err
 	}
-	p.appendIssueAILog(job, "response", strings.Join([]string{
+	p.appendIssueAILog(job, attempt, role, "response", strings.Join([]string{
 		"[artifact_markdown]",
 		response.ArtifactMarkdown,
 		"",
@@ -285,22 +321,117 @@ func (p *WorkflowProcessor) runAI(ctx context.Context, job domain.Job, settings 
 	}, "\n"))
 	if implementationJob(job) && strings.TrimSpace(response.GitDiff) != "" {
 		if err := p.applyGitDiff(ctx, workDir, response.GitDiff); err != nil {
-			p.appendIssueAILog(job, "apply_diff_error", fmt.Sprintf("error: %v\n\n[git_diff]\n%s", err, response.GitDiff))
+			p.appendIssueAILog(job, attempt, role, "apply_diff_error", fmt.Sprintf("error: %v\n\n[git_diff]\n%s", err, response.GitDiff))
 			return "", err
 		}
 	}
 	return p.decorateArtifact(job, response.ArtifactMarkdown), nil
 }
 
-func (p *WorkflowProcessor) openAIProcessLogs(job domain.Job) (*os.File, *os.File, error) {
-	logDir := filepath.Join(p.toolDir, "logs", fmt.Sprintf("%d", job.Number))
+type implementationVerification struct {
+	Status   string `json:"status"`
+	Feedback string `json:"feedback"`
+	Summary  string `json:"summary"`
+}
+
+func (p *WorkflowProcessor) runImplementationLoop(ctx context.Context, job domain.Job, settings domain.WatchSettings, feedback, contextText, workDir, branch string, runningState, readyState domain.JobState) (string, error) {
+	maxAttempts := settings.ImplementationLoopCount
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
+	loopFeedback := strings.TrimSpace(feedback)
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attemptFeedback := loopFeedback
+		if attempt > 1 {
+			attemptFeedback = strings.TrimSpace(strings.Join([]string{
+				attemptFeedback,
+				fmt.Sprintf("検証者エージェントの指摘を反映する再実装です（%d/%d回目）。", attempt, maxAttempts),
+			}, "\n\n"))
+		}
+		artifact, err := p.runSingleAI(ctx, job, settings, attemptFeedback, contextText, workDir, branch, runningState, readyState, attempt, "agent")
+		if err != nil {
+			return "", fmt.Errorf("implementation attempt %d: %w", attempt, err)
+		}
+		verification, err := p.verifyImplementation(ctx, job, settings, contextText, workDir, branch, attempt, maxAttempts, artifact)
+		if err != nil {
+			return "", fmt.Errorf("verification attempt %d: %w", attempt, err)
+		}
+		p.appendIssueAILog(job, attempt, "verifier", "verification", fmt.Sprintf("status: %s\nfeedback: %s\nsummary: %s", verification.Status, verification.Feedback, verification.Summary))
+		if verification.Status == "passed" {
+			return strings.TrimSpace(artifact + "\n\n## 検証者エージェントの判定\n" + verification.Summary), nil
+		}
+		loopFeedback = strings.TrimSpace(verification.Feedback)
+		if loopFeedback == "" {
+			loopFeedback = strings.TrimSpace(verification.Summary)
+		}
+	}
+	return "", fmt.Errorf("implementation verification did not pass after %d attempts: %s", maxAttempts, loopFeedback)
+}
+
+func (p *WorkflowProcessor) verifyImplementation(ctx context.Context, job domain.Job, settings domain.WatchSettings, contextText, workDir, branch string, attempt, maxAttempts int, implementationArtifact string) (implementationVerification, error) {
+	stdoutLog, stderrLog, err := p.openAIRoleProcessLogs(job, attempt, "verifier")
+	if err != nil {
+		return implementationVerification{}, err
+	}
+	defer stdoutLog.Close()
+	defer stderrLog.Close()
+	provider, model := resolveJobAISelection(settings, job)
+	prompt := strings.Join([]string{
+		fmt.Sprintf("job_id: %s", job.ID),
+		fmt.Sprintf("attempt: %d/%d", attempt, maxAttempts),
+		fmt.Sprintf("working_dir: %s", workDir),
+		fmt.Sprintf("branch: %s", branch),
+		"",
+		"GitHub context:", strings.TrimSpace(contextText),
+		"",
+		"Implementation agent summary:", strings.TrimSpace(implementationArtifact),
+		"",
+		"Inspect the current changes in working_dir and run the tests required by the design and repository instructions.",
+		"Do not edit, create, delete, or format repository files. Your role is verification only.",
+		"Return only one JSON object: {\"status\":\"passed|changes_requested\",\"feedback\":\"specific instructions for the implementer\",\"summary\":\"Japanese verification summary\"}.",
+		"Use passed only when the implementation and required tests are acceptable.",
+	}, "\n")
+	response, err := p.verifier.Run(ctx, AIRequest{
+		Provider: provider, Model: model,
+		System: "You are an independent software verification agent. Inspect and test the implementation without modifying the repository.",
+		Prompt: prompt, WorkingDir: workDir, Stdout: stdoutLog, Stderr: stderrLog,
+		AllowedCommands: settings.AIAllowedCommands,
+	})
+	if err != nil {
+		return implementationVerification{}, err
+	}
+	return parseImplementationVerification(response.RawOutput)
+}
+
+func parseImplementationVerification(raw string) (implementationVerification, error) {
+	cleaned := strings.TrimSpace(stripCodeFence(raw, "json"))
+	if extracted, ok := extractFirstJSONObject(cleaned); ok {
+		cleaned = extracted
+	}
+	var result implementationVerification
+	if err := json.Unmarshal([]byte(cleaned), &result); err != nil {
+		return result, fmt.Errorf("decode verifier response: %w", err)
+	}
+	result.Status = strings.ToLower(strings.TrimSpace(result.Status))
+	if result.Status != "passed" && result.Status != "changes_requested" {
+		return result, fmt.Errorf("invalid verifier status %q", result.Status)
+	}
+	if strings.TrimSpace(result.Summary) == "" {
+		return result, fmt.Errorf("verifier summary is empty")
+	}
+	return result, nil
+}
+
+func (p *WorkflowProcessor) openAIProcessLogs(job domain.Job, attempt int, role string) (*os.File, *os.File, error) {
+	return p.openAIRoleProcessLogs(job, attempt, role)
+}
+
+func (p *WorkflowProcessor) openAIRoleProcessLogs(job domain.Job, attempt int, role string) (*os.File, *os.File, error) {
+	logDir := jobLogDir(p.toolDir, job)
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return nil, nil, fmt.Errorf("create AI process log dir: %w", err)
 	}
-	prefix := artifactSubdir(job)
-	if strings.TrimSpace(prefix) == "" {
-		prefix = "job"
-	}
+	prefix := jobLogFilePrefix(job, attempt, role)
 	stdoutLog, err := os.OpenFile(filepath.Join(logDir, prefix+"_stdout.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open AI stdout log: %w", err)
@@ -660,14 +791,14 @@ func (p *WorkflowProcessor) repoFileList(workDir string) string {
 	return strings.Join(lines, "\n")
 }
 
-func (p *WorkflowProcessor) appendIssueAILog(job domain.Job, section string, content string) {
-	logDir := filepath.Join(p.toolDir, "logs", fmt.Sprintf("%d", job.Number))
+func (p *WorkflowProcessor) appendIssueAILog(job domain.Job, attempt int, role string, section string, content string) {
+	logDir := jobLogDir(p.toolDir, job)
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return
 	}
-	logPath := filepath.Join(logDir, issueLogFileName(job))
+	logPath := filepath.Join(logDir, jobLogFilePrefix(job, attempt, role)+".log")
 	entry := strings.Join([]string{
-		fmt.Sprintf("=== %s %s job=%s kind=%s state=%s ===", time.Now().Format(time.RFC3339), section, job.ID, job.Kind, job.State),
+		fmt.Sprintf("=== %s attempt=%d role=%s section=%s job=%s kind=%s state=%s ===", time.Now().Format(time.RFC3339), attempt, role, section, job.ID, job.Kind, job.State),
 		content,
 		"",
 	}, "\n")
@@ -679,12 +810,18 @@ func (p *WorkflowProcessor) appendIssueAILog(job domain.Job, section string, con
 	_, _ = file.WriteString(entry)
 }
 
-func issueLogFileName(job domain.Job) string {
+func jobLogFilePrefix(job domain.Job, attempt int, role string) string {
 	name := artifactSubdir(job)
 	if strings.TrimSpace(name) == "" {
 		name = "job"
 	}
-	return name + ".log"
+	if attempt > 0 {
+		name = fmt.Sprintf("%s_attempt-%d", name, attempt)
+	}
+	if strings.TrimSpace(role) != "" {
+		name += "_" + sanitizePart(role)
+	}
+	return name
 }
 
 func providerKey(provider domain.AIProvider) string {

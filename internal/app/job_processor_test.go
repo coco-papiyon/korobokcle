@@ -118,14 +118,14 @@ func TestWorkflowProcessorProcessesDesignJob(t *testing.T) {
 		t.Fatalf("artifact content = %q, want %q", content, want)
 	}
 
-	stdoutRaw, err := os.ReadFile(filepath.Join(toolDir, "logs", "114", "design_stdout.log"))
+	stdoutRaw, err := os.ReadFile(filepath.Join(jobLogDir(toolDir, job), "design_attempt-1_agent_stdout.log"))
 	if err != nil {
 		t.Fatalf("ReadFile stdout log error = %v", err)
 	}
 	if !strings.Contains(string(stdoutRaw), "fake stdout") {
 		t.Fatalf("stdout log = %q, want fake stdout", string(stdoutRaw))
 	}
-	stderrRaw, err := os.ReadFile(filepath.Join(toolDir, "logs", "114", "design_stderr.log"))
+	stderrRaw, err := os.ReadFile(filepath.Join(jobLogDir(toolDir, job), "design_attempt-1_agent_stderr.log"))
 	if err != nil {
 		t.Fatalf("ReadFile stderr log error = %v", err)
 	}
@@ -224,6 +224,70 @@ func TestWorkflowProcessorProcessesImplementationJob(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "after") {
 		t.Fatalf("worktree file missing applied diff: %s", string(raw))
+	}
+}
+
+func TestImplementationLoopPassesVerifierFeedbackToNextAttempt(t *testing.T) {
+	implementer := &recordingAIRunner{responses: []AIResponse{
+		{ArtifactMarkdown: "## 概要\n初回実装"},
+		{ArtifactMarkdown: "## 概要\n修正実装"},
+	}}
+	verifier := &recordingAIRunner{responses: []AIResponse{
+		{RawOutput: `{"status":"changes_requested","feedback":"境界値テストを追加してください","summary":"テスト不足"}`},
+		{RawOutput: `{"status":"passed","feedback":"","summary":"必要なテストを確認しました"}`},
+	}}
+	processor := &WorkflowProcessor{
+		baseDir: t.TempDir(), toolDir: t.TempDir(), runner: implementer, verifier: verifier,
+	}
+	job := domain.Job{
+		ID: "issue-600", Kind: domain.JobKindIssueImplementation, State: domain.StateImplementationRunning,
+		Repository: "owner/repo", Number: 600, Title: "ループ実装",
+	}
+	settings := domain.NormalizeWatchSettings(domain.WatchSettings{
+		AIProvider: domain.AIProviderCodex, ImplementationLoopCount: 2,
+	})
+
+	artifact, err := processor.runImplementationLoop(
+		context.Background(), job, settings, "", "Issue context", processor.baseDir, "issue_#600",
+		domain.StateImplementationRunning, domain.StateImplementationReady,
+	)
+	if err != nil {
+		t.Fatalf("runImplementationLoop() error = %v", err)
+	}
+	if len(implementer.requests) != 2 || len(verifier.requests) != 2 {
+		t.Fatalf("request counts = implementer:%d verifier:%d, want 2 each", len(implementer.requests), len(verifier.requests))
+	}
+	if !strings.Contains(implementer.requests[1].Prompt, "境界値テストを追加してください") {
+		t.Fatalf("second implementer prompt does not contain verifier feedback:\n%s", implementer.requests[1].Prompt)
+	}
+	if !strings.Contains(artifact, "必要なテストを確認しました") {
+		t.Fatalf("artifact does not contain verification summary: %s", artifact)
+	}
+	if !strings.Contains(verifier.requests[0].Prompt, "Do not edit, create, delete") {
+		t.Fatalf("verifier prompt does not prohibit repository edits:\n%s", verifier.requests[0].Prompt)
+	}
+}
+
+func TestImplementationLoopFailsAtConfiguredLimit(t *testing.T) {
+	implementer := &recordingAIRunner{responses: []AIResponse{{ArtifactMarkdown: "実装1"}, {ArtifactMarkdown: "実装2"}}}
+	verifier := &recordingAIRunner{responses: []AIResponse{
+		{RawOutput: `{"status":"changes_requested","feedback":"失敗1","summary":"不合格1"}`},
+		{RawOutput: `{"status":"changes_requested","feedback":"失敗2","summary":"不合格2"}`},
+	}}
+	processor := &WorkflowProcessor{baseDir: t.TempDir(), toolDir: t.TempDir(), runner: implementer, verifier: verifier}
+	job := domain.Job{ID: "issue-601", Kind: domain.JobKindIssueImplementation, Number: 601, Title: "上限確認"}
+	settings := domain.NormalizeWatchSettings(domain.WatchSettings{AIProvider: domain.AIProviderCodex, ImplementationLoopCount: 2})
+
+	_, err := processor.runImplementationLoop(context.Background(), job, settings, "", "", processor.baseDir, "issue_#601", domain.StateImplementationRunning, domain.StateImplementationReady)
+	if err == nil || !strings.Contains(err.Error(), "after 2 attempts") {
+		t.Fatalf("runImplementationLoop() error = %v, want configured-limit error", err)
+	}
+}
+
+func TestParseImplementationVerificationRejectsUnknownStatus(t *testing.T) {
+	_, err := parseImplementationVerification(`{"status":"maybe","summary":"判定不能"}`)
+	if err == nil || !strings.Contains(err.Error(), "invalid verifier status") {
+		t.Fatalf("parseImplementationVerification() error = %v, want invalid status", err)
 	}
 }
 
@@ -424,9 +488,9 @@ func TestAppendIssueAILog(t *testing.T) {
 	processor := &WorkflowProcessor{toolDir: toolDir}
 	job := domain.Job{ID: "issue-114", Kind: domain.JobKindIssueImplementation, State: domain.StateImplementationRunning, Number: 114}
 
-	processor.appendIssueAILog(job, "request", "hello")
+	processor.appendIssueAILog(job, 1, "agent", "request", "hello")
 
-	raw, err := os.ReadFile(filepath.Join(toolDir, "logs", "114", "implementation.log"))
+	raw, err := os.ReadFile(filepath.Join(jobLogDir(toolDir, job), "implementation_attempt-1_agent.log"))
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
@@ -473,6 +537,25 @@ var _ SettingsStore = (*workflowTestSettingsStore)(nil)
 type fakeAIRunner struct {
 	response AIResponse
 	err      error
+}
+
+type recordingAIRunner struct {
+	requests  []AIRequest
+	responses []AIResponse
+	err       error
+}
+
+func (r *recordingAIRunner) Run(_ context.Context, req AIRequest) (AIResponse, error) {
+	r.requests = append(r.requests, req)
+	if r.err != nil {
+		return AIResponse{}, r.err
+	}
+	if len(r.responses) == 0 {
+		return AIResponse{}, errors.New("no fake AI response")
+	}
+	response := r.responses[0]
+	r.responses = r.responses[1:]
+	return response, nil
 }
 
 func (r fakeAIRunner) Run(_ context.Context, req AIRequest) (AIResponse, error) {

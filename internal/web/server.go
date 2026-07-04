@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +52,28 @@ type SkillActions interface {
 type DesignArtifact struct {
 	Content string `json:"content"`
 	Path    string `json:"path"`
+}
+
+type JobLogFile struct {
+	Kind    string `json:"kind"`
+	Label   string `json:"label"`
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
+type JobLogGroup struct {
+	Role      string       `json:"role"`
+	RoleLabel string       `json:"roleLabel"`
+	Attempt   int          `json:"attempt"`
+	Files     []JobLogFile `json:"files"`
+}
+
+type JobDetailResponse struct {
+	UpdatedAt    string        `json:"updatedAt"`
+	Job          domain.Job    `json:"job"`
+	Branch       string        `json:"branch"`
+	IssueContext string        `json:"issueContext,omitempty"`
+	Logs         []JobLogGroup `json:"logs,omitempty"`
 }
 
 type Server struct {
@@ -328,11 +352,12 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 				}
 			}
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"updatedAt":    responseUpdatedAt.UTC().Format(time.RFC3339Nano),
-			"job":          job,
-			"branch":       branch,
-			"issueContext": issueContext,
+		_ = json.NewEncoder(w).Encode(JobDetailResponse{
+			UpdatedAt:    responseUpdatedAt.UTC().Format(time.RFC3339Nano),
+			Job:          job,
+			Branch:       branch,
+			IssueContext: issueContext,
+			Logs:         loadJobLogs(cfg.WorkDir, job),
 		})
 	})
 
@@ -468,6 +493,162 @@ func sanitizePart(value string) string {
 	value = replacer.Replace(value)
 	value = strings.Trim(value, "-")
 	return value
+}
+
+func jobWorkspaceDir(workDir string, job domain.Job) string {
+	repoDir := sanitizePart(strings.ReplaceAll(job.Repository, "/", "_"))
+	return filepath.Join(workDir, "workspace", repoDir, job.ID)
+}
+
+func jobWorkspaceLogDir(workDir string, job domain.Job) string {
+	return filepath.Join(jobWorkspaceDir(workDir, job), "logs")
+}
+
+func loadJobLogs(workDir string, job domain.Job) []JobLogGroup {
+	logDir := jobWorkspaceLogDir(workDir, job)
+	entries, err := os.ReadDir(logDir)
+	if err != nil {
+		return nil
+	}
+
+	groups := map[string]*JobLogGroup{}
+	keys := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".log") {
+			continue
+		}
+		displayPath := filepath.Join("workspace", sanitizePart(strings.ReplaceAll(job.Repository, "/", "_")), job.ID, "logs", entry.Name())
+		parsed := parseJobLogFile(job, displayPath, filepath.Join(logDir, entry.Name()))
+		if parsed == nil {
+			continue
+		}
+		key := fmt.Sprintf("%04d|%s", parsed.Attempt, parsed.Role)
+		group, ok := groups[key]
+		if !ok {
+			group = &JobLogGroup{
+				Role:      parsed.Role,
+				RoleLabel: jobLogRoleLabel(job, parsed.Role),
+				Attempt:   parsed.Attempt,
+			}
+			groups[key] = group
+			keys = append(keys, key)
+		}
+		group.Files = append(group.Files, parsed.File)
+	}
+
+	sort.Strings(keys)
+
+	result := make([]JobLogGroup, 0, len(keys))
+	for _, key := range keys {
+		group := groups[key]
+		sort.Slice(group.Files, func(i, j int) bool {
+			return jobLogFileSortOrder(group.Files[i].Kind) < jobLogFileSortOrder(group.Files[j].Kind)
+		})
+		result = append(result, *group)
+	}
+	return result
+}
+
+type parsedJobLogFile struct {
+	Role    string
+	Attempt int
+	File    JobLogFile
+}
+
+func parseJobLogFile(job domain.Job, displayPath string, path string) *parsedJobLogFile {
+	base := filepath.Base(displayPath)
+	name := strings.TrimSuffix(base, ".log")
+	kind := "activity"
+	label := "処理ログ"
+
+	switch {
+	case strings.HasSuffix(name, "_stdout"):
+		name = strings.TrimSuffix(name, "_stdout")
+		kind = "stdout"
+		label = "標準出力"
+	case strings.HasSuffix(name, "_stderr"):
+		name = strings.TrimSuffix(name, "_stderr")
+		kind = "stderr"
+		label = "標準エラー"
+	}
+
+	attempt := 1
+	role := "agent"
+	if idx := strings.LastIndex(name, "_attempt-"); idx >= 0 {
+		tail := name[idx+len("_attempt-"):]
+		name = name[:idx]
+		digitEnd := 0
+		for digitEnd < len(tail) && tail[digitEnd] >= '0' && tail[digitEnd] <= '9' {
+			digitEnd++
+		}
+		if digitEnd > 0 {
+			if parsedAttempt, err := strconv.Atoi(tail[:digitEnd]); err == nil && parsedAttempt > 0 {
+				attempt = parsedAttempt
+			}
+			tail = tail[digitEnd:]
+		}
+		role = strings.TrimPrefix(tail, "_")
+		if role == "" {
+			role = "agent"
+		}
+	} else {
+		switch {
+		case strings.HasSuffix(name, "_verifier"):
+			role = "verifier"
+		case strings.HasSuffix(name, "_agent"):
+			role = "agent"
+		default:
+			role = "agent"
+		}
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	_ = job
+	return &parsedJobLogFile{
+		Role:    role,
+		Attempt: attempt,
+		File: JobLogFile{
+			Kind:    kind,
+			Label:   label,
+			Path:    filepath.ToSlash(displayPath),
+			Content: strings.TrimRight(string(raw), "\r\n"),
+		},
+	}
+}
+
+func jobLogRoleLabel(job domain.Job, role string) string {
+	switch strings.TrimSpace(role) {
+	case "verifier":
+		return "検証者"
+	case "agent":
+		if isImplementationJob(job.Kind) {
+			return "実装者"
+		}
+		return "エージェント"
+	default:
+		return strings.TrimSpace(role)
+	}
+}
+
+func jobLogFileSortOrder(kind string) int {
+	switch kind {
+	case "activity":
+		return 0
+	case "stdout":
+		return 1
+	case "stderr":
+		return 2
+	default:
+		return 3
+	}
+}
+
+func isImplementationJob(kind domain.JobKind) bool {
+	return kind == domain.JobKindIssueImplementation || kind == domain.JobKindPRConflict || kind == domain.JobKindPRFeedback
 }
 
 func (s *Server) ListenAndServe() error {

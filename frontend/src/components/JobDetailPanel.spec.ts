@@ -298,6 +298,82 @@ describe('JobDetailPanel', () => {
     expect(wrapper.text()).toContain('設計結果')
   })
 
+  it('shows logs grouped by role and attempt', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#30',
+          logs: [
+            {
+              role: 'agent',
+              roleLabel: '実装者',
+              attempt: 1,
+              files: [
+                {
+                  kind: 'activity',
+                  label: '処理ログ',
+                  path: 'logs/30/implementation_attempt-1_agent.log',
+                  content: 'request\nresponse',
+                },
+                {
+                  kind: 'stdout',
+                  label: '標準出力',
+                  path: 'logs/30/implementation_attempt-1_agent_stdout.log',
+                  content: 'agent stdout',
+                },
+              ],
+            },
+            {
+              role: 'verifier',
+              roleLabel: '検証者',
+              attempt: 1,
+              files: [
+                {
+                  kind: 'activity',
+                  label: '処理ログ',
+                  path: 'logs/30/implementation_attempt-1_verifier.log',
+                  content: 'verification summary',
+                },
+              ],
+            },
+          ],
+          job: {
+            id: 'job-30',
+            kind: 'issue_implementation',
+            state: 'implementation_ready',
+            repository: 'owner/repo',
+            number: 30,
+            title: 'ログ確認',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'implementation artifact content',
+          path: 'artifact.md',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-30',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('実装者 / 試行 1')
+    expect(wrapper.text()).toContain('検証者 / 試行 1')
+    expect(wrapper.text()).toContain('処理ログ')
+    expect(wrapper.text()).toContain('agent stdout')
+    expect(wrapper.text()).toContain('verification summary')
+  })
+
   it('shows design artifacts for completed issue design jobs', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
@@ -482,6 +558,7 @@ describe('JobDetailPanel', () => {
   })
 
   it('reloads artifacts when the same job is refreshed', async () => {
+    let resolveSecondArtifact: ((value: Response) => void) | undefined
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
         jsonResponse({
@@ -522,9 +599,8 @@ describe('JobDetailPanel', () => {
         }),
       )
       .mockResolvedValueOnce(
-        jsonResponse({
-          content: 'artifact content v2',
-          path: 'artifact.md',
+        new Promise<Response>((resolve) => {
+          resolveSecondArtifact = resolve
         }),
       )
     vi.stubGlobal('fetch', fetchMock)
@@ -544,6 +620,17 @@ describe('JobDetailPanel', () => {
     await flushPromises()
 
     expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/jobs/job-25/artifact', { cache: 'no-store' })
+    expect(wrapper.text()).toContain('artifact content v1')
+    expect(wrapper.text()).not.toContain('読み込み中...')
+
+    resolveSecondArtifact?.(
+      jsonResponse({
+        content: 'artifact content v2',
+        path: 'artifact.md',
+      }),
+    )
+    await flushPromises()
+
     expect(wrapper.text()).toContain('artifact content v2')
   })
 

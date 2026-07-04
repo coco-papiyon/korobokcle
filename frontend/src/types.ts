@@ -30,6 +30,21 @@ export type JobDetailResponse = {
   job: Job
   branch: string
   issueContext?: string
+  logs?: JobLogGroup[]
+}
+
+export type JobLogFile = {
+  kind: string
+  label: string
+  path: string
+  content: string
+}
+
+export type JobLogGroup = {
+  role: string
+  roleLabel: string
+  attempt: number
+  files: JobLogFile[]
 }
 
 export type SearchCondition = {
@@ -60,6 +75,7 @@ export type WatchSettings = {
   aiProvider: AIProvider
   pollIntervalSeconds: number
   jobConcurrency: number
+  implementationLoopCount: number
   baseBranch: string
   branchNamePattern: string
   aiAllowedCommands: string[]

@@ -164,25 +164,27 @@ work_dir/
 - `db/`
   - SQLite
 - `workspace/`
-  - 実装時の worktree
+  - ジョブ単位の worktree / ログ
 - `logs/`
-  - ワーカー単位のログ
+  - ツール全体のメインログ
 
 ### 4.4 実装時 worktree
 
-実装ジョブだけは、`work_dir/workspace/` 配下に worktree を作成する。
+ジョブ単位の作業ディレクトリは `work_dir/workspace/` 配下に作成する。
 
 ```text
-work_dir/workspace/<repo-id>/<job-id>/worktree/
+work_dir/workspace/<repo-id>/<job-id>/
+  ├─ worktree/
+  └─ logs/
 ```
 
 方針:
 
 - 1 ジョブ = 1 worktree
-- worktree は job ごとに分離する
+- worktree とジョブログは job ごとに分離する
 - ブランチ名は job 生成時に確定し、job 本体に保存する
 - 画面表示や再取得時は保存済みの branch をそのまま使う
-- 設計やレビューでは worktree を作らない
+- 実装以外でもジョブログは同じ job ディレクトリ配下へ保存する
 
 ## 5. 状態モデル
 

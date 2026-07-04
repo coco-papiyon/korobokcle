@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import SettingsPanel from './components/SettingsPanel.vue'
 import JobListPanel from './components/JobListPanel.vue'
 import JobDetailModal from './components/JobDetailModal.vue'
@@ -14,6 +14,7 @@ const jobListRefreshKey = ref(0)
 const detailRefreshKey = ref(0)
 const settingsPanelRef = ref<InstanceType<typeof SettingsPanel> | null>(null)
 const skillPanelRef = ref<InstanceType<typeof SkillGeneratorPanel> | null>(null)
+const isJobListActive = computed(() => activeTab.value === 'jobs' && !isJobDetailOpen.value)
 const tabDescriptions: Record<Tab, string> = {
   settings: 'AI プロバイダー、実行条件、監視条件を分けて設定する。',
   skills: 'Issue駆動開発に必要な Agent Skill を監視対象リポジトリへ生成する。',
@@ -147,7 +148,7 @@ function regenerateSkills() {
 
         <div v-show="activeTab === 'jobs'" class="tab-panel" role="tabpanel">
           <JobListPanel
-            :active="activeTab === 'jobs'"
+            :active="isJobListActive"
             :selected-job-id="selectedJobId"
             :refresh-key="jobListRefreshKey"
             @select="selectJob"

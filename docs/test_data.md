@@ -11,6 +11,7 @@
   - `db/mock_jobs.json`
   - `.workspace/...` の Markdown 成果物
   - `prompt/`, `workspace/`, `state/`, `logs/` のディレクトリ
+  - `workspace/<repo-id>/<job-id>/logs/...` のジョブログ
 
 ## 設定ファイル
 

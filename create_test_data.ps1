@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Root = (Join-Path (Get-Location) "tests")
 )
 
@@ -38,6 +38,17 @@ $dirs = @(
 
 foreach ($dir in $dirs) {
   New-Item -ItemType Directory -Force -Path (Join-Path $rootPath $dir) | Out-Null
+}
+
+$legacyJobLogDirs = Get-ChildItem -Path (Join-Path $rootPath "logs") -Directory -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -match '^\d+$' }
+foreach ($legacyDir in $legacyJobLogDirs) {
+  Remove-Item -LiteralPath $legacyDir.FullName -Recurse -Force
+}
+
+$legacyWorkspaceRepoDir = Join-Path $rootPath "workspace/mock-owner-mock-repo"
+if (Test-Path $legacyWorkspaceRepoDir) {
+  Remove-Item -LiteralPath $legacyWorkspaceRepoDir -Recurse -Force
 }
 
 $settings = @{
@@ -198,6 +209,125 @@ Write-Artifact -SubDir "design" -Number 101 -SafeTitle "login-page-improvements"
 Write-Artifact -SubDir "implementation" -Number 102 -SafeTitle "job-detail-panel-improvements" -Title "job-detail-panel-improvements" -Kind "implementation"
 Write-Artifact -SubDir "review" -Number 201 -SafeTitle "add-filter-conditions" -Title "add-filter-conditions" -Kind "review"
 Write-Artifact -SubDir "review_fix_design" -Number 202 -SafeTitle "review-feedback-fix" -Title "review-feedback-fix" -Kind "review feedback design"
+
+function Write-LogGroup {
+  param(
+    [string]$SubDir,
+    [int]$Number,
+    [string]$Role,
+    [int]$Attempt,
+    [string]$Activity,
+    [string]$Stdout,
+    [string]$Stderr
+  )
+  $prefix = "${SubDir}_attempt-$Attempt"
+  if ($Role) {
+    $prefix = "${prefix}_$Role"
+  }
+  $repoId = "mock-owner_mock-repo"
+  $jobPrefix = if ($SubDir -eq "review" -or $SubDir -eq "review_fix_design" -or $SubDir -eq "review_fix_implementation" -or $SubDir -eq "pr_conflict") { "pr" } else { "issue" }
+  $jobId = "$jobPrefix-$Number"
+  $logDir = Join-Path $rootPath "workspace/$repoId/$jobId/logs"
+  Write-TextNoBom -Path (Join-Path $logDir "$prefix.log") -Value $Activity
+  Write-TextNoBom -Path (Join-Path $logDir "$prefix`_stdout.log") -Value $Stdout
+  Write-TextNoBom -Path (Join-Path $logDir "$prefix`_stderr.log") -Value $Stderr
+}
+
+function Write-SingleRoleLogs {
+  param(
+    [string]$SubDir,
+    [int]$Number,
+    [string]$Role,
+    [string]$Activity,
+    [string]$Stdout,
+    [string]$Stderr
+  )
+  Write-LogGroup -SubDir $SubDir -Number $Number -Role $Role -Attempt 1 -Activity $Activity -Stdout $Stdout -Stderr $Stderr
+}
+
+Write-SingleRoleLogs -SubDir "design" -Number 101 -Role "agent" -Activity @"
+=== 2026-07-01T04:00:00Z request job=issue-101 kind=issue_design state=design_running ===
+provider: codex
+model: default
+working_dir: tests
+
+[prompt]
+Design the login page.
+"@ -Stdout "design stdout: mock design run" -Stderr "design stderr: none"
+
+Write-LogGroup -SubDir "implementation" -Number 102 -Role "agent" -Attempt 1 -Activity @"
+=== 2026-07-01T04:10:00Z request job=issue-102 kind=issue_implementation state=implementation_running ===
+provider: codex
+model: default
+working_dir: tests
+
+[prompt]
+Implement the job detail panel improvements.
+"@ -Stdout "implementation stdout: attempt 1" -Stderr "implementation stderr: none"
+
+Write-LogGroup -SubDir "implementation" -Number 102 -Role "verifier" -Attempt 1 -Activity @"
+=== 2026-07-01T04:11:00Z verification job=issue-102 kind=issue_implementation state=implementation_running ===
+status: passed
+feedback:
+summary: 検証を通過しました。
+"@ -Stdout "verifier stdout: tests passed" -Stderr "verifier stderr: none"
+
+Write-SingleRoleLogs -SubDir "review" -Number 201 -Role "agent" -Activity @"
+=== 2026-07-01T04:20:00Z request job=pr-201 kind=pr_review state=review_running ===
+provider: codex
+model: default
+working_dir: tests
+
+[prompt]
+Review the filter conditions.
+"@ -Stdout "review stdout: mock review run" -Stderr "review stderr: none"
+
+Write-SingleRoleLogs -SubDir "review_fix_design" -Number 202 -Role "agent" -Activity @"
+=== 2026-07-01T04:30:00Z request job=pr-202 kind=pr_feedback state=review_fix_design_running ===
+provider: codex
+model: default
+working_dir: tests
+
+[prompt]
+Fix the feedback design.
+"@ -Stdout "review-fix-design stdout: mock run" -Stderr "review-fix-design stderr: none"
+
+Write-SingleRoleLogs -SubDir "design" -Number 301 -Role "agent" -Activity @"
+=== 2026-07-01T04:40:00Z request job=issue-301 kind=issue_design state=design_running ===
+provider: codex
+model: default
+working_dir: tests
+
+[prompt]
+Detected issue for design.
+"@ -Stdout "design stdout: detected mock" -Stderr "design stderr: none"
+
+Write-LogGroup -SubDir "implementation" -Number 302 -Role "agent" -Attempt 1 -Activity @"
+=== 2026-07-01T04:50:00Z request job=issue-302 kind=issue_implementation state=implementation_running ===
+provider: codex
+model: default
+working_dir: tests
+
+[prompt]
+Mock implementation run.
+"@ -Stdout "implementation stdout: attempt 1" -Stderr "implementation stderr: none"
+
+Write-LogGroup -SubDir "implementation" -Number 302 -Role "verifier" -Attempt 1 -Activity @"
+=== 2026-07-01T04:51:00Z verification job=issue-302 kind=issue_implementation state=implementation_running ===
+status: changes_requested
+feedback: テストを追加してください。
+summary: 追加テストが必要です。
+"@ -Stdout "verifier stdout: request changes" -Stderr "verifier stderr: none"
+
+Write-SingleRoleLogs -SubDir "review" -Number 401 -Role "agent" -Activity @"
+=== 2026-07-01T05:00:00Z request job=pr-401 kind=pr_review state=review_running ===
+provider: codex
+model: default
+working_dir: tests
+
+[prompt]
+Mock PR review.
+"@ -Stdout "review stdout: mock review" -Stderr "review stderr: none"
 
 Write-Host "Test data created: $rootPath"
 Write-Host "Run: go run ./cmd/korobokcle --tool-dir . --base-dir tests --work-dir tests --mock-mode"
