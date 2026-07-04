@@ -187,6 +187,23 @@ describe('JobListPanel', () => {
     expect(wrapper.text()).toContain('完了ジョブ')
   })
 
+  it('shows kind, status, and sort controls in a single filter row', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.findAll('.job-list-panel__filter-group')).toHaveLength(3)
+    expect(wrapper.findAll('select[aria-label]')).toHaveLength(3)
+    expect(wrapper.get('select[aria-label="並び順"]').findAll('option')).toHaveLength(8)
+  })
+
   it('groups running and waiting states into single status filters', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
@@ -384,6 +401,81 @@ describe('JobListPanel', () => {
     expect(row.get('td:nth-child(4)').text()).toContain('時刻付きジョブ')
     expect(row.get('td:nth-child(5)').text()).toBe('2026/07/01 09:00:00')
     expect(row.get('td:nth-child(6)').text()).toContain('設計中')
+  })
+
+  it('sorts jobs by the selected kind, title, fetchedAt, and status order', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [
+          {
+            id: 'job-1',
+            kind: 'pr_review',
+            state: 'review_approved',
+            repository: 'owner/repo',
+            number: 1,
+            title: 'Zeta',
+            fetchedAt: '2026-07-01T09:00:00Z',
+          },
+          {
+            id: 'job-2',
+            kind: 'issue_design',
+            state: 'design_running',
+            repository: 'owner/repo',
+            number: 2,
+            title: 'Alpha',
+            fetchedAt: '2026-07-01T11:00:00Z',
+          },
+          {
+            id: 'job-3',
+            kind: 'issue_implementation',
+            state: 'implementation_ready',
+            repository: 'owner/repo',
+            number: 3,
+            title: 'Beta',
+            fetchedAt: '2026-07-01T10:00:00Z',
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    const titles = () => wrapper.findAll('tbody tr').map((row) => row.get('td:nth-child(4)').text())
+
+    await wrapper.get('select[aria-label="並び順"]').setValue('kindAsc')
+    await flushPromises()
+    expect(titles()).toEqual(['Alpha', 'Beta', 'Zeta'])
+
+    await wrapper.get('select[aria-label="並び順"]').setValue('kindDesc')
+    await flushPromises()
+    expect(titles()).toEqual(['Zeta', 'Beta', 'Alpha'])
+
+    await wrapper.get('select[aria-label="並び順"]').setValue('titleAsc')
+    await flushPromises()
+    expect(titles()).toEqual(['Alpha', 'Beta', 'Zeta'])
+
+    await wrapper.get('select[aria-label="並び順"]').setValue('titleDesc')
+    await flushPromises()
+    expect(titles()).toEqual(['Zeta', 'Beta', 'Alpha'])
+
+    await wrapper.get('select[aria-label="並び順"]').setValue('fetchedAtAsc')
+    await flushPromises()
+    expect(titles()).toEqual(['Zeta', 'Beta', 'Alpha'])
+
+    await wrapper.get('select[aria-label="並び順"]').setValue('fetchedAtDesc')
+    await flushPromises()
+    expect(titles()).toEqual(['Alpha', 'Beta', 'Zeta'])
+
+    await wrapper.get('select[aria-label="並び順"]').setValue('stateAsc')
+    await flushPromises()
+    expect(titles()).toEqual(['Alpha', 'Beta', 'Zeta'])
+
+    await wrapper.get('select[aria-label="並び順"]').setValue('stateDesc')
+    await flushPromises()
+    expect(titles()).toEqual(['Zeta', 'Beta', 'Alpha'])
   })
 
   it('sorts jobs by fetchedAt descending by default and keeps the selected order after refresh', async () => {

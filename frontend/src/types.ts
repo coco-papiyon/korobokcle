@@ -4,6 +4,7 @@ export type Job = {
   id: string
   kind: JobKind
   state: string
+  subStatus?: string
   repository: string
   number: number
   title: string

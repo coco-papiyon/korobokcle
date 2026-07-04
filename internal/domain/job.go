@@ -205,6 +205,7 @@ type Job struct {
 	ID              string     `json:"id"`
 	Kind            JobKind    `json:"kind"`
 	State           JobState   `json:"state"`
+	SubStatus       string     `json:"subStatus,omitempty"`
 	Repository      string     `json:"repository"`
 	Number          int        `json:"number"`
 	Title           string     `json:"title"`

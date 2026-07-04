@@ -136,6 +136,7 @@ func (p *WorkflowProcessor) Process(ctx context.Context, job domain.Job) (retErr
 			return
 		}
 		job.FailedFromState = job.State
+		job = markJobSubStatus(job, "")
 		job = markJobState(job, domain.StateFailed)
 		job.ErrorMessage = retErr.Error()
 		if err := p.store.Upsert(context.Background(), job); err != nil && p.logger != nil {
@@ -210,6 +211,13 @@ func (p *WorkflowProcessor) transitionState(ctx context.Context, job domain.Job,
 		return domain.Job{}, err
 	}
 	return job, nil
+}
+
+func (p *WorkflowProcessor) persistJob(ctx context.Context, job domain.Job) error {
+	if p.store == nil {
+		return nil
+	}
+	return p.store.Upsert(ctx, job)
 }
 
 func (p *WorkflowProcessor) loadSettings(ctx context.Context) (domain.WatchSettings, error) {
@@ -341,6 +349,10 @@ func (p *WorkflowProcessor) runImplementationLoop(ctx context.Context, job domai
 	}
 	loopFeedback := strings.TrimSpace(feedback)
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		job = markJobSubStatus(job, fmt.Sprintf("実装(%d回目)", attempt))
+		if err := p.persistJob(ctx, job); err != nil {
+			return "", err
+		}
 		attemptFeedback := loopFeedback
 		if attempt > 1 {
 			attemptFeedback = strings.TrimSpace(strings.Join([]string{
@@ -351,6 +363,10 @@ func (p *WorkflowProcessor) runImplementationLoop(ctx context.Context, job domai
 		artifact, err := p.runSingleAI(ctx, job, settings, attemptFeedback, contextText, workDir, branch, runningState, readyState, attempt, "agent")
 		if err != nil {
 			return "", fmt.Errorf("implementation attempt %d: %w", attempt, err)
+		}
+		job = markJobSubStatus(job, fmt.Sprintf("検証(%d回目)", attempt))
+		if err := p.persistJob(ctx, job); err != nil {
+			return "", err
 		}
 		verification, err := p.verifyImplementation(ctx, job, settings, contextText, workDir, branch, attempt, maxAttempts, artifact)
 		if err != nil {

@@ -117,6 +117,7 @@ describe('JobDetailPanel', () => {
           id: 'job-1',
           kind: 'issue_implementation',
           state: 'implementation_running',
+          subStatus: '実装(1回目)',
           repository: 'owner/repo',
           number: 1,
           title: '実装中ジョブ',
@@ -140,6 +141,7 @@ describe('JobDetailPanel', () => {
     expect(stateChip.classes()).toContain('chip')
     expect(stateChip.classes()).toContain('chip--running')
     expect(stateChip.text()).toBe('実装中')
+    expect(wrapper.get('.detail__substatus').text()).toBe('実装(1回目)')
     expect(wrapper.text()).toContain('ブランチ')
     expect(wrapper.text()).toContain('issue_#1')
   })

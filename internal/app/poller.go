@@ -40,6 +40,8 @@ type Poller struct {
 	pollMu sync.Mutex
 	mu     sync.Mutex
 	last   map[string]string
+
+	autoSubmit bool
 }
 
 func NewPoller(cfg config.Config, source JobSource, store JobStore, settings PollSettingsStore, manager *WorkerManager) *Poller {
@@ -50,7 +52,14 @@ func NewPoller(cfg config.Config, source JobSource, store JobStore, settings Pol
 		settings: settings,
 		manager:  manager,
 		last:     make(map[string]string),
+		autoSubmit: true,
 	}
+}
+
+func (p *Poller) SetAutoSubmit(autoSubmit bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.autoSubmit = autoSubmit
 }
 
 func (p *Poller) Run(ctx context.Context) error {
@@ -98,7 +107,7 @@ func (p *Poller) pollInterval(ctx context.Context) time.Duration {
 }
 
 func (p *Poller) poll(ctx context.Context) error {
-	if p.source == nil || p.manager == nil {
+	if p.source == nil {
 		return nil
 	}
 	jobs, err := p.source.List(ctx)
@@ -140,8 +149,13 @@ func (p *Poller) poll(ctx context.Context) error {
 				return fmt.Errorf("persist job %s: %w", job.ID, err)
 			}
 		}
-		if err := p.manager.Submit(job); err != nil {
-			return err
+		if p.shouldAutoSubmit() {
+			if p.manager == nil {
+				return fmt.Errorf("worker manager not configured")
+			}
+			if err := p.manager.Submit(job); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -149,6 +163,12 @@ func (p *Poller) poll(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (p *Poller) shouldAutoSubmit() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.autoSubmit
 }
 
 func shouldKeepApprovedPR(existing domain.Job, source domain.Job) bool {

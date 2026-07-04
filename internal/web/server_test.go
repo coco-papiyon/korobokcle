@@ -138,6 +138,49 @@ func TestJobsAPI(t *testing.T) {
 	}
 }
 
+func TestJobsAPIIncludesSubStatus(t *testing.T) {
+	dir := t.TempDir()
+	store := newTestJobStore(filepath.Join(dir, "db", "jobs.json"))
+	settingsStore := newTestSettingsStore(domain.WatchSettings{Repository: "owner/repo"})
+
+	job := domain.Job{
+		ID:         "issue-impl",
+		Kind:       domain.JobKindIssueImplementation,
+		State:      domain.StateImplementationRunning,
+		SubStatus:  "検証(1回目)",
+		Repository: "owner/repo",
+		Number:     42,
+		Title:      "implementation target",
+	}
+	if err := store.Upsert(context.Background(), job); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+
+	cfg := config.Default()
+	cfg.ToolDir = dir
+	server := NewServer(cfg, store, settingsStore, nil, testBranchResolver{branch: "issue_#42"}, nil, nil)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/jobs", nil)
+	getRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d", getRec.Code, http.StatusOK)
+	}
+
+	var resp struct {
+		Jobs []domain.Job `json:"jobs"`
+	}
+	if err := json.Unmarshal(getRec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if len(resp.Jobs) != 1 {
+		t.Fatalf("jobs = %d, want 1", len(resp.Jobs))
+	}
+	if resp.Jobs[0].SubStatus != "検証(1回目)" {
+		t.Fatalf("subStatus = %q, want 検証(1回目)", resp.Jobs[0].SubStatus)
+	}
+}
+
 func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 	dir := t.TempDir()
 	store := newTestJobStore(filepath.Join(dir, "db", "jobs.json"))

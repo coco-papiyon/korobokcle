@@ -250,7 +250,7 @@ h1 {
 
 .job-list-panel__filters {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -269,6 +269,7 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
 }
 
 .job-list-panel__filter-row h3 {
@@ -278,7 +279,7 @@ h1 {
 }
 
 .job-list-panel__filter-select {
-  width: min(320px, 64%);
+  width: min(280px, 64%);
 }
 
 .job-list-filter--option {
@@ -727,6 +728,20 @@ h1 {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.detail__substatus {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(18, 32, 51, 0.12);
+  background: rgba(18, 32, 51, 0.04);
+  color: rgba(18, 32, 51, 0.72);
+  font-size: 0.84rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .detail__header h3 {

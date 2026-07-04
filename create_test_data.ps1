@@ -50,6 +50,24 @@ $legacyWorkspaceRepoDir = Join-Path $rootPath "workspace/mock-owner-mock-repo"
 if (Test-Path $legacyWorkspaceRepoDir) {
   Remove-Item -LiteralPath $legacyWorkspaceRepoDir -Recurse -Force
 }
+$workspaceRepoDir = Join-Path $rootPath "workspace/mock-owner_mock-repo"
+if (Test-Path $workspaceRepoDir) {
+  Remove-Item -LiteralPath $workspaceRepoDir -Recurse -Force
+}
+$artifactDirs = @(
+  ".workspace/design",
+  ".workspace/implementation",
+  ".workspace/review",
+  ".workspace/review_fix_design",
+  ".workspace/review_fix_implementation",
+  ".workspace/pr_conflict"
+)
+foreach ($artifactDir in $artifactDirs) {
+  $fullArtifactDir = Join-Path $rootPath $artifactDir
+  if (Test-Path $fullArtifactDir) {
+    Get-ChildItem -Path $fullArtifactDir -File -ErrorAction SilentlyContinue | Remove-Item -Force
+  }
+}
 
 $settings = @{
   repository = "mock-owner/mock-repo"
@@ -79,102 +97,97 @@ $settings = @{
 }
 Write-TextNoBom -Path (Join-Path $rootPath "config/settings.json") -Value ($settings | ConvertTo-Json -Depth 10)
 
-$jobs = @(
-  @{
-    id = "issue-101"
-    kind = "issue_design"
-    state = "design_ready"
-    repository = "mock-owner/mock-repo"
-    number = 101
-    title = "login-page-improvements"
-    issueContext = @"
-#101 login-page-improvements
+function Get-TimeText {
+  param(
+    [datetime]$BaseTime,
+    [int]$OffsetMinutes
+  )
+  return $BaseTime.AddMinutes($OffsetMinutes).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+}
 
-Improve the login page layout, spacing, and accessibility.
-"@
-    fetchedAt = "2026-07-01T00:00:00Z"
-    updatedAt = "2026-07-01T03:04:05Z"
-  },
-  @{
-    id = "issue-102"
-    kind = "issue_implementation"
-    state = "implementation_ready"
-    repository = "mock-owner/mock-repo"
-    number = 102
-    title = "job-detail-panel-improvements"
-    issueContext = @"
-#102 job-detail-panel-improvements
+function New-IssueContext {
+  param(
+    [int]$Number,
+    [string]$Title,
+    [string]$State
+  )
+  return @"
+#$Number $Title
 
-Refine the job detail panel, align cards, and improve readability.
+Mock issue for testing state: $State
 "@
-    fetchedAt = "2026-07-01T00:10:00Z"
-    updatedAt = "2026-07-01T03:14:05Z"
-  },
-  @{
-    id = "pr-201"
-    kind = "pr_review"
-    state = "review_ready"
+}
+
+function New-JobEntry {
+  param(
+    [string]$Id,
+    [string]$Kind,
+    [string]$State,
+    [int]$Number,
+    [string]$Title,
+    [int]$Order,
+    [string]$SubStatus = "",
+    [string]$FailedFromState = "",
+    [string]$ErrorMessage = "",
+    [switch]$IncludeIssueContext
+  )
+
+  $job = [ordered]@{
+    id = $Id
+    kind = $Kind
+    state = $State
     repository = "mock-owner/mock-repo"
-    number = 201
-    title = "add-filter-conditions"
-    fetchedAt = "2026-07-01T00:20:00Z"
-    updatedAt = "2026-07-01T03:24:05Z"
-  },
-  @{
-    id = "pr-202"
-    kind = "pr_feedback"
-    state = "review_fix_design_ready"
-    repository = "mock-owner/mock-repo"
-    number = 202
-    title = "review-feedback-fix"
-    fetchedAt = "2026-07-01T00:30:00Z"
-    updatedAt = "2026-07-01T03:34:05Z"
+    number = $Number
+    title = $Title
+    fetchedAt = Get-TimeText -BaseTime ([datetime]"2026-07-01T00:00:00Z") -OffsetMinutes ($Order * 10)
+    updatedAt = Get-TimeText -BaseTime ([datetime]"2026-07-01T03:00:05Z") -OffsetMinutes ($Order * 10)
   }
+
+  if ($IncludeIssueContext) {
+    $job.issueContext = New-IssueContext -Number $Number -Title $Title -State $State
+  }
+  if ($SubStatus) {
+    $job.subStatus = $SubStatus
+  }
+  if ($FailedFromState) {
+    $job.failedFromState = $FailedFromState
+  }
+  if ($ErrorMessage) {
+    $job.errorMessage = $ErrorMessage
+  }
+  return $job
+}
+
+$jobs = @(
+  (New-JobEntry -Id "issue-101" -Kind "issue_design" -State "detected" -Number 101 -Title "design-detected" -Order 0 -IncludeIssueContext),
+  (New-JobEntry -Id "issue-102" -Kind "issue_design" -State "design_running" -Number 102 -Title "design-running" -Order 1 -IncludeIssueContext),
+  (New-JobEntry -Id "issue-103" -Kind "issue_design" -State "design_ready" -Number 103 -Title "design-ready" -Order 2 -IncludeIssueContext),
+  (New-JobEntry -Id "issue-104" -Kind "issue_design" -State "design_approved" -Number 104 -Title "design-approved" -Order 3 -IncludeIssueContext),
+  (New-JobEntry -Id "issue-105" -Kind "issue_design" -State "completed" -Number 105 -Title "design-completed" -Order 4 -IncludeIssueContext),
+  (New-JobEntry -Id "issue-106" -Kind "issue_design" -State "failed" -Number 106 -Title "design-failed" -Order 5 -FailedFromState "design_running" -ErrorMessage "mock design failure" -IncludeIssueContext),
+  (New-JobEntry -Id "issue-201" -Kind "issue_implementation" -State "implementation_running" -Number 201 -Title "implementation-running" -Order 6 -SubStatus "検証(2回目)" -IncludeIssueContext),
+  (New-JobEntry -Id "issue-202" -Kind "issue_implementation" -State "implementation_ready" -Number 202 -Title "implementation-ready" -Order 7 -IncludeIssueContext),
+  (New-JobEntry -Id "issue-203" -Kind "issue_implementation" -State "implementation_approved" -Number 203 -Title "implementation-approved" -Order 8 -IncludeIssueContext),
+  (New-JobEntry -Id "issue-204" -Kind "issue_implementation" -State "pr_created" -Number 204 -Title "implementation-pr-created" -Order 9 -IncludeIssueContext),
+  (New-JobEntry -Id "pr-301" -Kind "pr_review" -State "review_running" -Number 301 -Title "review-running" -Order 10),
+  (New-JobEntry -Id "pr-302" -Kind "pr_review" -State "review_ready" -Number 302 -Title "review-ready" -Order 11),
+  (New-JobEntry -Id "pr-303" -Kind "pr_review" -State "review_approved" -Number 303 -Title "review-approved" -Order 12),
+  (New-JobEntry -Id "pr-304" -Kind "pr_feedback" -State "pr_review_comment" -Number 304 -Title "review-comment" -Order 13),
+  (New-JobEntry -Id "pr-401" -Kind "pr_conflict" -State "pr_conflict" -Number 401 -Title "conflict-detected" -Order 14),
+  (New-JobEntry -Id "pr-402" -Kind "pr_conflict" -State "pr_conflict_running" -Number 402 -Title "conflict-running" -Order 15),
+  (New-JobEntry -Id "pr-403" -Kind "pr_conflict" -State "pr_conflict_ready" -Number 403 -Title "conflict-ready" -Order 16),
+  (New-JobEntry -Id "pr-404" -Kind "pr_conflict" -State "pr_conflict_resolved" -Number 404 -Title "conflict-resolved" -Order 17),
+  (New-JobEntry -Id "pr-501" -Kind "pr_feedback" -State "review_fix_design_running" -Number 501 -Title "review-fix-design-running" -Order 18),
+  (New-JobEntry -Id "pr-502" -Kind "pr_feedback" -State "review_fix_design_ready" -Number 502 -Title "review-fix-design-ready" -Order 19),
+  (New-JobEntry -Id "pr-503" -Kind "pr_feedback" -State "review_fix_design_approved" -Number 503 -Title "review-fix-design-approved" -Order 20),
+  (New-JobEntry -Id "pr-504" -Kind "pr_feedback" -State "review_fix_implementation_running" -Number 504 -Title "review-fix-implementation-running" -Order 21),
+  (New-JobEntry -Id "pr-505" -Kind "pr_feedback" -State "review_fix_implementation_ready" -Number 505 -Title "review-fix-implementation-ready" -Order 22),
+  (New-JobEntry -Id "pr-506" -Kind "pr_feedback" -State "review_fix_implementation_approved" -Number 506 -Title "review-fix-implementation-approved" -Order 23),
+  (New-JobEntry -Id "pr-507" -Kind "pr_feedback" -State "review_fixed" -Number 507 -Title "review-fixed" -Order 24)
 )
 Write-TextNoBom -Path (Join-Path $rootPath "db/jobs.json") -Value ($jobs | ConvertTo-Json -Depth 10)
 
-$mockJobs = @(
-  @{
-    id = "issue-301"
-    kind = "issue_design"
-    state = "detected"
-    repository = "mock-owner/mock-repo"
-    number = 301
-    title = "mock-detected-design"
-    issueContext = @"
-#301 mock-detected-design
-
-Mock issue for testing the detected state.
-"@
-    fetchedAt = "2026-07-01T00:40:00Z"
-    updatedAt = "2026-07-01T03:44:05Z"
-  },
-  @{
-    id = "issue-302"
-    kind = "issue_implementation"
-    state = "design_approved"
-    repository = "mock-owner/mock-repo"
-    number = 302
-    title = "mock-detected-implementation"
-    issueContext = @"
-#302 mock-detected-implementation
-
-Mock issue for testing implementation flow.
-"@
-    fetchedAt = "2026-07-01T00:50:00Z"
-    updatedAt = "2026-07-01T03:54:05Z"
-  },
-  @{
-    id = "pr-401"
-    kind = "pr_review"
-    state = "review_running"
-    repository = "mock-owner/mock-repo"
-    number = 401
-    title = "mock-pr-review"
-    fetchedAt = "2026-07-01T01:00:00Z"
-    updatedAt = "2026-07-01T04:04:05Z"
-  }
-)
+$mockJobs = @($jobs | ForEach-Object { $_ })
 Write-TextNoBom -Path (Join-Path $rootPath "db/mock_jobs.json") -Value ($mockJobs | ConvertTo-Json -Depth 10)
 
 function Write-Artifact {
@@ -183,13 +196,14 @@ function Write-Artifact {
     [int]$Number,
     [string]$SafeTitle,
     [string]$Title,
-    [string]$Kind
+    [string]$Kind,
+    [string]$State
   )
   $content = @"
 # $Title
 
 ## Summary
-This is a $Kind artifact for UI testing.
+This is a $Kind artifact for UI testing at state: $State.
 
 ## Changes
 - This artifact is generated as mock test data.
@@ -205,10 +219,53 @@ This is a $Kind artifact for UI testing.
   Write-TextNoBom -Path $path -Value $content
 }
 
-Write-Artifact -SubDir "design" -Number 101 -SafeTitle "login-page-improvements" -Title "login-page-improvements" -Kind "design"
-Write-Artifact -SubDir "implementation" -Number 102 -SafeTitle "job-detail-panel-improvements" -Title "job-detail-panel-improvements" -Kind "implementation"
-Write-Artifact -SubDir "review" -Number 201 -SafeTitle "add-filter-conditions" -Title "add-filter-conditions" -Kind "review"
-Write-Artifact -SubDir "review_fix_design" -Number 202 -SafeTitle "review-feedback-fix" -Title "review-feedback-fix" -Kind "review feedback design"
+function Get-ArtifactSubDir {
+  param(
+    [hashtable]$Job
+  )
+  switch ($Job.kind) {
+    "issue_design" { return "design" }
+    "issue_implementation" { return "implementation" }
+    "pr_review" { return "review" }
+    "pr_conflict" { return "pr_conflict" }
+    "pr_feedback" { return "review_fix_implementation" }
+    default { return "" }
+  }
+}
+
+function Should-WriteArtifact {
+  param(
+    [hashtable]$Job
+  )
+  $inspectableStates = @(
+    "design_ready",
+    "design_approved",
+    "implementation_ready",
+    "implementation_approved",
+    "pr_created",
+    "review_ready",
+    "review_approved",
+    "review_fix_design_approved",
+    "review_fix_implementation_ready",
+    "review_fix_implementation_approved",
+    "review_fixed",
+    "pr_conflict_ready",
+    "pr_conflict_resolved",
+    "completed"
+  )
+  return $inspectableStates -contains $Job.state
+}
+
+foreach ($job in $jobs) {
+  if (-not (Should-WriteArtifact -Job $job)) {
+    continue
+  }
+  $artifactSubDir = Get-ArtifactSubDir -Job $job
+  if (-not $artifactSubDir) {
+    continue
+  }
+  Write-Artifact -SubDir $artifactSubDir -Number $job.number -SafeTitle $job.title -Title $job.title -Kind $job.kind -State $job.state
+}
 
 function Write-LogGroup {
   param(
@@ -245,89 +302,55 @@ function Write-SingleRoleLogs {
   Write-LogGroup -SubDir $SubDir -Number $Number -Role $Role -Attempt 1 -Activity $Activity -Stdout $Stdout -Stderr $Stderr
 }
 
-Write-SingleRoleLogs -SubDir "design" -Number 101 -Role "agent" -Activity @"
-=== 2026-07-01T04:00:00Z request job=issue-101 kind=issue_design state=design_running ===
+function Get-LogSubDir {
+  param(
+    [hashtable]$Job
+  )
+  switch ($Job.kind) {
+    "issue_design" { return "design" }
+    "issue_implementation" { return "implementation" }
+    "pr_review" { return "review" }
+    "pr_conflict" { return "pr_conflict" }
+    "pr_feedback" {
+      if ($Job.state -like "review_fix_design*") {
+        return "review_fix_design"
+      }
+      return "review_fix_implementation"
+    }
+    default { return "" }
+  }
+}
+
+foreach ($job in $jobs) {
+  if ($job.state -eq "detected") {
+    continue
+  }
+  $logSubDir = Get-LogSubDir -Job $job
+  if (-not $logSubDir) {
+    continue
+  }
+
+  $activity = @"
+=== 2026-07-01T04:00:00Z request job=$($job.id) kind=$($job.kind) state=$($job.state) ===
 provider: codex
 model: default
 working_dir: tests
 
 [prompt]
-Design the login page.
-"@ -Stdout "design stdout: mock design run" -Stderr "design stderr: none"
+Mock fixture for $($job.title)
+"@
+  Write-SingleRoleLogs -SubDir $logSubDir -Number $job.number -Role "agent" -Activity $activity -Stdout "agent stdout: $($job.state)" -Stderr "agent stderr: none"
 
-Write-LogGroup -SubDir "implementation" -Number 102 -Role "agent" -Attempt 1 -Activity @"
-=== 2026-07-01T04:10:00Z request job=issue-102 kind=issue_implementation state=implementation_running ===
-provider: codex
-model: default
-working_dir: tests
-
-[prompt]
-Implement the job detail panel improvements.
-"@ -Stdout "implementation stdout: attempt 1" -Stderr "implementation stderr: none"
-
-Write-LogGroup -SubDir "implementation" -Number 102 -Role "verifier" -Attempt 1 -Activity @"
-=== 2026-07-01T04:11:00Z verification job=issue-102 kind=issue_implementation state=implementation_running ===
-status: passed
-feedback:
-summary: 検証を通過しました。
-"@ -Stdout "verifier stdout: tests passed" -Stderr "verifier stderr: none"
-
-Write-SingleRoleLogs -SubDir "review" -Number 201 -Role "agent" -Activity @"
-=== 2026-07-01T04:20:00Z request job=pr-201 kind=pr_review state=review_running ===
-provider: codex
-model: default
-working_dir: tests
-
-[prompt]
-Review the filter conditions.
-"@ -Stdout "review stdout: mock review run" -Stderr "review stderr: none"
-
-Write-SingleRoleLogs -SubDir "review_fix_design" -Number 202 -Role "agent" -Activity @"
-=== 2026-07-01T04:30:00Z request job=pr-202 kind=pr_feedback state=review_fix_design_running ===
-provider: codex
-model: default
-working_dir: tests
-
-[prompt]
-Fix the feedback design.
-"@ -Stdout "review-fix-design stdout: mock run" -Stderr "review-fix-design stderr: none"
-
-Write-SingleRoleLogs -SubDir "design" -Number 301 -Role "agent" -Activity @"
-=== 2026-07-01T04:40:00Z request job=issue-301 kind=issue_design state=design_running ===
-provider: codex
-model: default
-working_dir: tests
-
-[prompt]
-Detected issue for design.
-"@ -Stdout "design stdout: detected mock" -Stderr "design stderr: none"
-
-Write-LogGroup -SubDir "implementation" -Number 302 -Role "agent" -Attempt 1 -Activity @"
-=== 2026-07-01T04:50:00Z request job=issue-302 kind=issue_implementation state=implementation_running ===
-provider: codex
-model: default
-working_dir: tests
-
-[prompt]
-Mock implementation run.
-"@ -Stdout "implementation stdout: attempt 1" -Stderr "implementation stderr: none"
-
-Write-LogGroup -SubDir "implementation" -Number 302 -Role "verifier" -Attempt 1 -Activity @"
-=== 2026-07-01T04:51:00Z verification job=issue-302 kind=issue_implementation state=implementation_running ===
+  if ($job.kind -eq "issue_implementation") {
+    $verificationSummary = if ($job.subStatus -like "検証*") { "検証中の状態で停止しています。" } else { "モックの検証ログです。" }
+    Write-LogGroup -SubDir $logSubDir -Number $job.number -Role "verifier" -Attempt 2 -Activity @"
+=== 2026-07-01T04:01:00Z verification job=$($job.id) kind=$($job.kind) state=$($job.state) ===
 status: changes_requested
-feedback: テストを追加してください。
-summary: 追加テストが必要です。
-"@ -Stdout "verifier stdout: request changes" -Stderr "verifier stderr: none"
-
-Write-SingleRoleLogs -SubDir "review" -Number 401 -Role "agent" -Activity @"
-=== 2026-07-01T05:00:00Z request job=pr-401 kind=pr_review state=review_running ===
-provider: codex
-model: default
-working_dir: tests
-
-[prompt]
-Mock PR review.
-"@ -Stdout "review stdout: mock review" -Stderr "review stderr: none"
+feedback: 追加の確認が必要です。
+summary: $verificationSummary
+"@ -Stdout "verifier stdout: $($job.state)" -Stderr "verifier stderr: none"
+  }
+}
 
 Write-Host "Test data created: $rootPath"
 Write-Host "Run: go run ./cmd/korobokcle --tool-dir . --base-dir tests --work-dir tests --mock-mode"

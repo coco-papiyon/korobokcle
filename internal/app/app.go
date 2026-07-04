@@ -108,6 +108,9 @@ func Run(ctx context.Context, opts Options) error {
 		source = NewFileMockJobSource(filepath.Join(cfg.WorkDir, "db", "mock_jobs.json"), logger)
 	}
 	poller := NewPoller(cfg, source, store, settingsStore, manager)
+	if opts.MockMode {
+		poller.SetAutoSubmit(false)
+	}
 	var artifactActions ArtifactActions = NewArtifactActionService(store, settingsStore, manager, feedbackStore, cfg.BaseDir, cfg.WorkDir, logger, poller)
 	if opts.MockMode {
 		artifactActions = NewMockArtifactActionService(store, manager, feedbackStore, cfg.BaseDir, poller)

@@ -184,6 +184,53 @@ func TestPollerPreservesTimesWhenStateDoesNotChange(t *testing.T) {
 	}
 }
 
+func TestPollerCanPersistWithoutAutoSubmit(t *testing.T) {
+	cfg := config.Default()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var mu sync.Mutex
+	processed := make([]domain.Job, 0, 1)
+	manager := NewWorkerManager(cfg, nil, func(_ context.Context, job domain.Job) error {
+		mu.Lock()
+		processed = append(processed, job)
+		mu.Unlock()
+		return nil
+	})
+	if err := manager.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	store := newMemoryJobStore()
+	poller := NewPoller(cfg, NewStaticJobSource([]domain.Job{
+		{ID: "1", Kind: domain.JobKindIssueDesign, State: domain.StateDesignRunning},
+	}), store, nil, manager)
+	poller.SetAutoSubmit(false)
+
+	if err := poller.poll(ctx); err != nil {
+		t.Fatalf("poll() error = %v", err)
+	}
+
+	stored, ok, err := store.Get(ctx, "1")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("job not found")
+	}
+	if stored.State != domain.StateDesignRunning {
+		t.Fatalf("stored state = %s, want %s", stored.State, domain.StateDesignRunning)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(processed) != 0 {
+		t.Fatalf("processed jobs = %d, want 0", len(processed))
+	}
+}
+
 func TestPollerReprocessesPRReviewAfterFeedbackCycle(t *testing.T) {
 	cfg := config.Default()
 	ctx, cancel := context.WithCancel(context.Background())

@@ -59,6 +59,9 @@ const detailTitle = computed(() => {
 const showIssueContext = computed(() => detailJob.value?.kind === 'issue_design' || detailJob.value?.kind === 'issue_implementation')
 
 const issueContext = computed(() => detailJob.value?.issueContext ?? '')
+const detailSubStatus = computed(() =>
+  detailJob.value?.kind === 'issue_implementation' ? detailJob.value?.subStatus?.trim() ?? '' : '',
+)
 const hasLogs = computed(() => detailLogs.value.length > 0)
 
 const relatedLink = computed(() => {
@@ -399,6 +402,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="detail__header-actions">
           <span :class="jobStateClass(detailJob.state)">{{ formatJobStateLabel(detailJob.state) }}</span>
+          <span v-if="detailSubStatus" class="detail__substatus">{{ detailSubStatus }}</span>
         </div>
       </div>
 

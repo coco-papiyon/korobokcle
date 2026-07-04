@@ -29,13 +29,24 @@ const kindFilterDefinitions = [
   { value: 'pr_conflict', label: 'PR コンフリクト' },
 ] as const
 
+const sortOrderDefinitions = [
+  { value: 'kindAsc', label: 'Kind 昇順' },
+  { value: 'kindDesc', label: 'Kind 降順' },
+  { value: 'titleAsc', label: 'タイトル 昇順' },
+  { value: 'titleDesc', label: 'タイトル 降順' },
+  { value: 'fetchedAtAsc', label: '取得時間 昇順' },
+  { value: 'fetchedAtDesc', label: '取得時間 降順' },
+  { value: 'stateAsc', label: 'ステータス 昇順' },
+  { value: 'stateDesc', label: 'ステータス 降順' },
+] as const
+
 const jobs = ref<Job[]>([])
 const jobsUpdatedAt = ref('')
 const loadingJobs = ref(false)
 const error = ref('')
 const selectedKindFilter = ref<(typeof kindFilterDefinitions)[number]['value']>('all')
 const selectedStateFilter = ref<JobStateFilterValue>('unfinished')
-const selectedSortOrder = ref<'fetchedAtDesc' | 'fetchedAtAsc'>('fetchedAtDesc')
+const selectedSortOrder = ref<(typeof sortOrderDefinitions)[number]['value']>('fetchedAtDesc')
 let refreshTimer: number | undefined
 
 const filteredJobs = computed(() => {
@@ -55,18 +66,54 @@ function compareFetchedAt(a: Job, b: Job) {
   const hasFetchedAtB = Number.isFinite(fetchedAtB)
 
   if (hasFetchedAtA && hasFetchedAtB && fetchedAtA !== fetchedAtB) {
-    return selectedSortOrder.value === 'fetchedAtDesc' ? fetchedAtB - fetchedAtA : fetchedAtA - fetchedAtB
+    return fetchedAtA - fetchedAtB
+  }
+
+  if (hasFetchedAtA && !hasFetchedAtB) {
+    return 1
+  }
+  if (!hasFetchedAtA && hasFetchedAtB) {
+    return -1
   }
 
   return 0
 }
 
+function compareText(a: string, b: string) {
+  return a.localeCompare(b, 'ja', { sensitivity: 'base', numeric: true })
+}
+
+function compareJobs(a: Job, b: Job) {
+  const direction = selectedSortOrder.value.endsWith('Desc') ? -1 : 1
+  const sortKey = selectedSortOrder.value.replace(/(Asc|Desc)$/, '') as 'kind' | 'title' | 'fetchedAt' | 'state'
+
+  let comparison = 0
+  if (sortKey === 'kind') {
+    comparison = compareText(a.kind, b.kind)
+  } else if (sortKey === 'title') {
+    comparison = compareText(a.title || `#${a.number}`, b.title || `#${b.number}`)
+  } else if (sortKey === 'fetchedAt') {
+    comparison = compareFetchedAt(a, b)
+  } else {
+    comparison = compareText(a.state, b.state)
+  }
+
+  if (comparison !== 0) {
+    return comparison * direction
+  }
+
+  if (a.number !== b.number) {
+    return a.number - b.number
+  }
+  return compareText(a.id, b.id)
+}
+
 const visibleJobs = computed(() => {
   return [...filteredJobs.value]
     .sort((a, b) => {
-      const fetchedAtOrder = compareFetchedAt(a.job, b.job)
-      if (fetchedAtOrder !== 0) {
-        return fetchedAtOrder
+      const order = compareJobs(a.job, b.job)
+      if (order !== 0) {
+        return order
       }
       return a.index - b.index
     })
@@ -177,8 +224,9 @@ onBeforeUnmount(() => {
         <div class="job-list-panel__filter-row">
           <h3>並び順</h3>
           <select v-model="selectedSortOrder" class="control job-list-panel__filter-select" aria-label="並び順">
-            <option value="fetchedAtDesc">取得日時の新しい順</option>
-            <option value="fetchedAtAsc">取得日時の古い順</option>
+            <option v-for="option in sortOrderDefinitions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
           </select>
         </div>
       </section>

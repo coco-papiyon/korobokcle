@@ -227,6 +227,73 @@ func TestWorkflowProcessorProcessesImplementationJob(t *testing.T) {
 	}
 }
 
+func TestWorkflowProcessorClearsImplementationSubStatusAfterReady(t *testing.T) {
+	baseDir := t.TempDir()
+	toolDir := t.TempDir()
+	store := newMemoryJobStore()
+	settingsStore := &workflowTestSettingsStore{
+		settings: domain.NormalizeWatchSettings(domain.WatchSettings{
+			Repository:        "owner/repo",
+			AIProvider:        domain.AIProviderCodex,
+			BranchNamePattern: "issue_#<issue番号>",
+			Models: domain.AIModels{
+				Codex: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-5.4-mini"},
+			},
+		}),
+	}
+
+	runGitTestCommand(t, baseDir, "init", "-b", "main")
+	runGitTestCommand(t, baseDir, "config", "user.email", "test@example.com")
+	runGitTestCommand(t, baseDir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(baseDir, "README.md"), []byte("before\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	runGitTestCommand(t, baseDir, "add", "README.md")
+	runGitTestCommand(t, baseDir, "commit", "-m", "initial")
+
+	processor := NewWorkflowProcessorWithLoopDeps(
+		store,
+		settingsStore,
+		nil,
+		baseDir,
+		toolDir,
+		nil,
+		&recordingAIRunner{responses: []AIResponse{
+			{ArtifactMarkdown: "## 概要\n初回実装"},
+		}},
+		&recordingAIRunner{responses: []AIResponse{
+			{RawOutput: `{"status":"passed","feedback":"","summary":"検証完了"}`},
+		}},
+		fakeJobContextLoader{content: "Issue context"},
+	)
+
+	job := domain.Job{
+		ID:         "issue-700",
+		Kind:       domain.JobKindIssueImplementation,
+		State:      domain.StateDesignApproved,
+		Repository: "owner/repo",
+		Number:     700,
+		Title:      "サブステータス確認",
+	}
+	if err := processor(context.Background(), job); err != nil {
+		t.Fatalf("processor() error = %v", err)
+	}
+
+	updated, ok, err := store.Get(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("job not found in store")
+	}
+	if updated.State != domain.StateImplementationReady {
+		t.Fatalf("updated state = %s, want %s", updated.State, domain.StateImplementationReady)
+	}
+	if updated.SubStatus != "" {
+		t.Fatalf("subStatus = %q, want empty after ready", updated.SubStatus)
+	}
+}
+
 func TestImplementationLoopPassesVerifierFeedbackToNextAttempt(t *testing.T) {
 	implementer := &recordingAIRunner{responses: []AIResponse{
 		{ArtifactMarkdown: "## 概要\n初回実装"},
