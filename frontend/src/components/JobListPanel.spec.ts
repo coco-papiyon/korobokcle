@@ -112,17 +112,23 @@ describe('JobListPanel', () => {
     const wrapper = mountPanel()
     await flushPromises()
 
-    expect(wrapper.get('input[value="completed"]').element).toHaveProperty('checked', false)
+    expect(wrapper.get('select[aria-label="Kindフィルター"]').element).toHaveProperty('value', 'all')
+    expect(wrapper.get('select[aria-label="ステータスフィルター"]').element).toHaveProperty('value', 'unfinished')
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
     expect(wrapper.get('tbody').text()).not.toContain('完了ジョブ')
     expect(wrapper.get('tbody').text()).toContain('設計中ジョブ')
     expect(wrapper.text()).toContain('表示 1 / 3 件')
 
-    await wrapper.get('input[value="completed"]').setChecked(true)
+    await wrapper.get('select[aria-label="ステータスフィルター"]').setValue('all')
     await flushPromises()
 
-    expect(wrapper.get('input[value="completed"]').element).toHaveProperty('checked', true)
     expect(wrapper.findAll('tbody tr')).toHaveLength(3)
+    expect(wrapper.text()).toContain('完了ジョブ')
+
+    await wrapper.get('select[aria-label="ステータスフィルター"]').setValue('completed')
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
     expect(wrapper.text()).toContain('完了ジョブ')
   })
 
@@ -167,29 +173,83 @@ describe('JobListPanel', () => {
     expect(wrapper.text()).toContain('設計中ジョブ')
     expect(wrapper.text()).toContain('別Kindジョブ')
 
-    await wrapper.get('input[value="pr_review"]').setChecked(false)
-    await flushPromises()
-
-    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
-    expect(wrapper.text()).not.toContain('別Kindジョブ')
-
-    await wrapper.get('input[value="design_running"]').setChecked(false)
-    await flushPromises()
-
-    expect(wrapper.findAll('tbody tr')).toHaveLength(0)
-    expect(wrapper.text()).toContain('条件に一致するジョブがありません。')
-
-    await wrapper.get('input[value="design_running"]').setChecked(true)
+    await wrapper.get('select[aria-label="Kindフィルター"]').setValue('issue_design')
     await flushPromises()
 
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
     expect(wrapper.text()).toContain('設計中ジョブ')
+    expect(wrapper.text()).not.toContain('別Kindジョブ')
 
-    await wrapper.get('input[value="completed"]').setChecked(true)
+    await wrapper.get('select[aria-label="ステータスフィルター"]').setValue('completed')
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.text()).toContain('完了ジョブ')
+  })
+
+  it('groups running and waiting states into single status filters', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [
+          {
+            id: 'job-1',
+            kind: 'issue_design',
+            state: 'design_running',
+            repository: 'owner/repo',
+            number: 1,
+            title: '設計中ジョブ',
+          },
+          {
+            id: 'job-2',
+            kind: 'issue_implementation',
+            state: 'implementation_running',
+            repository: 'owner/repo',
+            number: 2,
+            title: '実装中ジョブ',
+          },
+          {
+            id: 'job-3',
+            kind: 'issue_design',
+            state: 'design_ready',
+            repository: 'owner/repo',
+            number: 3,
+            title: '設計完了ジョブ',
+          },
+          {
+            id: 'job-4',
+            kind: 'issue_implementation',
+            state: 'implementation_ready',
+            repository: 'owner/repo',
+            number: 4,
+            title: '実装完了ジョブ',
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.get('select[aria-label="Kindフィルター"]').element).toHaveProperty('value', 'all')
+    await wrapper.get('select[aria-label="ステータスフィルター"]').setValue('running')
     await flushPromises()
 
     expect(wrapper.findAll('tbody tr')).toHaveLength(2)
-    expect(wrapper.text()).toContain('完了ジョブ')
+    expect(wrapper.text()).toContain('設計中ジョブ')
+    expect(wrapper.text()).toContain('実装中ジョブ')
+    expect(wrapper.text()).not.toContain('設計完了ジョブ')
+    expect(wrapper.text()).not.toContain('実装完了ジョブ')
+
+    await wrapper.get('select[aria-label="ステータスフィルター"]').setValue('waiting')
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+    expect(wrapper.text()).toContain('設計完了ジョブ')
+    expect(wrapper.text()).toContain('実装完了ジョブ')
+    expect(wrapper.text()).not.toContain('設計中ジョブ')
+    expect(wrapper.text()).not.toContain('実装中ジョブ')
   })
 
   it('shows a dedicated empty state when no jobs match filters and keeps the no-data state distinct', async () => {
@@ -226,7 +286,7 @@ describe('JobListPanel', () => {
     const filteredWrapper = mountPanel()
     await flushPromises()
 
-    await filteredWrapper.get('input[value="issue_design"]').setChecked(false)
+    await filteredWrapper.get('select[aria-label="Kindフィルター"]').setValue('pr_review')
     await flushPromises()
 
     expect(filteredWrapper.text()).toContain('条件に一致するジョブがありません。')

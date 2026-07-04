@@ -36,7 +36,39 @@ const runningStates = new Set([
   'review_running',
   'review_fix_design_running',
   'review_fix_implementation_running',
+  'pr_conflict_running',
 ])
+
+const waitingStates = new Set([
+  'design_ready',
+  'implementation_ready',
+  'review_ready',
+  'review_fix_design_ready',
+  'review_fix_implementation_ready',
+  'pr_conflict_ready',
+])
+
+const approvedStates = new Set([
+  'design_approved',
+  'implementation_approved',
+  'review_approved',
+  'review_fix_design_approved',
+  'review_fix_implementation_approved',
+  'pr_conflict_resolved',
+])
+
+export type JobStateFilterValue = 'all' | 'unfinished' | 'running' | 'waiting' | 'approved' | 'completed' | 'failed' | 'other'
+
+export const jobStateFilterDefinitions = [
+  { value: 'all', label: 'すべて' },
+  { value: 'unfinished', label: '未完了' },
+  { value: 'running', label: '実行中' },
+  { value: 'waiting', label: '承認待ち' },
+  { value: 'approved', label: '承認済み' },
+  { value: 'completed', label: '完了' },
+  { value: 'failed', label: '失敗' },
+  { value: 'other', label: 'その他' },
+] as const
 
 export function jobStateChipClass(state: string) {
   if (state === 'failed') {
@@ -50,4 +82,33 @@ export function jobStateChipClass(state: string) {
 
 export function jobStateLabel(state: string) {
   return jobStateLabels[state] ?? state
+}
+
+export function jobStateMatchesFilter(state: string, filter: JobStateFilterValue) {
+  switch (filter) {
+    case 'all':
+      return true
+    case 'unfinished':
+      return state !== 'completed'
+    case 'running':
+      return runningStates.has(state)
+    case 'waiting':
+      return waitingStates.has(state)
+    case 'approved':
+      return approvedStates.has(state)
+    case 'completed':
+      return state === 'completed'
+    case 'failed':
+      return state === 'failed'
+    case 'other':
+      return (
+        state !== 'completed' &&
+        state !== 'failed' &&
+        !runningStates.has(state) &&
+        !waitingStates.has(state) &&
+        !approvedStates.has(state)
+      )
+  }
+
+  return false
 }

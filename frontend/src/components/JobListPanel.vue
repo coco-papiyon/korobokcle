@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { Job, JobKind, JobListResponse } from '../types'
-import { jobStateChipClass, jobStateDefinitions, jobStateLabel as formatJobStateLabel } from '../utils/jobState'
+import type { Job, JobListResponse } from '../types'
+import {
+  jobStateChipClass,
+  jobStateFilterDefinitions,
+  jobStateLabel as formatJobStateLabel,
+  jobStateMatchesFilter,
+  type JobStateFilterValue,
+} from '../utils/jobState'
 import { formatJobTimestampValue } from '../utils/jobTime'
 
 const props = defineProps<{
@@ -14,23 +20,27 @@ const emit = defineEmits<{
   (event: 'select', jobId: string): void
 }>()
 
-const kindOptions: JobKind[] = ['issue_design', 'issue_implementation', 'pr_review', 'pr_feedback', 'pr_conflict']
-const defaultSelectedStates = jobStateDefinitions
-  .filter((option) => option.state !== 'completed')
-  .map((option) => option.state)
+const kindFilterDefinitions = [
+  { value: 'all', label: 'すべて' },
+  { value: 'issue_design', label: 'Issue 設計' },
+  { value: 'issue_implementation', label: 'Issue 実装' },
+  { value: 'pr_review', label: 'PR レビュー' },
+  { value: 'pr_feedback', label: 'PR 指摘対応' },
+  { value: 'pr_conflict', label: 'PR コンフリクト' },
+] as const
 
 const jobs = ref<Job[]>([])
 const jobsUpdatedAt = ref('')
 const loadingJobs = ref(false)
 const error = ref('')
-const selectedKinds = ref<JobKind[]>([...kindOptions])
-const selectedStates = ref<string[]>([...defaultSelectedStates])
+const selectedKindFilter = ref<(typeof kindFilterDefinitions)[number]['value']>('all')
+const selectedStateFilter = ref<JobStateFilterValue>('unfinished')
 let refreshTimer: number | undefined
 
 const filteredJobs = computed(() => {
   return jobs.value.filter((job) => {
-    const kindMatches = selectedKinds.value.includes(job.kind)
-    const stateMatches = selectedStates.value.includes(job.state)
+    const kindMatches = selectedKindFilter.value === 'all' || job.kind === selectedKindFilter.value
+    const stateMatches = jobStateMatchesFilter(job.state, selectedStateFilter.value)
     return kindMatches && stateMatches
   })
 })
@@ -122,28 +132,24 @@ onBeforeUnmount(() => {
 
     <div class="job-list-panel__filters" aria-label="ジョブ一覧フィルター">
       <section class="job-list-panel__filter-group">
-        <div class="job-list-panel__filter-header">
+        <div class="job-list-panel__filter-row">
           <h3>Kind</h3>
-          <span class="panel__hint">{{ selectedKinds.length }} / {{ kindOptions.length }} 件</span>
-        </div>
-        <div class="job-list-panel__filter-options">
-          <label v-for="kind in kindOptions" :key="kind" class="job-list-filter job-list-filter--option">
-            <input v-model="selectedKinds" type="checkbox" :value="kind" />
-            <code>{{ kind }}</code>
-          </label>
+          <select v-model="selectedKindFilter" class="control job-list-panel__filter-select" aria-label="Kindフィルター">
+            <option v-for="option in kindFilterDefinitions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
         </div>
       </section>
 
       <section class="job-list-panel__filter-group">
-        <div class="job-list-panel__filter-header">
+        <div class="job-list-panel__filter-row">
           <h3>ステータス</h3>
-          <span class="panel__hint">{{ selectedStates.length }} / {{ jobStateDefinitions.length }} 件</span>
-        </div>
-        <div class="job-list-panel__filter-options job-list-panel__filter-options--states">
-          <label v-for="option in jobStateDefinitions" :key="option.state" class="job-list-filter job-list-filter--option">
-            <input v-model="selectedStates" type="checkbox" :value="option.state" />
-            <span>{{ option.label }}</span>
-          </label>
+          <select v-model="selectedStateFilter" class="control job-list-panel__filter-select" aria-label="ステータスフィルター">
+            <option v-for="option in jobStateFilterDefinitions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
         </div>
       </section>
     </div>

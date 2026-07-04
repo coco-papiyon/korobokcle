@@ -82,7 +82,7 @@ go run ./cmd/korobokcle --base-dir C:\path\to\repo --tool-dir C:\path\to\korobok
 - `GET /api/jobs/:id`
 - `PATCH /api/jobs/:id/state`
 
-`GET /api/jobs` は各ジョブの `kind` と `state` を返します。ジョブ一覧ではフロントエンド側で `Kind` と `ステータス` のフィルターをかけます。
+`GET /api/jobs` は各ジョブの `kind` と `state` を返します。ジョブ一覧ではフロントエンド側で `Kind` と状態グループのフィルターをかけます。
 
 ## フロントエンド
 
@@ -95,7 +95,7 @@ npm run dev
 
 Vite は `/api` と `/healthz` を `http://127.0.0.1:8080` に proxy します。
 
-ジョブ一覧では `Kind` と `ステータス` を独立して絞り込めます。既定では `完了` は非表示で、条件不一致時は「条件に一致するジョブがありません。」と表示します。
+ジョブ一覧では `Kind` と状態グループを選んで絞り込めます。既定では `完了` は非表示で、条件不一致時は「条件に一致するジョブがありません。」と表示します。
 
 ## 保存先
 
