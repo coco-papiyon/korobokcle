@@ -47,6 +47,7 @@ func TestGenerateSkillsSkipsAIExistingSkill(t *testing.T) {
 	toolDir := t.TempDir()
 	workDir := t.TempDir()
 	installSkillGenerationPrompt(t, toolDir)
+	testCommand := "go test ./..."
 	path := filepath.Join(baseDir, ".github", "skills", "custom-issue-planner")
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
@@ -65,7 +66,7 @@ func TestGenerateSkillsSkipsAIExistingSkill(t *testing.T) {
 					return AIResponse{RawOutput: `{"matches":true,"reason":"same workflow","confidence":"high"}`}, nil
 				}
 				if strings.Contains(req.Prompt, "Agent Skillを生成してください") {
-					return AIResponse{}, writeGeneratedSkillFiles(req.WorkingDir)
+					return AIResponse{}, writeGeneratedSkillFiles(req.WorkingDir, testCommand)
 				}
 				return AIResponse{}, errors.New("unexpected prompt")
 			},
@@ -110,6 +111,7 @@ func TestGenerateSkillsCanForceAIExistingSkill(t *testing.T) {
 	toolDir := t.TempDir()
 	workDir := t.TempDir()
 	installSkillGenerationPrompt(t, toolDir)
+	testCommand := "go test ./..."
 	path := filepath.Join(baseDir, ".github", "skills", "custom-issue-planner")
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
@@ -128,7 +130,7 @@ func TestGenerateSkillsCanForceAIExistingSkill(t *testing.T) {
 					return AIResponse{RawOutput: `{"matches":true,"reason":"same workflow","confidence":"high"}`}, nil
 				}
 				if strings.Contains(req.Prompt, "Agent Skillを生成してください") {
-					return AIResponse{}, writeGeneratedSkillFiles(req.WorkingDir)
+					return AIResponse{}, writeGeneratedSkillFiles(req.WorkingDir, testCommand)
 				}
 				return AIResponse{}, errors.New("unexpected prompt")
 			},
@@ -159,6 +161,7 @@ func TestGenerateSkillsCanOverwriteExistingSkill(t *testing.T) {
 	toolDir := t.TempDir()
 	workDir := t.TempDir()
 	installSkillGenerationPrompt(t, toolDir)
+	testCommand := "go test ./..."
 	path := filepath.Join(baseDir, ".agents", "skills", "design-from-issue")
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
@@ -177,7 +180,7 @@ func TestGenerateSkillsCanOverwriteExistingSkill(t *testing.T) {
 					return AIResponse{RawOutput: `{"matches":true,"reason":"same workflow","confidence":"high"}`}, nil
 				}
 				if strings.Contains(req.Prompt, "Agent Skillを生成してください") {
-					return AIResponse{}, writeGeneratedSkillFiles(req.WorkingDir)
+					return AIResponse{}, writeGeneratedSkillFiles(req.WorkingDir, testCommand)
 				}
 				return AIResponse{}, errors.New("unexpected prompt")
 			},
@@ -213,6 +216,7 @@ func TestGenerateSkillsSkipsExistingSelectedSkillWithoutOverwrite(t *testing.T) 
 	toolDir := t.TempDir()
 	workDir := t.TempDir()
 	installSkillGenerationPrompt(t, toolDir)
+	testCommand := "go test ./..."
 	path := filepath.Join(baseDir, ".agents", "skills", "design-from-issue")
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		t.Fatal(err)
@@ -233,7 +237,7 @@ func TestGenerateSkillsSkipsExistingSelectedSkillWithoutOverwrite(t *testing.T) 
 					return AIResponse{RawOutput: `{"matches":true,"reason":"same workflow","confidence":"high"}`}, nil
 				}
 				if strings.Contains(req.Prompt, "Agent Skillを生成してください") {
-					return AIResponse{}, writeGeneratedSkillFiles(req.WorkingDir)
+					return AIResponse{}, writeGeneratedSkillFiles(req.WorkingDir, testCommand)
 				}
 				return AIResponse{}, errors.New("unexpected prompt")
 			},
@@ -311,6 +315,31 @@ description: 承認済みの設計に基づく実装結果の出力形式を規�
 	}
 }
 
+func TestValidateGeneratedVerificationSkill(t *testing.T) {
+	dir := t.TempDir()
+	content := `---
+name: verifier-from-design
+description: 設計に基づく検証結果の出力形式を規定する。
+---
+<!-- generated-by: korobokcle -->
+<!-- korobokcle-purpose: issue_verification -->
+## 必須出力形式
+判定結果、確認内容、検証結果、残課題の順で出力する。
+検証結果には設計で指定されたテストコマンドを記載する。
+npm test
+テスト結果には npm test の実行結果を記載する。
+各コマンドの実行結果と判定結果を記載する。
+`
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	definition := issueDrivenSkillDefinitions[2]
+	request := domain.SkillGenerationRequest{TestCommand: "npm test", MaxFixLoops: 4}
+	if err := validateGeneratedSkill(dir, definition, request); err != nil {
+		t.Fatalf("validateGeneratedSkill() error = %v", err)
+	}
+}
+
 func TestValidateGeneratedConflictResolutionSkill(t *testing.T) {
 	dir := t.TempDir()
 	content := `---
@@ -355,7 +384,10 @@ func TestRenderSkillGenerationPromptReloadsEditedFile(t *testing.T) {
 	}
 }
 
-func writeGeneratedSkillFiles(workDir string) error {
+func writeGeneratedSkillFiles(workDir string, testCommand string) error {
+	if testCommand == "" {
+		testCommand = "go test ./..."
+	}
 	files := map[string]string{
 		"design-from-issue": `---
 name: design-from-issue
@@ -375,9 +407,22 @@ description: Implement the approved design and verify it with tests.
 ## 必須出力形式
 概要、変更内容、テスト結果、残課題の順で出力する。
 テスト結果には次のコマンドを記載する。
-- go test ./...
+` + testCommand + `
 必要に応じて npm ci を実行する。
 各コマンドの実行結果と、最大4回に対する修正回数を記載する。
+`,
+		"verifier-from-design": `---
+name: verifier-from-design
+description: Verify the implementation against the approved design and tests.
+---
+<!-- generated-by: korobokcle -->
+<!-- korobokcle-purpose: issue_verification -->
+## 必須出力形式
+判定結果、確認内容、検証結果、残課題の順で出力する。
+検証結果には設計で指定されたテストコマンドを記載する。
+` + testCommand + `
+テスト結果には ` + testCommand + ` の実行結果を記載する。
+各コマンドの実行結果と、判定結果を記載する。
 `,
 		"review-pull-request": `---
 name: review-pull-request
@@ -406,7 +451,7 @@ description: Implement review feedback and verify it with tests.
 ## 必須出力形式
 概要、変更内容、テスト結果、残課題の順で出力する。
 テスト結果には次のコマンドを記載する。
-- go test ./...
+` + testCommand + `
 各コマンドの実行結果と、最大4回に対する修正回数を記載する。
 `,
 		"resolve-pr-conflicts": `---
@@ -418,7 +463,7 @@ description: PRのコンフリクトを解消し、検証結果をまとめる�
 ## 必須出力形式
 概要、確認した情報、解消方針、変更内容、テスト結果、残課題の順で出力する。
 テスト結果には次のコマンドを記載する。
-- go test ./...
+` + testCommand + `
 各コマンドの実行結果と、最大4回に対する修正回数を記載する。
 `,
 	}

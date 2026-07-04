@@ -44,6 +44,15 @@ describe('SkillGeneratorPanel', () => {
       path: '.agents/skills/implement-from-design/SKILL.md',
     },
     {
+      purpose: 'issue_verification',
+      name: 'verifier-from-design',
+      displayName: 'Verifier From Design',
+      exists: true,
+      aiExists: false,
+      generated: false,
+      path: '.agents/skills/verifier-from-design/SKILL.md',
+    },
+    {
       purpose: 'review-pull-request',
       name: 'review-pull-request',
       displayName: 'Review Pull Request',
@@ -91,7 +100,7 @@ describe('SkillGeneratorPanel', () => {
     expect(wrapper.text()).toContain('AI生成済み')
 
     const checkboxes = wrapper.findAll('input[type="checkbox"]')
-    expect(checkboxes).toHaveLength(5)
+    expect(checkboxes).toHaveLength(6)
     expect(checkboxes.every((checkbox) => (checkbox.element as HTMLInputElement).checked)).toBe(true)
   })
 
@@ -122,7 +131,7 @@ describe('SkillGeneratorPanel', () => {
       projectContext: '',
       testCommand: 'go test ./...\ngo test ./internal/app',
       maxFixLoops: 3,
-      forcePurposes: ['implement-from-design', 'review-pull-request', 'pr_conflict_resolution'],
+      forcePurposes: ['implement-from-design', 'issue_verification', 'review-pull-request', 'pr_conflict_resolution'],
       overwriteExisting: false,
     })
 
@@ -134,7 +143,7 @@ describe('SkillGeneratorPanel', () => {
       projectContext: '',
       testCommand: 'go test ./...\ngo test ./internal/app',
       maxFixLoops: 3,
-      forcePurposes: ['implement-from-design', 'review-pull-request', 'pr_conflict_resolution'],
+      forcePurposes: ['implement-from-design', 'issue_verification', 'review-pull-request', 'pr_conflict_resolution'],
       overwriteExisting: true,
     })
   })

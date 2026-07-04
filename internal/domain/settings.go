@@ -36,6 +36,8 @@ type WatchSettings struct {
 	PollIntervalSeconds     int             `json:"pollIntervalSeconds,omitempty"`
 	JobConcurrency          int             `json:"jobConcurrency,omitempty"`
 	ImplementationLoopCount int             `json:"implementationLoopCount,omitempty"`
+	VerificationAIProvider  AIProvider      `json:"verificationAiProvider,omitempty"`
+	VerificationAIModel     ModelSelection  `json:"verificationAiModel,omitempty"`
 	BaseBranch              string          `json:"baseBranch,omitempty"`
 	BranchNamePattern       string          `json:"branchNamePattern,omitempty"`
 	AIAllowedCommands       []string        `json:"aiAllowedCommands,omitempty"`
@@ -71,6 +73,10 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 	if settings.ImplementationLoopCount > 10 {
 		settings.ImplementationLoopCount = 10
 	}
+	if !settings.VerificationAIProvider.IsValid() {
+		settings.VerificationAIProvider = ""
+	}
+	settings.VerificationAIModel = normalizeModelSelection(settings.VerificationAIModel)
 	if strings.TrimSpace(settings.BaseBranch) == "" {
 		settings.BaseBranch = "main"
 	}

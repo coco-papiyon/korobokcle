@@ -74,3 +74,41 @@ func TestResolveJobAISelection(t *testing.T) {
 		t.Fatalf("job model = %q, want claude-sonnet-4.6", model)
 	}
 }
+
+func TestResolveJobAISelectionForRoleUsesVerifierOverrides(t *testing.T) {
+	settings := domain.NormalizeWatchSettings(domain.WatchSettings{
+		AIProvider: domain.AIProviderCodex,
+		Models: domain.AIModels{
+			Codex:         domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-5.4-mini"},
+			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "claude-sonnet-4.6"},
+		},
+		VerificationAIProvider: domain.AIProviderGitHubCopilot,
+		VerificationAIModel:    domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "claude-opus-4.6"},
+	})
+
+	provider, model := resolveJobAISelectionForRole(settings, domain.Job{Kind: domain.JobKindIssueImplementation}, "agent")
+	if provider != domain.AIProviderCodex {
+		t.Fatalf("implementer provider = %q, want %q", provider, domain.AIProviderCodex)
+	}
+	if model != "gpt-5.4-mini" {
+		t.Fatalf("implementer model = %q, want gpt-5.4-mini", model)
+	}
+
+	provider, model = resolveJobAISelectionForRole(settings, domain.Job{Kind: domain.JobKindIssueImplementation}, "verifier")
+	if provider != domain.AIProviderGitHubCopilot {
+		t.Fatalf("verifier provider = %q, want %q", provider, domain.AIProviderGitHubCopilot)
+	}
+	if model != "claude-opus-4.6" {
+		t.Fatalf("verifier model = %q, want claude-opus-4.6", model)
+	}
+
+	settings.VerificationAIProvider = ""
+	settings.VerificationAIModel = domain.ModelSelection{}
+	provider, model = resolveJobAISelectionForRole(settings, domain.Job{Kind: domain.JobKindIssueImplementation}, "verifier")
+	if provider != domain.AIProviderCodex {
+		t.Fatalf("fallback verifier provider = %q, want %q", provider, domain.AIProviderCodex)
+	}
+	if model != "gpt-5.4-mini" {
+		t.Fatalf("fallback verifier model = %q, want gpt-5.4-mini", model)
+	}
+}

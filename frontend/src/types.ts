@@ -76,6 +76,8 @@ export type WatchSettings = {
   pollIntervalSeconds: number
   jobConcurrency: number
   implementationLoopCount: number
+  verificationAiProvider?: AIProvider
+  verificationAiModel?: ModelSelection
   baseBranch: string
   branchNamePattern: string
   aiAllowedCommands: string[]

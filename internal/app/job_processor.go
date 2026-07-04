@@ -92,7 +92,7 @@ func (p *WorkflowProcessor) Start(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	if err := verifier.Start(ctx, settings.AIProvider, p.baseDir); err != nil {
+	if err := verifier.Start(ctx, verifierProviderForSettings(settings), p.baseDir); err != nil {
 		_ = runner.Stop(context.Background())
 		return fmt.Errorf("start verifier: %w", err)
 	}
@@ -270,7 +270,7 @@ func (p *WorkflowProcessor) runSingleAI(ctx context.Context, job domain.Job, set
 	defer stdoutLog.Close()
 	defer stderrLog.Close()
 
-	provider, model := resolveJobAISelection(settings, job)
+	provider, model := resolveJobAISelectionForRole(settings, job, role)
 	prompt := p.buildPrompt(job, settings, feedback, contextText, workDir, branch, runningState, readyState)
 	req := AIRequest{
 		Provider:        provider,
@@ -375,7 +375,7 @@ func (p *WorkflowProcessor) verifyImplementation(ctx context.Context, job domain
 	}
 	defer stdoutLog.Close()
 	defer stderrLog.Close()
-	provider, model := resolveJobAISelection(settings, job)
+	provider, model := resolveJobAISelectionForRole(settings, job, "verifier")
 	prompt := strings.Join([]string{
 		fmt.Sprintf("job_id: %s", job.ID),
 		fmt.Sprintf("attempt: %d/%d", attempt, maxAttempts),
@@ -446,7 +446,7 @@ func (p *WorkflowProcessor) openAIRoleProcessLogs(job domain.Job, attempt int, r
 
 func (p *WorkflowProcessor) buildPrompt(job domain.Job, settings domain.WatchSettings, feedback string, contextText string, workDir string, branch string, runningState, readyState domain.JobState) string {
 	phase := artifactSubdir(job)
-	provider, model := resolveJobAISelection(settings, job)
+	provider, model := resolveJobAISelectionForRole(settings, job, "agent")
 	lines := []string{
 		fmt.Sprintf("phase: %s", phase),
 		fmt.Sprintf("job_id: %s", job.ID),

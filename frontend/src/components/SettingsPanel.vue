@@ -17,6 +17,8 @@ const settingsForm = ref({
   aiAllowedCommandsText: '',
   codexModelSelection: 'default',
   githubCopilotModelSelection: 'default',
+  verificationAiProviderSelection: '' as AIProvider | '',
+  verificationAiModelSelection: 'default',
   issueAiProviderSelection: '' as AIProvider | '',
   issueAiModelSelection: 'default',
   issueLabelIncludesText: '',
@@ -74,6 +76,23 @@ const activeModelSelection = computed({
     } else {
       settingsForm.value.githubCopilotModelSelection = normalized
     }
+  },
+})
+
+const verificationEffectiveProvider = computed(
+  () => settingsForm.value.verificationAiProviderSelection || settingsForm.value.aiProvider,
+)
+const verificationActiveModelOptions = computed(() => modelOptions[verificationEffectiveProvider.value])
+const verificationActiveModelSelection = computed({
+  get() {
+    const selection = settingsForm.value.verificationAiModelSelection
+    return verificationActiveModelOptions.value.some((option) => option.value === selection) ? selection : 'default'
+  },
+  set(value: string) {
+    const normalized = verificationActiveModelOptions.value.some((option) => option.value === value)
+      ? value
+      : 'default'
+    settingsForm.value.verificationAiModelSelection = normalized
   },
 })
 
@@ -141,6 +160,11 @@ function settingsToForm(settings: WatchSettings) {
   settingsForm.value.codexModelSelection = codexModel?.mode === 'custom' && codexModel.value ? codexModel.value : 'default'
   settingsForm.value.githubCopilotModelSelection =
     githubCopilotModel?.mode === 'custom' && githubCopilotModel.value ? githubCopilotModel.value : 'default'
+  settingsForm.value.verificationAiProviderSelection = settings.verificationAiProvider ?? ''
+  settingsForm.value.verificationAiModelSelection =
+    settings.verificationAiModel?.mode === 'custom' && settings.verificationAiModel.value
+      ? settings.verificationAiModel.value
+      : 'default'
   settingsForm.value.issueAiProviderSelection = settings.issue?.aiProvider ?? ''
   settingsForm.value.issueAiModelSelection = issueModel?.mode === 'custom' && issueModel.value ? issueModel.value : 'default'
   settingsForm.value.issueLabelIncludesText = joinCSV(settings.issue?.labelIncludes ?? [])
@@ -163,6 +187,7 @@ function settingsToForm(settings: WatchSettings) {
 function formToSettings(): WatchSettings {
   const codexSelection = settingsForm.value.codexModelSelection
   const githubCopilotSelection = settingsForm.value.githubCopilotModelSelection
+  const verificationSelection = settingsForm.value.verificationAiModelSelection
   return {
     repository: settingsForm.value.repository.trim(),
     aiProvider: settingsForm.value.aiProvider,
@@ -188,6 +213,11 @@ function formToSettings(): WatchSettings {
           ? { mode: 'default', value: '' }
           : { mode: 'custom', value: githubCopilotSelection },
     },
+    verificationAiProvider: settingsForm.value.verificationAiProviderSelection || undefined,
+    verificationAiModel:
+      verificationSelection === 'default'
+        ? { mode: 'default', value: '' }
+        : { mode: 'custom', value: verificationSelection },
     issue: {
       enabled: settingsForm.value.issueEnabled,
       aiProvider: settingsForm.value.issueAiProviderSelection || undefined,
@@ -277,26 +307,48 @@ defineExpose({
   </div>
 
   <div class="form settings-grid">
-    <label class="field field--full">
-      <span>AI プロバイダー</span>
-      <select v-model="settingsForm.aiProvider" class="control">
-        <option v-for="(label, value) in aiProviderLabels" :key="value" :value="value">
-          {{ label }} ({{ value }})
-        </option>
-      </select>
-    </label>
+    <div class="model-grid settings-section--full">
+      <div class="model-card">
+        <h4>実装者</h4>
+        <label class="field">
+          <span>AI プロバイダー</span>
+          <select v-model="settingsForm.aiProvider" class="control">
+            <option v-for="(label, value) in aiProviderLabels" :key="value" :value="value">
+              {{ label }} ({{ value }})
+            </option>
+          </select>
+        </label>
+        <label class="field">
+          <span>モデル</span>
+          <select v-model="activeModelSelection" class="control">
+            <option v-for="option in activeModelOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+      </div>
 
-    <div class="field field--full">
-      <span>モデル選択</span>
-      <select v-model="activeModelSelection" class="control">
-        <option v-for="option in activeModelOptions" :key="option.value" :value="option.value">
-          {{ option.label }}
-        </option>
-      </select>
-      <p class="field-note">
-        プロバイダーに応じて候補が切り替わる。<template v-if="settingsForm.aiProvider === 'codex'">Codex</template><template v-else>GitHub Copilot</template>
-        の既定値もここに含まれる。
-      </p>
+      <div class="model-card">
+        <h4>検証者</h4>
+        <label class="field">
+          <span>AI プロバイダー</span>
+          <select v-model="settingsForm.verificationAiProviderSelection" class="control">
+            <option value="">実装者設定を使用</option>
+            <option v-for="(label, value) in aiProviderLabels" :key="value" :value="value">
+              {{ label }} ({{ value }})
+            </option>
+          </select>
+        </label>
+        <label class="field">
+          <span>モデル</span>
+          <select v-model="verificationActiveModelSelection" class="control">
+            <option value="default">実装者設定を使用</option>
+            <option v-for="option in verificationActiveModelOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+      </div>
     </div>
 
     <label class="field field--full">

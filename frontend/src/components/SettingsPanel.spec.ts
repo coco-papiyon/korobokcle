@@ -40,6 +40,8 @@ describe('SettingsPanel', () => {
           codex: { mode: 'custom', value: 'gpt-5.5' },
           githubCopilot: { mode: 'default', value: '' },
         },
+        verificationAiProvider: '',
+        verificationAiModel: { mode: 'default', value: '' },
         issue: {
           enabled: true,
           aiProvider: 'github_copilot',
@@ -115,10 +117,12 @@ describe('SettingsPanel', () => {
     expect(prAssigneesInput.element).toHaveProperty('value', 'dave')
     expect(selects[0].element).toHaveProperty('value', 'codex')
     expect(selects[1].element).toHaveProperty('value', 'gpt-5.5')
-    expect(selects[2].element).toHaveProperty('value', 'github_copilot')
-    expect(selects[3].element).toHaveProperty('value', 'gpt-4.1')
-    expect(selects[4].element).toHaveProperty('value', '')
-    expect(selects[5].element).toHaveProperty('value', 'default')
+    expect(selects[2].element).toHaveProperty('value', '')
+    expect(selects[3].element).toHaveProperty('value', 'default')
+    expect(selects[4].element).toHaveProperty('value', 'github_copilot')
+    expect(selects[5].element).toHaveProperty('value', 'gpt-4.1')
+    expect(selects[6].element).toHaveProperty('value', '')
+    expect(selects[7].element).toHaveProperty('value', 'default')
     const textareas = wrapper.findAll('textarea')
     expect(textareas[0].element).toHaveProperty('value', 'npm ci\ngo test ./...')
 
@@ -133,6 +137,8 @@ describe('SettingsPanel', () => {
     await selects[3].setValue('gpt-5.4-mini')
     await selects[4].setValue('github_copilot')
     await selects[5].setValue('claude-opus-4.6')
+    await selects[6].setValue('github_copilot')
+    await selects[7].setValue('claude-opus-4.6')
     await conditionToggles[0].setChecked(false)
     await textareas[0].setValue('npm ci\nnpm test\n')
     await selects[0].setValue('github_copilot')
@@ -157,6 +163,8 @@ describe('SettingsPanel', () => {
       pollIntervalSeconds: 59,
       jobConcurrency: 6,
       implementationLoopCount: 5,
+      verificationAiProvider: 'codex',
+      verificationAiModel: { mode: 'custom', value: 'gpt-5.4-mini' },
       baseBranch: 'release',
       branchNamePattern: 'issue_#<issue番号>',
       aiAllowedCommands: ['npm ci', 'npm test'],
@@ -166,8 +174,8 @@ describe('SettingsPanel', () => {
       },
       issue: {
         enabled: false,
-        aiProvider: 'codex',
-        aiModel: { mode: 'custom', value: 'gpt-5.4-mini' },
+        aiProvider: 'github_copilot',
+        aiModel: { mode: 'custom', value: 'claude-opus-4.6' },
         labelIncludes: ['bug', 'ai:design'],
         labelExcludes: ['wip'],
         titleContains: ['fix'],
