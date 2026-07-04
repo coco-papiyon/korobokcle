@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import type { Job, JobArtifact, JobDetailResponse } from '../types'
-import { jobStateChipClass } from '../utils/jobState'
+import { jobStateChipClass, jobStateLabel as formatJobStateLabel } from '../utils/jobState'
 import { formatJobTimestampValue } from '../utils/jobTime'
 
 const props = defineProps<{
@@ -28,34 +28,6 @@ const emit = defineEmits<{
   (event: 'refresh'): void
   (event: 'deleted', jobId: string): void
 }>()
-
-const stateLabels: Record<string, string> = {
-  detected: '検知済み',
-  design_running: '設計中',
-  design_ready: '設計完了',
-  design_approved: '設計承認済み',
-  completed: '完了',
-  implementation_running: '実装中',
-  implementation_ready: '実装完了',
-  implementation_approved: '実装承認済み',
-  pr_created: 'PR済み',
-  pr_review_comment: 'レビュー指摘あり',
-  pr_conflict: 'コンフリクト検知済み',
-  pr_conflict_running: 'コンフリクト解消中',
-  pr_conflict_ready: 'コンフリクト解消完了',
-  pr_conflict_resolved: 'コンフリクト解消済み',
-  review_fix_design_running: 'レビュー指摘検討中',
-  review_fix_design_ready: 'レビュー指摘検討済み',
-  review_fix_design_approved: 'レビュー検討承認済み',
-  review_fix_implementation_running: 'レビュー指摘修正中',
-  review_fix_implementation_ready: 'レビュー指摘修正完了',
-  review_fix_implementation_approved: 'レビュー指摘修正承認済み',
-  review_fixed: 'レビュー指摘修正済み',
-  review_running: 'レビュー中',
-  review_ready: 'レビュー完了',
-  review_approved: 'レビュー承認済み',
-  failed: '失敗',
-}
 
 const inspectableStates = new Set([
   'design_ready',
@@ -100,16 +72,12 @@ const relatedLink = computed(() => {
   }
 })
 
-function jobStateLabel(state: string) {
-  return stateLabels[state] ?? state
+function canInspectArtifact(job: Job | null) {
+  return job != null && inspectableStates.has(job.state)
 }
 
 function jobStateClass(state: string) {
   return jobStateChipClass(state)
-}
-
-function canInspectArtifact(job: Job | null) {
-  return job != null && inspectableStates.has(job.state)
 }
 
 function canRequestChanges(job: Job | null) {
@@ -391,7 +359,7 @@ onBeforeUnmount(() => {
           <h3>{{ detailTitle }}</h3>
         </div>
         <div class="detail__header-actions">
-          <span :class="jobStateClass(detailJob.state)">{{ jobStateLabel(detailJob.state) }}</span>
+          <span :class="jobStateClass(detailJob.state)">{{ formatJobStateLabel(detailJob.state) }}</span>
         </div>
       </div>
 

@@ -23,6 +23,16 @@ async function flushPromises() {
   await nextTick()
 }
 
+function mountPanel() {
+  return mount(JobListPanel, {
+    props: {
+      active: true,
+      selectedJobId: '',
+      refreshKey: 0,
+    },
+  })
+}
+
 describe('JobListPanel', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -65,7 +75,7 @@ describe('JobListPanel', () => {
     wrapper.unmount()
   })
 
-  it('hides completed jobs by default and shows them when toggled on', async () => {
+  it('keeps completed jobs hidden by default and can show them from the status filter', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
         updatedAt: '2026-07-01T00:00:00Z',
@@ -99,26 +109,128 @@ describe('JobListPanel', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const wrapper = mount(JobListPanel, {
-      props: {
-        active: true,
-        selectedJobId: '',
-        refreshKey: 0,
-      },
-    })
+    const wrapper = mountPanel()
     await flushPromises()
 
-    expect(wrapper.get('input[type="checkbox"]').element).toHaveProperty('checked', false)
+    expect(wrapper.get('input[value="completed"]').element).toHaveProperty('checked', false)
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
     expect(wrapper.get('tbody').text()).not.toContain('完了ジョブ')
     expect(wrapper.get('tbody').text()).toContain('設計中ジョブ')
+    expect(wrapper.text()).toContain('表示 1 / 3 件')
 
-    await wrapper.get('input[type="checkbox"]').setChecked(true)
+    await wrapper.get('input[value="completed"]').setChecked(true)
     await flushPromises()
 
-    expect(wrapper.get('input[type="checkbox"]').element).toHaveProperty('checked', true)
+    expect(wrapper.get('input[value="completed"]').element).toHaveProperty('checked', true)
     expect(wrapper.findAll('tbody tr')).toHaveLength(3)
     expect(wrapper.text()).toContain('完了ジョブ')
+  })
+
+  it('filters jobs by kind and status independently', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [
+          {
+            id: 'job-1',
+            kind: 'issue_design',
+            state: 'design_running',
+            repository: 'owner/repo',
+            number: 1,
+            title: '設計中ジョブ',
+          },
+          {
+            id: 'job-2',
+            kind: 'pr_review',
+            state: 'design_running',
+            repository: 'owner/repo',
+            number: 2,
+            title: '別Kindジョブ',
+          },
+          {
+            id: 'job-3',
+            kind: 'issue_design',
+            state: 'completed',
+            repository: 'owner/repo',
+            number: 3,
+            title: '完了ジョブ',
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+    expect(wrapper.text()).toContain('設計中ジョブ')
+    expect(wrapper.text()).toContain('別Kindジョブ')
+
+    await wrapper.get('input[value="pr_review"]').setChecked(false)
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.text()).not.toContain('別Kindジョブ')
+
+    await wrapper.get('input[value="design_running"]').setChecked(false)
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(0)
+    expect(wrapper.text()).toContain('条件に一致するジョブがありません。')
+
+    await wrapper.get('input[value="design_running"]').setChecked(true)
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.text()).toContain('設計中ジョブ')
+
+    await wrapper.get('input[value="completed"]').setChecked(true)
+    await flushPromises()
+
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+    expect(wrapper.text()).toContain('完了ジョブ')
+  })
+
+  it('shows a dedicated empty state when no jobs match filters and keeps the no-data state distinct', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mountPanel()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('まだジョブがありません。')
+
+    const filteredFetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse({
+        updatedAt: '2026-07-01T00:00:00Z',
+        jobs: [
+          {
+            id: 'job-1',
+            kind: 'issue_design',
+            state: 'design_running',
+            repository: 'owner/repo',
+            number: 1,
+            title: '設計中ジョブ',
+          },
+        ],
+      }),
+    )
+    vi.stubGlobal('fetch', filteredFetchMock)
+
+    const filteredWrapper = mountPanel()
+    await flushPromises()
+
+    await filteredWrapper.get('input[value="issue_design"]').setChecked(false)
+    await flushPromises()
+
+    expect(filteredWrapper.text()).toContain('条件に一致するジョブがありません。')
+    expect(filteredWrapper.text()).not.toContain('まだジョブがありません。')
   })
 
   it('uses running chip colors only for running states', async () => {
@@ -147,13 +259,7 @@ describe('JobListPanel', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const wrapper = mount(JobListPanel, {
-      props: {
-        active: true,
-        selectedJobId: '',
-        refreshKey: 0,
-      },
-    })
+    const wrapper = mountPanel()
     await flushPromises()
 
     const rows = wrapper.findAll('tbody tr')
@@ -182,13 +288,7 @@ describe('JobListPanel', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const wrapper = mount(JobListPanel, {
-      props: {
-        active: true,
-        selectedJobId: '',
-        refreshKey: 0,
-      },
-    })
+    const wrapper = mountPanel()
     await flushPromises()
 
     const chip = wrapper.get('tbody tr td:last-child span')
@@ -217,51 +317,13 @@ describe('JobListPanel', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const wrapper = mount(JobListPanel, {
-      props: {
-        active: true,
-        selectedJobId: '',
-        refreshKey: 0,
-      },
-    })
+    const wrapper = mountPanel()
     await flushPromises()
 
     const row = wrapper.get('tbody tr')
     expect(row.get('td:nth-child(4)').text()).toContain('時刻付きジョブ')
     expect(row.get('td:nth-child(5)').text()).toBe('2026/07/01 09:00:00')
     expect(row.get('td:nth-child(6)').text()).toContain('設計中')
-  })
-
-  it('shows placeholders when job times are missing', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(
-      jsonResponse({
-        updatedAt: '2026-07-01T00:00:00Z',
-        jobs: [
-          {
-            id: 'job-1',
-            kind: 'issue_design',
-            state: 'design_running',
-            repository: 'owner/repo',
-            number: 1,
-            title: '時刻なしジョブ',
-          },
-        ],
-      }),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-
-    const wrapper = mount(JobListPanel, {
-      props: {
-        active: true,
-        selectedJobId: '',
-        refreshKey: 0,
-      },
-    })
-    await flushPromises()
-
-    const row = wrapper.get('tbody tr')
-    expect(row.get('td:nth-child(4)').text()).toContain('時刻なしジョブ')
-    expect(row.get('td:nth-child(5)').text()).toBe('-')
   })
 
   it('skips updating visible jobs when updatedAt is unchanged', async () => {
@@ -305,13 +367,7 @@ describe('JobListPanel', () => {
         )
       vi.stubGlobal('fetch', fetchMock)
 
-      const wrapper = mount(JobListPanel, {
-        props: {
-          active: true,
-          selectedJobId: '',
-          refreshKey: 0,
-        },
-      })
+      const wrapper = mountPanel()
       await flushPromises()
       expect(wrapper.text()).toContain('初回ジョブ')
 

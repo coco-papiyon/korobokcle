@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import type { Job, JobListResponse } from '../types'
-import { jobStateChipClass } from '../utils/jobState'
+import type { Job, JobKind, JobListResponse } from '../types'
+import { jobStateChipClass, jobStateDefinitions, jobStateLabel as formatJobStateLabel } from '../utils/jobState'
 import { formatJobTimestampValue } from '../utils/jobTime'
 
 const props = defineProps<{
@@ -14,53 +14,38 @@ const emit = defineEmits<{
   (event: 'select', jobId: string): void
 }>()
 
+const kindOptions: JobKind[] = ['issue_design', 'issue_implementation', 'pr_review', 'pr_feedback', 'pr_conflict']
+const defaultSelectedStates = jobStateDefinitions
+  .filter((option) => option.state !== 'completed')
+  .map((option) => option.state)
+
 const jobs = ref<Job[]>([])
 const jobsUpdatedAt = ref('')
 const loadingJobs = ref(false)
 const error = ref('')
-const showCompletedJobs = ref(false)
+const selectedKinds = ref<JobKind[]>([...kindOptions])
+const selectedStates = ref<string[]>([...defaultSelectedStates])
 let refreshTimer: number | undefined
 
-const stateLabels: Record<string, string> = {
-  detected: '検知済み',
-  design_running: '設計中',
-  design_ready: '設計完了',
-  design_approved: '設計承認済み',
-  completed: '完了',
-  implementation_running: '実装中',
-  implementation_ready: '実装完了',
-  implementation_approved: '実装承認済み',
-  pr_created: 'PR済み',
-  pr_review_comment: 'PRレビューコメント状態',
-  pr_conflict: 'コンフリクト検知済み',
-  pr_conflict_running: 'コンフリクト解消中',
-  pr_conflict_ready: 'コンフリクト解消完了',
-  pr_conflict_resolved: 'コンフリクト解消済み',
-  review_fix_design_running: 'レビュー指摘検討中',
-  review_fix_design_ready: 'レビュー指摘検討済み',
-  review_fix_design_approved: 'レビュー検討承認済み',
-  review_fix_implementation_running: 'レビュー指摘修正中',
-  review_fix_implementation_ready: 'レビュー指摘修正完了',
-  review_fix_implementation_approved: 'レビュー指摘修正承認済み',
-  review_fixed: 'レビュー指摘修正済み',
-  review_running: 'レビュー中',
-  review_ready: 'レビュー完了',
-  review_approved: 'レビュー承認済み',
-  failed: '失敗',
-}
-
-function shouldShowJob(job: Job) {
-  if (showCompletedJobs.value) return true
-  return job.state !== 'completed'
-}
+const filteredJobs = computed(() => {
+  return jobs.value.filter((job) => {
+    const kindMatches = selectedKinds.value.includes(job.kind)
+    const stateMatches = selectedStates.value.includes(job.state)
+    return kindMatches && stateMatches
+  })
+})
 
 const visibleJobs = computed(() => {
-  return [...jobs.value.filter(shouldShowJob)].sort((a, b) => {
+  return [...filteredJobs.value].sort((a, b) => {
     if (a.repository !== b.repository) return a.repository.localeCompare(b.repository)
     if (a.number !== b.number) return a.number - b.number
     return a.kind.localeCompare(b.kind)
   })
 })
+
+const jobsSummary = computed(() => `${visibleJobs.value.length} / ${jobs.value.length} 件`)
+
+const hasLoadedJobs = computed(() => jobsUpdatedAt.value !== '' || jobs.value.length > 0)
 
 async function loadJobs() {
   const showLoading = jobsUpdatedAt.value === '' && jobs.value.length === 0
@@ -104,10 +89,6 @@ function stopPolling() {
   refreshTimer = undefined
 }
 
-function jobStateLabel(state: string) {
-  return stateLabels[state] ?? state
-}
-
 function jobStateClass(state: string) {
   return jobStateChipClass(state)
 }
@@ -135,18 +116,43 @@ onBeforeUnmount(() => {
     <div class="panel__title-row">
       <h2>現在のジョブ</h2>
       <div class="job-list-panel__meta">
-        <span class="panel__hint">{{ visibleJobs.length }} 件</span>
-        <label class="job-list-filter">
-          <input v-model="showCompletedJobs" type="checkbox" />
-          <span>完了ジョブを表示</span>
-        </label>
+        <span class="panel__hint">表示 {{ jobsSummary }}</span>
       </div>
+    </div>
+
+    <div class="job-list-panel__filters" aria-label="ジョブ一覧フィルター">
+      <section class="job-list-panel__filter-group">
+        <div class="job-list-panel__filter-header">
+          <h3>Kind</h3>
+          <span class="panel__hint">{{ selectedKinds.length }} / {{ kindOptions.length }} 件</span>
+        </div>
+        <div class="job-list-panel__filter-options">
+          <label v-for="kind in kindOptions" :key="kind" class="job-list-filter job-list-filter--option">
+            <input v-model="selectedKinds" type="checkbox" :value="kind" />
+            <code>{{ kind }}</code>
+          </label>
+        </div>
+      </section>
+
+      <section class="job-list-panel__filter-group">
+        <div class="job-list-panel__filter-header">
+          <h3>ステータス</h3>
+          <span class="panel__hint">{{ selectedStates.length }} / {{ jobStateDefinitions.length }} 件</span>
+        </div>
+        <div class="job-list-panel__filter-options job-list-panel__filter-options--states">
+          <label v-for="option in jobStateDefinitions" :key="option.state" class="job-list-filter job-list-filter--option">
+            <input v-model="selectedStates" type="checkbox" :value="option.state" />
+            <span>{{ option.label }}</span>
+          </label>
+        </div>
+      </section>
     </div>
 
     <p v-if="error" class="error">{{ error }}</p>
 
     <div v-if="loadingJobs" class="empty-state">読み込み中...</div>
-    <div v-else-if="visibleJobs.length === 0" class="empty-state">まだジョブがありません。</div>
+    <div v-else-if="hasLoadedJobs && jobs.length === 0" class="empty-state">まだジョブがありません。</div>
+    <div v-else-if="visibleJobs.length === 0" class="empty-state">条件に一致するジョブがありません。</div>
 
     <div v-else class="job-table-wrap">
       <table class="job-table">
@@ -177,7 +183,7 @@ onBeforeUnmount(() => {
             <td class="job-table__title">{{ job.title || `#${job.number}` }}</td>
             <td class="job-table__time-cell">{{ formatJobTimestampValue(job.fetchedAt) }}</td>
             <td>
-              <span :class="jobStateClass(job.state)">{{ jobStateLabel(job.state) }}</span>
+              <span :class="jobStateClass(job.state)">{{ formatJobStateLabel(job.state) }}</span>
             </td>
           </tr>
         </tbody>
