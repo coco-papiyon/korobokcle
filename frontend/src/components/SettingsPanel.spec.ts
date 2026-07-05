@@ -14,6 +14,25 @@ function jsonResponse(body: JsonBody) {
   })
 }
 
+function textResponse(body: string, status = 400) {
+  return new Response(body, {
+    status,
+    headers: {
+      'Content-Type': 'text/plain',
+    },
+  })
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 async function flushPromises() {
   await Promise.resolve()
   await Promise.resolve()
@@ -70,6 +89,44 @@ describe('SettingsPanel', () => {
 
   it('loads settings into the form and saves normalized payloads', async () => {
     const fetchMock = mockInitialFetch()
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        repository: 'owner/new-repository',
+        aiProvider: 'github_copilot',
+        pollIntervalSeconds: 59,
+        jobConcurrency: 6,
+        implementationLoopCount: 5,
+        baseBranch: 'release',
+        branchNamePattern: 'issue_#<issue番号>',
+        aiAllowedCommands: ['npm ci', 'npm test'],
+        models: {
+          codex: { mode: 'custom', value: 'gpt-5.5' },
+          githubCopilot: { mode: 'custom', value: 'claude-opus-4.6' },
+        },
+        verificationAiProvider: 'codex',
+        verificationAiModel: { mode: 'custom', value: 'gpt-5.4-mini' },
+        issue: {
+          enabled: false,
+          aiProvider: 'github_copilot',
+          aiModel: { mode: 'custom', value: 'claude-opus-4.6' },
+          labelIncludes: ['bug', 'ai:design'],
+          labelExcludes: ['wip'],
+          titleContains: ['fix'],
+          authors: ['alice'],
+          assignees: ['bob'],
+        },
+        pullRequest: {
+          enabled: true,
+          aiProvider: 'github_copilot',
+          aiModel: { mode: 'custom', value: 'claude-opus-4.6' },
+          labelIncludes: ['ready', 'review'],
+          labelExcludes: ['draft'],
+          titleContains: ['update'],
+          authors: ['carol'],
+          assignees: ['dave'],
+        },
+      }),
+    )
 
     const wrapper = mount(SettingsPanel)
     await flushPromises()
@@ -193,5 +250,297 @@ describe('SettingsPanel', () => {
         assignees: ['dave'],
       },
     })
+    expect(wrapper.get('p.success').text()).toBe('設定を保存しました')
+    expect(wrapper.get('p.success').attributes('role')).toBe('status')
+    expect(wrapper.get('p.success').attributes('aria-live')).toBe('polite')
+    expect(wrapper.get('input[placeholder="owner/repository"]').element).toHaveProperty('value', 'owner/new-repository')
+  })
+
+  it('shows an error without a success message when saving fails', async () => {
+    const fetchMock = vi.fn()
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        repository: 'owner/repository',
+        aiProvider: 'codex',
+        pollIntervalSeconds: 120,
+        jobConcurrency: 4,
+        implementationLoopCount: 3,
+        baseBranch: 'main',
+        branchNamePattern: 'issue_#<issue番号>',
+        aiAllowedCommands: [],
+        models: {
+          codex: { mode: 'default', value: '' },
+          githubCopilot: { mode: 'default', value: '' },
+        },
+        verificationAiProvider: '',
+        verificationAiModel: { mode: 'default', value: '' },
+        issue: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+        pullRequest: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(textResponse('保存に失敗しました', 500))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(SettingsPanel)
+    await flushPromises()
+
+    await (wrapper.vm as unknown as { saveSettings: () => Promise<void> }).saveSettings()
+    await flushPromises()
+
+    expect(wrapper.find('p.success').exists()).toBe(false)
+    expect(wrapper.get('p.error').text()).toBe('保存に失敗しました')
+  })
+
+  it('clears the previous success message before the next save starts', async () => {
+    const fetchMock = vi.fn()
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        repository: 'owner/repository',
+        aiProvider: 'codex',
+        pollIntervalSeconds: 120,
+        jobConcurrency: 4,
+        implementationLoopCount: 3,
+        baseBranch: 'main',
+        branchNamePattern: 'issue_#<issue番号>',
+        aiAllowedCommands: [],
+        models: {
+          codex: { mode: 'default', value: '' },
+          githubCopilot: { mode: 'default', value: '' },
+        },
+        verificationAiProvider: '',
+        verificationAiModel: { mode: 'default', value: '' },
+        issue: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+        pullRequest: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        repository: 'owner/repository',
+        aiProvider: 'codex',
+        pollIntervalSeconds: 120,
+        jobConcurrency: 4,
+        implementationLoopCount: 3,
+        baseBranch: 'main',
+        branchNamePattern: 'issue_#<issue番号>',
+        aiAllowedCommands: [],
+        models: {
+          codex: { mode: 'default', value: '' },
+          githubCopilot: { mode: 'default', value: '' },
+        },
+        verificationAiProvider: '',
+        verificationAiModel: { mode: 'default', value: '' },
+        issue: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+        pullRequest: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+      }),
+    )
+    const pendingSave = deferred<Response>()
+    fetchMock.mockImplementationOnce(() => pendingSave.promise)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(SettingsPanel)
+    await flushPromises()
+
+    await (wrapper.vm as unknown as { saveSettings: () => Promise<void> }).saveSettings()
+    await flushPromises()
+    expect(wrapper.get('p.success').text()).toBe('設定を保存しました')
+
+    const savePromise = (wrapper.vm as unknown as { saveSettings: () => Promise<void> }).saveSettings()
+    await nextTick()
+
+    expect(wrapper.find('p.success').exists()).toBe(false)
+
+    pendingSave.resolve(
+      jsonResponse({
+        repository: 'owner/repository',
+        aiProvider: 'codex',
+        pollIntervalSeconds: 120,
+        jobConcurrency: 4,
+        implementationLoopCount: 3,
+        baseBranch: 'main',
+        branchNamePattern: 'issue_#<issue番号>',
+        aiAllowedCommands: [],
+        models: {
+          codex: { mode: 'default', value: '' },
+          githubCopilot: { mode: 'default', value: '' },
+        },
+        verificationAiProvider: '',
+        verificationAiModel: { mode: 'default', value: '' },
+        issue: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+        pullRequest: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+      }),
+    )
+    await savePromise
+    await flushPromises()
+    expect(wrapper.get('p.success').text()).toBe('設定を保存しました')
+  })
+
+  it('does not send another save request while one is already in flight', async () => {
+    const fetchMock = vi.fn()
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        repository: 'owner/repository',
+        aiProvider: 'codex',
+        pollIntervalSeconds: 120,
+        jobConcurrency: 4,
+        implementationLoopCount: 3,
+        baseBranch: 'main',
+        branchNamePattern: 'issue_#<issue番号>',
+        aiAllowedCommands: [],
+        models: {
+          codex: { mode: 'default', value: '' },
+          githubCopilot: { mode: 'default', value: '' },
+        },
+        verificationAiProvider: '',
+        verificationAiModel: { mode: 'default', value: '' },
+        issue: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+        pullRequest: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+      }),
+    )
+    const pendingSave = deferred<Response>()
+    fetchMock.mockImplementationOnce(() => pendingSave.promise)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(SettingsPanel)
+    await flushPromises()
+
+    const saveSettings = wrapper.vm as unknown as { saveSettings: () => Promise<void> }
+    const firstSave = saveSettings.saveSettings()
+    await nextTick()
+    const requestCountAfterFirstSave = fetchMock.mock.calls.length
+
+    await saveSettings.saveSettings()
+    expect(fetchMock.mock.calls.length).toBe(requestCountAfterFirstSave)
+
+    pendingSave.resolve(
+      jsonResponse({
+        repository: 'owner/repository',
+        aiProvider: 'codex',
+        pollIntervalSeconds: 120,
+        jobConcurrency: 4,
+        implementationLoopCount: 3,
+        baseBranch: 'main',
+        branchNamePattern: 'issue_#<issue番号>',
+        aiAllowedCommands: [],
+        models: {
+          codex: { mode: 'default', value: '' },
+          githubCopilot: { mode: 'default', value: '' },
+        },
+        verificationAiProvider: '',
+        verificationAiModel: { mode: 'default', value: '' },
+        issue: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+        pullRequest: {
+          enabled: true,
+          aiProvider: '',
+          aiModel: { mode: 'default', value: '' },
+          labelIncludes: [],
+          labelExcludes: [],
+          titleContains: [],
+          authors: [],
+          assignees: [],
+        },
+      }),
+    )
+    await firstSave
+    await flushPromises()
+    expect(wrapper.get('p.success').text()).toBe('設定を保存しました')
   })
 })

@@ -5,6 +5,7 @@ import type { AIProvider, WatchSettings } from '../types'
 const settingsLoading = ref(false)
 const settingsSaving = ref(false)
 const settingsError = ref('')
+const settingsSuccessMessage = ref('')
 
 const settingsForm = ref({
   repository: '',
@@ -265,8 +266,12 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
+  if (settingsSaving.value) {
+    return
+  }
   settingsSaving.value = true
   settingsError.value = ''
+  settingsSuccessMessage.value = ''
   try {
     const res = await fetch('/api/settings', {
       method: 'PUT',
@@ -281,7 +286,9 @@ async function saveSettings() {
     }
     const payload = (await res.json()) as WatchSettings
     settingsToForm(payload)
+    settingsSuccessMessage.value = '設定を保存しました'
   } catch (err) {
+    settingsSuccessMessage.value = ''
     settingsError.value = err instanceof Error ? err.message : 'unknown error'
   } finally {
     settingsSaving.value = false
@@ -300,6 +307,7 @@ defineExpose({
 
 <template>
   <p v-if="settingsError" class="error">{{ settingsError }}</p>
+  <p v-if="settingsSuccessMessage" class="success" role="status" aria-live="polite">{{ settingsSuccessMessage }}</p>
 
   <div class="panel__title-row">
     <h2>プロバイダー設定</h2>
