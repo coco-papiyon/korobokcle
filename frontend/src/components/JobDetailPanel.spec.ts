@@ -295,7 +295,7 @@ describe('JobDetailPanel', () => {
 
     const details = wrapper.get('details.detail-context')
     expect(details.get('summary').text()).toBe('Issue の内容')
-    expect(wrapper.text()).toContain('#12 画面調整')
+    expect(details.find('h1').text()).toBe('12 画面調整')
     expect(wrapper.text()).toContain('詳細な要件')
     expect(wrapper.text()).toContain('設計結果')
   })
@@ -756,6 +756,54 @@ describe('JobDetailPanel', () => {
     }
   })
 
+  it('renders markdown artifacts as html', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#32',
+          job: {
+            id: 'job-32',
+            kind: 'issue_implementation',
+            state: 'completed',
+            repository: 'owner/repo',
+            number: 32,
+            title: 'Markdown表示',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: [
+            '# 見出し',
+            '',
+            '| 項目 | 値 |',
+            '| --- | --- |',
+            '| A | 1 |',
+          ].join('\n'),
+          path: 'artifact.md',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-32',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    const artifact = wrapper.get('.artifact-view')
+    expect(artifact.find('h1').text()).toBe('見出し')
+    expect(artifact.find('table').exists()).toBe(true)
+    expect(artifact.findAll('th')).toHaveLength(2)
+    expect(artifact.findAll('td')).toHaveLength(2)
+  })
+
   it('reloads artifacts when the same job is refreshed', async () => {
     let resolveSecondArtifact: ((value: Response) => void) | undefined
     const fetchMock = vi.fn()
@@ -958,7 +1006,7 @@ describe('JobDetailPanel', () => {
         method: 'PUT',
       }),
     )
-    expect(wrapper.text()).toContain('# design')
+    expect(wrapper.get('.artifact-view').find('h1').text()).toBe('design')
     expect(wrapper.text()).toContain('updated content')
     expect(wrapper.emitted('refresh')).toHaveLength(1)
   })

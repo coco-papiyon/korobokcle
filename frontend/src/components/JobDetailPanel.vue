@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import MarkdownIt from 'markdown-it'
 import { html as diff2Html } from 'diff2html'
 import 'diff2html/bundles/css/diff2html.min.css'
 import type { Job, JobArtifact, JobDetailResponse, JobLogGroup, JobSourceDiff } from '../types'
@@ -32,6 +33,11 @@ const artifactUserComment = ref('')
 const artifactActionLoading = ref(false)
 const artifactEditSaving = ref(false)
 const deleteLoading = ref(false)
+const markdown = new MarkdownIt({
+  html: true,
+  breaks: true,
+  linkify: true,
+})
 let detailRequestSequence = 0
 let artifactRequestSequence = 0
 let sourceDiffRequestSequence = 0
@@ -71,10 +77,15 @@ const detailTitle = computed(() => {
 const showIssueContext = computed(() => detailJob.value?.kind === 'issue_design' || detailJob.value?.kind === 'issue_implementation')
 
 const issueContext = computed(() => detailJob.value?.issueContext ?? '')
+const issueContextMarkdown = computed(() =>
+  issueContext.value.replace(/^#(\d+)\s+/m, '# $1 '),
+)
+const issueContextHtml = computed(() => markdown.render(issueContextMarkdown.value))
 const detailSubStatus = computed(() =>
   detailJob.value?.kind === 'issue_implementation' ? detailJob.value?.subStatus?.trim() ?? '' : '',
 )
 const hasLogs = computed(() => detailLogs.value.length > 0)
+const artifactHtml = computed(() => (artifact.value ? markdown.render(artifact.value.content) : ''))
 const sourceDiffHtml = computed(() => {
   if (!sourceDiff.value) {
     return ''
@@ -654,7 +665,7 @@ defineExpose({
 
       <details v-if="detailViewMode === 'detail' && showIssueContext && issueContext" class="detail-context">
         <summary>Issue の内容</summary>
-        <pre class="detail-context__body">{{ issueContext }}</pre>
+        <div class="markdown-body detail-context__body" v-html="issueContextHtml"></div>
       </details>
 
       <section v-if="detailViewMode === 'diff'" class="detail-diff">
@@ -683,7 +694,7 @@ defineExpose({
         <div v-if="artifactLoading && !artifact" class="empty-state">読み込み中...</div>
         <div v-if="artifactError" class="error">{{ artifactError }}</div>
         <div v-if="artifact">
-          <pre class="artifact-view">{{ artifact?.content }}</pre>
+          <div class="artifact-view markdown-body" v-html="artifactHtml"></div>
 
           <label class="field">
             <span>ユーザコメント</span>
