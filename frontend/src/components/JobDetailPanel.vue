@@ -183,7 +183,8 @@ function logGroupTitle(group: JobLogGroup) {
   return `${group.roleLabel} / 試行 ${group.attempt}`
 }
 
-async function loadJobDetail(id: string) {
+async function loadJobDetail(id: string, options: { refreshArtifact?: boolean } = {}) {
+  const refreshArtifact = options.refreshArtifact ?? true
   const requestSequence = ++detailRequestSequence
   if (!id) {
     detailLoading.value = false
@@ -232,9 +233,9 @@ async function loadJobDetail(id: string) {
         artifactUserComment.value = ''
         artifactEditContent.value = ''
       }
-      if (canInspectArtifact(payload.job)) {
+      if (refreshArtifact && canInspectArtifact(payload.job)) {
         void loadArtifact(payload.job.id)
-      } else {
+      } else if (refreshArtifact) {
         artifactRequestSequence += 1
         artifactLoading.value = false
         artifactError.value = ''
@@ -247,7 +248,9 @@ async function loadJobDetail(id: string) {
         sourceDiffError.value = ''
         sourceDiff.value = null
         sourceDiffJobId.value = ''
-        detailViewMode.value = 'detail'
+        if (detailViewMode.value !== 'logs') {
+          detailViewMode.value = 'detail'
+        }
       }
       if (!canEditArtifact(payload.job) && detailViewMode.value === 'edit') {
         detailViewMode.value = 'detail'
@@ -257,6 +260,13 @@ async function loadJobDetail(id: string) {
     }
   } catch (err) {
     if (requestSequence === detailRequestSequence) {
+      if (detailViewMode.value === 'logs') {
+        detailError.value = ''
+        if (showLoading) {
+          detailLoading.value = false
+        }
+        return
+      }
       detailError.value = err instanceof Error ? err.message : 'unknown error'
       detailJob.value = null
       detailBranch.value = ''
@@ -293,7 +303,9 @@ function startPolling() {
     if (!props.active || !props.jobId || detailViewMode.value === 'edit') {
       return
     }
-    void loadJobDetail(props.jobId)
+    void loadJobDetail(props.jobId, {
+      refreshArtifact: detailViewMode.value !== 'logs',
+    })
   }, 5000)
 }
 
@@ -546,7 +558,8 @@ async function deleteJob() {
 
 watch(
   () => [props.active, props.jobId, props.refreshKey] as const,
-  ([active, jobId]) => {
+  ([active, jobId], previous) => {
+    const [prevActive, prevJobId, prevRefreshKey] = previous ?? [undefined, undefined, undefined]
     if (!active) {
       stopPolling()
       return
@@ -556,11 +569,21 @@ watch(
       void loadJobDetail(jobId)
       return
     }
+    if (
+      detailViewMode.value === 'edit' &&
+      prevActive &&
+      prevJobId === jobId &&
+      prevRefreshKey !== props.refreshKey
+    ) {
+      return
+    }
     if (detailViewMode.value === 'edit') {
       stopPolling()
       return
     }
-    void loadJobDetail(jobId)
+    void loadJobDetail(jobId, {
+      refreshArtifact: detailViewMode.value !== 'logs',
+    })
     startPolling()
   },
   { immediate: true },

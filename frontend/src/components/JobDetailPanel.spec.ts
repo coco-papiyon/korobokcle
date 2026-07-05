@@ -379,6 +379,200 @@ describe('JobDetailPanel', () => {
     expect(wrapper.text()).toContain('verification summary')
   })
 
+  it('does not refresh artifacts while logs are open', async () => {
+    let intervalHandler: TimerHandler | undefined
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#30',
+          logs: [
+            {
+              role: 'agent',
+              roleLabel: '実装者',
+              attempt: 1,
+              files: [
+                {
+                  kind: 'activity',
+                  label: '処理ログ',
+                  path: 'logs/30/implementation_attempt-1_agent.log',
+                  content: 'request\nresponse',
+                },
+              ],
+            },
+          ],
+          job: {
+            id: 'job-30',
+            kind: 'issue_implementation',
+            state: 'implementation_ready',
+            repository: 'owner/repo',
+            number: 30,
+            title: 'ログ確認',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'implementation artifact content',
+          path: 'artifact.md',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#30',
+          logs: [
+            {
+              role: 'agent',
+              roleLabel: '実装者',
+              attempt: 1,
+              files: [
+                {
+                  kind: 'activity',
+                  label: '処理ログ',
+                  path: 'logs/30/implementation_attempt-1_agent.log',
+                  content: 'request\nresponse',
+                },
+              ],
+            },
+          ],
+          job: {
+            id: 'job-30',
+            kind: 'issue_implementation',
+            state: 'implementation_ready',
+            repository: 'owner/repo',
+            number: 30,
+            title: 'ログ確認',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+    const setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation((handler) => {
+      intervalHandler = handler
+      return 1 as unknown as number
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-30',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    await (wrapper.vm as any).openLogsView()
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    intervalHandler?.(0 as never)
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/jobs/job-30', { cache: 'no-store' })
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/jobs/job-30/artifact')).toHaveLength(1)
+    expect(wrapper.text()).toContain('request')
+    setIntervalSpy.mockRestore()
+  })
+
+  it('keeps the logs view when a pr review job refreshes', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#31',
+          logs: [
+            {
+              role: 'reviewer',
+              roleLabel: 'レビュー者',
+              attempt: 1,
+              files: [
+                {
+                  kind: 'activity',
+                  label: '処理ログ',
+                  path: 'logs/31/review_attempt-1_reviewer.log',
+                  content: 'review log',
+                },
+              ],
+            },
+          ],
+          job: {
+            id: 'job-31',
+            kind: 'pr_review',
+            state: 'review_ready',
+            repository: 'owner/repo',
+            number: 31,
+            title: 'レビュー確認',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'review artifact content',
+          path: 'artifact.md',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#31',
+          logs: [
+            {
+              role: 'reviewer',
+              roleLabel: 'レビュー者',
+              attempt: 1,
+              files: [
+                {
+                  kind: 'activity',
+                  label: '処理ログ',
+                  path: 'logs/31/review_attempt-1_reviewer.log',
+                  content: 'review log',
+                },
+              ],
+            },
+          ],
+          job: {
+            id: 'job-31',
+            kind: 'pr_review',
+            state: 'review_ready',
+            repository: 'owner/repo',
+            number: 31,
+            title: 'レビュー確認',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-31',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    await (wrapper.vm as any).openLogsView()
+    await flushPromises()
+
+    await wrapper.setProps({ refreshKey: 1 })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('レビュー者 / 試行 1')
+    expect(wrapper.text()).toContain('review log')
+    expect(wrapper.text()).not.toContain('レビュー結果')
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
   it('shows design artifacts for completed issue design jobs', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
