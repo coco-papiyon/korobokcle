@@ -420,18 +420,14 @@ func TestSettingsAPI(t *testing.T) {
 		Repository:        "owner/repo",
 		BaseBranch:        "develop",
 		AIProvider:        domain.AIProviderGitHubCopilot,
+		VerificationAIProvider: domain.AIProviderCodex,
+		VerificationAIModel:    domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-5.4-mini"},
+		ReviewerAIProvider:     domain.AIProviderGitHubCopilot,
+		ReviewerAIModel:        domain.ModelSelection{Mode: domain.ModelModeDefault},
 		AIAllowedCommands: []string{"npm ci"},
 		Models: domain.AIModels{
 			Codex:         domain.ModelSelection{Mode: domain.ModelModeDefault},
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-4.1"},
-		},
-		Issue: domain.SearchCondition{
-			AIProvider: domain.AIProviderCodex,
-			AIModel:    domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-5.4-mini"},
-		},
-		PullRequest: domain.SearchCondition{
-			AIProvider: domain.AIProviderGitHubCopilot,
-			AIModel:    domain.ModelSelection{Mode: domain.ModelModeDefault},
 		},
 	})
 	server := NewServer(config.Default(), nil, store, nil, nil, nil)
@@ -471,17 +467,17 @@ func TestSettingsAPI(t *testing.T) {
 	if settings.Models.GitHubCopilot.Mode != domain.ModelModeCustom || settings.Models.GitHubCopilot.Value != "gpt-4.1" {
 		t.Fatalf("github copilot model = %+v, want custom gpt-4.1", settings.Models.GitHubCopilot)
 	}
-	if settings.Issue.AIProvider != domain.AIProviderCodex {
-		t.Fatalf("issue ai provider = %q, want %q", settings.Issue.AIProvider, domain.AIProviderCodex)
+	if settings.VerificationAIProvider != domain.AIProviderCodex {
+		t.Fatalf("verification ai provider = %q, want %q", settings.VerificationAIProvider, domain.AIProviderCodex)
 	}
-	if settings.Issue.AIModel.Mode != domain.ModelModeCustom || settings.Issue.AIModel.Value != "gpt-5.4-mini" {
-		t.Fatalf("issue ai model = %+v, want custom gpt-5.4-mini", settings.Issue.AIModel)
+	if settings.VerificationAIModel.Mode != domain.ModelModeCustom || settings.VerificationAIModel.Value != "gpt-5.4-mini" {
+		t.Fatalf("verification ai model = %+v, want custom gpt-5.4-mini", settings.VerificationAIModel)
 	}
-	if settings.PullRequest.AIProvider != domain.AIProviderGitHubCopilot {
-		t.Fatalf("pr ai provider = %q, want %q", settings.PullRequest.AIProvider, domain.AIProviderGitHubCopilot)
+	if settings.ReviewerAIProvider != domain.AIProviderGitHubCopilot {
+		t.Fatalf("reviewer ai provider = %q, want %q", settings.ReviewerAIProvider, domain.AIProviderGitHubCopilot)
 	}
-	if settings.PullRequest.AIModel.Mode != domain.ModelModeDefault {
-		t.Fatalf("pr ai model = %+v, want default", settings.PullRequest.AIModel)
+	if settings.ReviewerAIModel.Mode != domain.ModelModeDefault {
+		t.Fatalf("reviewer ai model = %+v, want default", settings.ReviewerAIModel)
 	}
 
 	updateBody, err := json.Marshal(domain.WatchSettings{
@@ -495,14 +491,12 @@ func TestSettingsAPI(t *testing.T) {
 		Models: domain.AIModels{
 			Codex: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "codex-1"},
 		},
+		VerificationAIProvider: domain.AIProviderGitHubCopilot,
+		VerificationAIModel:    domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "claude-opus-4.6"},
+		ReviewerAIProvider:     domain.AIProviderCodex,
+		ReviewerAIModel:        domain.ModelSelection{Mode: domain.ModelModeDefault},
 		Issue: domain.SearchCondition{
-			AIProvider:    domain.AIProviderGitHubCopilot,
-			AIModel:       domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "claude-opus-4.6"},
 			LabelIncludes: []string{"bug"},
-		},
-		PullRequest: domain.SearchCondition{
-			AIProvider: domain.AIProviderCodex,
-			AIModel:    domain.ModelSelection{Mode: domain.ModelModeDefault},
 		},
 	})
 	if err != nil {
@@ -543,17 +537,17 @@ func TestSettingsAPI(t *testing.T) {
 	if updated.Models.Codex.Mode != domain.ModelModeCustom || updated.Models.Codex.Value != "codex-1" {
 		t.Fatalf("updated codex model = %+v, want custom codex-1", updated.Models.Codex)
 	}
-	if updated.Issue.AIProvider != domain.AIProviderGitHubCopilot {
-		t.Fatalf("updated issue ai provider = %q, want %q", updated.Issue.AIProvider, domain.AIProviderGitHubCopilot)
+	if updated.VerificationAIProvider != domain.AIProviderGitHubCopilot {
+		t.Fatalf("updated verification ai provider = %q, want %q", updated.VerificationAIProvider, domain.AIProviderGitHubCopilot)
 	}
-	if updated.Issue.AIModel.Mode != domain.ModelModeCustom || updated.Issue.AIModel.Value != "claude-opus-4.6" {
-		t.Fatalf("updated issue ai model = %+v, want custom claude-opus-4.6", updated.Issue.AIModel)
+	if updated.VerificationAIModel.Mode != domain.ModelModeCustom || updated.VerificationAIModel.Value != "claude-opus-4.6" {
+		t.Fatalf("updated verification ai model = %+v, want custom claude-opus-4.6", updated.VerificationAIModel)
 	}
-	if updated.PullRequest.AIProvider != domain.AIProviderCodex {
-		t.Fatalf("updated pr ai provider = %q, want %q", updated.PullRequest.AIProvider, domain.AIProviderCodex)
+	if updated.ReviewerAIProvider != domain.AIProviderCodex {
+		t.Fatalf("updated reviewer ai provider = %q, want %q", updated.ReviewerAIProvider, domain.AIProviderCodex)
 	}
-	if updated.PullRequest.AIModel.Mode != domain.ModelModeDefault {
-		t.Fatalf("updated pr ai model = %+v, want default", updated.PullRequest.AIModel)
+	if updated.ReviewerAIModel.Mode != domain.ModelModeDefault {
+		t.Fatalf("updated reviewer ai model = %+v, want default", updated.ReviewerAIModel)
 	}
 	if len(updated.Issue.LabelIncludes) != 1 || updated.Issue.LabelIncludes[0] != "bug" {
 		t.Fatalf("updated issue labels = %+v, want [bug]", updated.Issue.LabelIncludes)

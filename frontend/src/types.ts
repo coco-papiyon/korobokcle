@@ -56,8 +56,6 @@ export type JobLogGroup = {
 
 export type SearchCondition = {
   enabled?: boolean
-  aiProvider?: AIProvider
-  aiModel?: ModelSelection
   labelIncludes: string[]
   labelExcludes: string[]
   titleContains: string[]
@@ -85,6 +83,8 @@ export type WatchSettings = {
   implementationLoopCount: number
   verificationAiProvider?: AIProvider
   verificationAiModel?: ModelSelection
+  reviewerAiProvider?: AIProvider
+  reviewerAiModel?: ModelSelection
   baseBranch: string
   branchNamePattern: string
   aiAllowedCommands: string[]

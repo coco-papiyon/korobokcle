@@ -85,14 +85,16 @@ func (p *WorkflowProcessor) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := runner.Start(ctx, settings.AIProvider, p.baseDir); err != nil {
+	implementerProvider, _ := implementerAISelection(settings)
+	if err := runner.Start(ctx, implementerProvider, p.baseDir); err != nil {
 		return err
 	}
 	verifier, ok := p.verifier.(managedAIRunner)
 	if !ok {
 		return nil
 	}
-	if err := verifier.Start(ctx, verifierProviderForSettings(settings), p.baseDir); err != nil {
+	verifierProvider, _ := verifierAISelection(settings)
+	if err := verifier.Start(ctx, verifierProvider, p.baseDir); err != nil {
 		_ = runner.Stop(context.Background())
 		return fmt.Errorf("start verifier: %w", err)
 	}

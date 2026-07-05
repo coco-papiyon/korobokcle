@@ -150,7 +150,6 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 			continue
 		}
 		kind, state := classifyIssue(labels)
-		provider, model := resolveConditionAISelection(settings, rule)
 		jobs = append(jobs, domain.Job{
 			ID:           fmt.Sprintf("issue-%d", record.Number),
 			Kind:         kind,
@@ -159,8 +158,6 @@ func (s *GitHubSource) listIssues(ctx context.Context, repository string, rule d
 			Number:       record.Number,
 			Title:        record.Title,
 			Branch:       renderBranchName(settings.BranchNamePattern, record.Number),
-			AIProvider:   provider,
-			AIModel:      model,
 			IssueContext: formatIssueContext(record.Number, record.Title, record.Body),
 		})
 	}
@@ -195,7 +192,6 @@ func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, 
 			continue
 		}
 		kind, state := classifyPullRequest(record)
-		provider, model := resolveConditionAISelection(settings, rule)
 		jobs = append(jobs, domain.Job{
 			ID:         jobIDForPR(record),
 			Kind:       kind,
@@ -204,8 +200,6 @@ func (s *GitHubSource) listPullRequests(ctx context.Context, repository string, 
 			Number:     record.Number,
 			Title:      record.Title,
 			Branch:     strings.TrimSpace(record.HeadRefName),
-			AIProvider: provider,
-			AIModel:    model,
 		})
 	}
 	s.infof("github source: pull requests retrieved repo=%s fetched=%d targets=%d", repository, len(records), len(jobs))

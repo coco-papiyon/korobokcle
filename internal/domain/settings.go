@@ -21,8 +21,6 @@ const (
 
 type SearchCondition struct {
 	Enabled       *bool          `json:"enabled,omitempty"`
-	AIProvider    AIProvider     `json:"aiProvider,omitempty"`
-	AIModel       ModelSelection `json:"aiModel,omitempty"`
 	LabelIncludes []string       `json:"labelIncludes,omitempty"`
 	LabelExcludes []string       `json:"labelExcludes,omitempty"`
 	TitleContains []string       `json:"titleContains,omitempty"`
@@ -38,6 +36,8 @@ type WatchSettings struct {
 	ImplementationLoopCount int             `json:"implementationLoopCount,omitempty"`
 	VerificationAIProvider  AIProvider      `json:"verificationAiProvider,omitempty"`
 	VerificationAIModel     ModelSelection  `json:"verificationAiModel,omitempty"`
+	ReviewerAIProvider      AIProvider      `json:"reviewerAiProvider,omitempty"`
+	ReviewerAIModel         ModelSelection  `json:"reviewerAiModel,omitempty"`
 	BaseBranch              string          `json:"baseBranch,omitempty"`
 	BranchNamePattern       string          `json:"branchNamePattern,omitempty"`
 	AIAllowedCommands       []string        `json:"aiAllowedCommands,omitempty"`
@@ -77,6 +77,10 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 		settings.VerificationAIProvider = ""
 	}
 	settings.VerificationAIModel = normalizeModelSelection(settings.VerificationAIModel)
+	if !settings.ReviewerAIProvider.IsValid() {
+		settings.ReviewerAIProvider = ""
+	}
+	settings.ReviewerAIModel = normalizeModelSelection(settings.ReviewerAIModel)
 	if strings.TrimSpace(settings.BaseBranch) == "" {
 		settings.BaseBranch = "main"
 	}
@@ -142,10 +146,6 @@ func normalizeSearchCondition(condition SearchCondition) SearchCondition {
 		enabled := *condition.Enabled
 		condition.Enabled = &enabled
 	}
-	if !condition.AIProvider.IsValid() {
-		condition.AIProvider = ""
-	}
-	condition.AIModel = normalizeModelSelection(condition.AIModel)
 	return condition
 }
 

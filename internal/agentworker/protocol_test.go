@@ -43,15 +43,15 @@ func TestCopilotWorkerSendPromptAt(t *testing.T) {
 
 func TestCommandRequestAllowed(t *testing.T) {
 	params := json.RawMessage(`{
-		"command": "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command 'npm ci'",
-		"commandActions": [{"type": "unknown", "command": "npm ci"}],
-		"proposedExecpolicyAmendment": ["npm", "ci"]
+		"command": "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command 'npm run build'",
+		"commandActions": [{"type": "unknown", "command": "npm run build"}],
+		"proposedExecpolicyAmendment": ["npm", "run", "build"]
 	}`)
-	if !commandRequestAllowed(params, []string{" npm   ci "}) {
-		t.Fatal("expected npm ci to be allowed")
+	if !commandRequestAllowed(params, []string{" npm   run   build "}) {
+		t.Fatal("expected npm run build to be allowed")
 	}
-	if commandRequestAllowed(params, []string{"npm test"}) {
-		t.Fatal("expected npm test not to allow npm ci")
+	if commandRequestAllowed(params, []string{"python --version"}) {
+		t.Fatal("expected python --version not to allow npm run build")
 	}
 }
 
@@ -67,6 +67,20 @@ func TestCommandRequestAllowedWithArguments(t *testing.T) {
 	params = json.RawMessage(`{"command":"git log --oneline && npm test"}`)
 	if commandRequestAllowed(params, []string{"git log"}) {
 		t.Fatal("expected chained command not to be allowed by git log")
+	}
+}
+
+func TestCommandRequestAllowedWithBuiltInCommands(t *testing.T) {
+	for _, raw := range []string{
+		`{"command":"git diff --stat"}`,
+		`{"command":"git status --short"}`,
+		`{"command":"Select-String -Pattern TODO README.md"}`,
+		`{"command":"Select-Object -First 10"}`,
+		`{"command":"head -20 README.md"}`,
+	} {
+		if !commandRequestAllowed(json.RawMessage(raw), nil) {
+			t.Fatalf("expected built-in command to be allowed: %s", raw)
+		}
 	}
 }
 
@@ -96,14 +110,14 @@ func TestCopilotServerResponseAllowsConfiguredCommand(t *testing.T) {
 	params := json.RawMessage(`{
 		"toolCall": {
 			"kind": "execute",
-			"rawInput": {"command": "npm ci"}
+			"rawInput": {"command": "npm run build"}
 		}
 	}`)
-	got := copilotServerResponse("session/request_permission", params, []string{"npm ci"}, t.TempDir())
+	got := copilotServerResponse("session/request_permission", params, []string{"npm run build"}, t.TempDir())
 	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
 		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
 	}
-	got = copilotServerResponse("session/request_permission", params, []string{"npm test"}, t.TempDir())
+	got = copilotServerResponse("session/request_permission", params, []string{"python --version"}, t.TempDir())
 	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}) {
 		t.Fatalf("copilotServerResponse() = %+v, want cancelled", got)
 	}
@@ -258,10 +272,49 @@ func TestCopilotServerResponseRejectsUnknownPermissionKind(t *testing.T) {
 
 func TestNormalizeAllowedCommands(t *testing.T) {
 	got := normalizeAllowedCommands([]string{" npm ci ", "", "NPM   CI", "go test ./..."})
-	want := []string{"npm ci", "go test ./..."}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("normalizeAllowedCommands() = %+v, want %+v", got, want)
+	wantContains := []string{
+		"npm install",
+		"npm ci",
+		"npm test",
+		"go build",
+		"go test",
+		"go mod tidy",
+		"go mod download",
+		"git log",
+		"git diff",
+		"git status",
+		"head",
+		"select-object",
+		"select-string",
+		"go test ./...",
 	}
+	for _, want := range wantContains {
+		if !containsString(got, want) {
+			t.Fatalf("normalizeAllowedCommands() = %+v, want to contain %q", got, want)
+		}
+	}
+}
+
+func TestCopilotServerResponseAllowsBuiltInCommandWithoutConfiguredAllowedCommands(t *testing.T) {
+	params := json.RawMessage(`{
+		"toolCall": {
+			"kind": "execute",
+			"rawInput": {"command": "git diff --stat"}
+		}
+	}`)
+	got := copilotServerResponse("session/request_permission", params, nil, t.TempDir())
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func testRequestWorker(t *testing.T, worker RequestWorker) {
