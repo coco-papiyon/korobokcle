@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
-import type { Job, JobArtifact, JobDetailResponse, JobLogGroup } from '../types'
+import { html as diff2Html } from 'diff2html'
+import 'diff2html/bundles/css/diff2html.min.css'
+import type { Job, JobArtifact, JobDetailResponse, JobLogGroup, JobSourceDiff } from '../types'
 import { jobStateChipClass, jobStateLabel as formatJobStateLabel } from '../utils/jobState'
 import { formatJobTimestampValue } from '../utils/jobTime'
 
@@ -20,16 +22,26 @@ const artifactLoading = ref(false)
 const artifactError = ref('')
 const artifact = ref<JobArtifact | null>(null)
 const artifactJobId = ref('')
+const artifactEditContent = ref('')
+const sourceDiffLoading = ref(false)
+const sourceDiffError = ref('')
+const sourceDiff = ref<JobSourceDiff | null>(null)
+const sourceDiffJobId = ref('')
+const detailViewMode = ref<'detail' | 'diff' | 'logs' | 'edit'>('detail')
 const artifactUserComment = ref('')
 const artifactActionLoading = ref(false)
+const artifactEditSaving = ref(false)
 const deleteLoading = ref(false)
 let detailRequestSequence = 0
 let artifactRequestSequence = 0
+let sourceDiffRequestSequence = 0
 let detailRefreshTimer: number | undefined
 const emit = defineEmits<{
   (event: 'close'): void
   (event: 'refresh'): void
   (event: 'deleted', jobId: string): void
+  (event: 'source-diff-availability', available: boolean): void
+  (event: 'artifact-edit-availability', available: boolean): void
 }>()
 
 const inspectableStates = new Set([
@@ -63,6 +75,18 @@ const detailSubStatus = computed(() =>
   detailJob.value?.kind === 'issue_implementation' ? detailJob.value?.subStatus?.trim() ?? '' : '',
 )
 const hasLogs = computed(() => detailLogs.value.length > 0)
+const sourceDiffHtml = computed(() => {
+  if (!sourceDiff.value) {
+    return ''
+  }
+  return diff2Html(sourceDiff.value.content, {
+    drawFileList: false,
+    matching: 'lines',
+    outputFormat: 'side-by-side',
+    renderNothingWhenEmpty: true,
+    synchronisedScroll: true,
+  })
+})
 
 const relatedLink = computed(() => {
   const job = detailJob.value
@@ -89,6 +113,26 @@ const relatedLink = computed(() => {
 
 function canInspectArtifact(job: Job | null) {
   return job != null && inspectableStates.has(job.state)
+}
+
+function canInspectSourceDiff(job: Job | null) {
+  return (
+    job != null &&
+    (job.kind === 'issue_implementation' ||
+      job.kind === 'pr_conflict' ||
+      (job.kind === 'pr_feedback' && job.state.startsWith('review_fix_implementation_'))) &&
+    inspectableStates.has(job.state)
+  )
+}
+
+function canEditArtifact(job: Job | null) {
+  if (!job || !canInspectArtifact(job)) {
+    return false
+  }
+  if (job.kind === 'issue_design') {
+    return job.state === 'design_ready'
+  }
+  return job.kind === 'pr_feedback' && job.state === 'review_fix_design_ready'
 }
 
 function jobStateClass(state: string) {
@@ -124,6 +168,17 @@ function artifactTitle(job: Job | null) {
   return '結果'
 }
 
+function sourceDiffTitle(job: Job | null) {
+  if (job?.kind === 'pr_conflict') {
+    return 'ソース差分'
+  }
+  return 'ソース差分'
+}
+
+function artifactEditorTitle(job: Job | null) {
+  return `${artifactTitle(job)}の編集`
+}
+
 function logGroupTitle(group: JobLogGroup) {
   return `${group.roleLabel} / 試行 ${group.attempt}`
 }
@@ -141,6 +196,16 @@ async function loadJobDetail(id: string) {
     artifactError.value = ''
     artifact.value = null
     artifactJobId.value = ''
+    artifactEditContent.value = ''
+    artifactEditSaving.value = false
+    sourceDiffRequestSequence += 1
+    sourceDiffLoading.value = false
+    sourceDiffError.value = ''
+    sourceDiff.value = null
+    sourceDiffJobId.value = ''
+    detailViewMode.value = 'detail'
+    emit('source-diff-availability', false)
+    emit('artifact-edit-availability', false)
     artifactUserComment.value = ''
     return
   }
@@ -165,6 +230,7 @@ async function loadJobDetail(id: string) {
         detailJob.value = payload.job
         detailBranch.value = branch
         artifactUserComment.value = ''
+        artifactEditContent.value = ''
       }
       if (canInspectArtifact(payload.job)) {
         void loadArtifact(payload.job.id)
@@ -175,6 +241,19 @@ async function loadJobDetail(id: string) {
         artifact.value = null
         artifactJobId.value = ''
       }
+      if (!canInspectSourceDiff(payload.job)) {
+        sourceDiffRequestSequence += 1
+        sourceDiffLoading.value = false
+        sourceDiffError.value = ''
+        sourceDiff.value = null
+        sourceDiffJobId.value = ''
+        detailViewMode.value = 'detail'
+      }
+      if (!canEditArtifact(payload.job) && detailViewMode.value === 'edit') {
+        detailViewMode.value = 'detail'
+      }
+      emit('source-diff-availability', canInspectSourceDiff(payload.job))
+      emit('artifact-edit-availability', canEditArtifact(payload.job))
     }
   } catch (err) {
     if (requestSequence === detailRequestSequence) {
@@ -187,6 +266,16 @@ async function loadJobDetail(id: string) {
       artifactError.value = ''
       artifact.value = null
       artifactJobId.value = ''
+      artifactEditContent.value = ''
+      artifactEditSaving.value = false
+      sourceDiffRequestSequence += 1
+      sourceDiffLoading.value = false
+      sourceDiffError.value = ''
+      sourceDiff.value = null
+      sourceDiffJobId.value = ''
+      detailViewMode.value = 'detail'
+      emit('source-diff-availability', false)
+      emit('artifact-edit-availability', false)
       artifactUserComment.value = ''
     }
   } finally {
@@ -201,7 +290,7 @@ function startPolling() {
     return
   }
   detailRefreshTimer = window.setInterval(() => {
-    if (!props.active || !props.jobId) {
+    if (!props.active || !props.jobId || detailViewMode.value === 'edit') {
       return
     }
     void loadJobDetail(props.jobId)
@@ -247,6 +336,68 @@ async function loadArtifact(jobId: string) {
       artifactLoading.value = false
     }
   }
+}
+
+async function loadSourceDiff(jobId: string) {
+  if (!jobId) {
+    return
+  }
+  const requestSequence = ++sourceDiffRequestSequence
+  sourceDiffError.value = ''
+  const hasCurrentDiff = sourceDiffJobId.value === jobId && sourceDiff.value !== null
+  if (!hasCurrentDiff) {
+    sourceDiffLoading.value = true
+    sourceDiff.value = null
+  }
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/diff`, { cache: 'no-store' })
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || `HTTP ${res.status}`)
+    }
+    const payload = (await res.json()) as JobSourceDiff
+    if (requestSequence === sourceDiffRequestSequence) {
+      sourceDiff.value = payload
+      sourceDiffJobId.value = jobId
+    }
+  } catch (err) {
+    if (requestSequence === sourceDiffRequestSequence) {
+      sourceDiffError.value = err instanceof Error ? err.message : 'unknown error'
+    }
+  } finally {
+    if (requestSequence === sourceDiffRequestSequence) {
+      sourceDiffLoading.value = false
+    }
+  }
+}
+
+async function openSourceDiff() {
+  if (!detailJob.value) {
+    return
+  }
+  detailViewMode.value = 'diff'
+  await loadSourceDiff(detailJob.value.id)
+}
+
+async function openEditView() {
+  if (!detailJob.value || !canEditArtifact(detailJob.value)) {
+    return
+  }
+  detailViewMode.value = 'edit'
+  if (artifact.value !== null && artifactJobId.value === detailJob.value.id) {
+    artifactEditContent.value = artifact.value.content
+    return
+  }
+  await loadArtifact(detailJob.value.id)
+  artifactEditContent.value = artifact.value?.content ?? ''
+}
+
+function openResultView() {
+  detailViewMode.value = 'detail'
+}
+
+function openLogsView() {
+  detailViewMode.value = 'logs'
 }
 
 async function approveArtifact() {
@@ -330,6 +481,37 @@ async function rerunArtifact() {
   }
 }
 
+async function saveArtifactEdit() {
+  if (!detailJob.value) {
+    return
+  }
+  artifactEditSaving.value = true
+  artifactError.value = ''
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(detailJob.value.id)}/artifact/content`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ content: artifactEditContent.value }),
+    })
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || `HTTP ${res.status}`)
+    }
+    const payload = (await res.json()) as JobArtifact
+    artifact.value = payload
+    artifactJobId.value = detailJob.value.id
+    artifactEditContent.value = payload.content
+    detailViewMode.value = 'detail'
+    emit('refresh')
+  } catch (err) {
+    artifactError.value = err instanceof Error ? err.message : 'unknown error'
+  } finally {
+    artifactEditSaving.value = false
+  }
+}
+
 async function deleteJob() {
   if (!detailJob.value) {
     return
@@ -374,6 +556,10 @@ watch(
       void loadJobDetail(jobId)
       return
     }
+    if (detailViewMode.value === 'edit') {
+      stopPolling()
+      return
+    }
     void loadJobDetail(jobId)
     startPolling()
   },
@@ -382,6 +568,14 @@ watch(
 
 onBeforeUnmount(() => {
   stopPolling()
+})
+
+defineExpose({
+  openResultView,
+  openSourceDiff,
+  openLogsView,
+  openEditView,
+  detailViewMode,
 })
 </script>
 
@@ -424,10 +618,6 @@ onBeforeUnmount(() => {
           <div class="detail__meta-value detail__meta-value--mono">{{ detailJob.id }}</div>
         </div>
         <div class="detail__meta-item">
-          <div class="detail__meta-label">Number</div>
-          <div class="detail__meta-value detail__meta-value--mono">#{{ detailJob.number }}</div>
-        </div>
-        <div class="detail__meta-item">
           <div class="detail__meta-label">ブランチ</div>
           <div class="detail__meta-value detail__meta-value--mono">{{ detailBranch || detailJob.branch || '-' }}</div>
         </div>
@@ -439,12 +629,29 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <details v-if="showIssueContext && issueContext" class="detail-context">
+      <details v-if="detailViewMode === 'detail' && showIssueContext && issueContext" class="detail-context">
         <summary>Issue の内容</summary>
         <pre class="detail-context__body">{{ issueContext }}</pre>
       </details>
 
-      <div v-if="canInspectArtifact(detailJob)" class="detail-artifact">
+      <section v-if="detailViewMode === 'diff'" class="detail-diff">
+        <div class="panel__title-row">
+          <h3>{{ sourceDiffTitle(detailJob) }}</h3>
+          <span class="panel__hint">GET /api/jobs/:id/diff</span>
+        </div>
+
+        <div class="detail-diff__viewer">
+          <div v-if="sourceDiffLoading && !sourceDiff" class="empty-state">読み込み中...</div>
+          <div v-else-if="sourceDiffError" class="error">{{ sourceDiffError }}</div>
+          <div v-else-if="sourceDiff" class="detail-diff__diff" v-html="sourceDiffHtml"></div>
+          <p v-if="sourceDiff" class="detail-diff__meta">
+            <span v-if="sourceDiff.baseRef">比較基準: {{ sourceDiff.baseRef }}</span>
+            <span>対象: {{ sourceDiff.path }}</span>
+          </p>
+        </div>
+      </section>
+
+      <div v-if="detailViewMode === 'detail' && canInspectArtifact(detailJob)" class="detail-artifact">
         <div class="panel__title-row">
           <h3>{{ artifactTitle(detailJob) }}</h3>
           <span class="panel__hint">GET /api/jobs/:id/artifact</span>
@@ -490,7 +697,36 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <section class="detail-logs" aria-label="ログ">
+      <div v-if="detailViewMode === 'edit'" class="detail-artifact detail-artifact--edit">
+        <div class="panel__title-row">
+          <h3>{{ artifactEditorTitle(detailJob) }}</h3>
+          <span class="panel__hint">PUT /api/jobs/:id/artifact/content</span>
+        </div>
+
+        <div v-if="artifactLoading && !artifact" class="empty-state">読み込み中...</div>
+        <div v-if="artifactError" class="error">{{ artifactError }}</div>
+        <div v-if="artifact">
+          <textarea
+            v-model="artifactEditContent"
+            class="control artifact-comment detail-artifact__editor"
+            rows="16"
+            spellcheck="false"
+          ></textarea>
+
+          <div class="modal__actions">
+            <div class="modal__actions-group">
+              <button class="button" type="button" @click="saveArtifactEdit" :disabled="artifactEditSaving">
+                保存
+              </button>
+              <button class="button button--ghost" type="button" @click="openResultView" :disabled="artifactEditSaving">
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section v-if="detailViewMode === 'logs'" class="detail-logs" aria-label="ログ">
         <div class="panel__title-row">
           <h3>ログ</h3>
           <span class="panel__hint">役割別 / 試行別</span>
@@ -523,7 +759,7 @@ onBeforeUnmount(() => {
         <div v-else class="empty-state">ログはまだありません。</div>
       </section>
 
-      <section v-if="relatedLink" class="detail-links" aria-label="関連リンク">
+      <section v-if="detailViewMode === 'detail' && relatedLink" class="detail-links" aria-label="関連リンク">
         <div class="detail-links__header">
           <h3>関連リンク</h3>
           <span class="panel__hint">GitHub</span>

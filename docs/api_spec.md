@@ -31,6 +31,7 @@
 | `PATCH` | `/api/jobs/:id/state` | ジョブ状態の更新 |
 | `DELETE` | `/api/jobs/:id` | ジョブ削除 |
 | `GET` | `/api/jobs/:id/artifact` | 成果物の取得 |
+| `GET` | `/api/jobs/:id/diff` | ソース差分の取得 |
 | `POST` | `/api/jobs/:id/artifact` | 成果物の承認 |
 | `PATCH` | `/api/jobs/:id/artifact` | 成果物の再実行 |
 | `POST` | `/api/jobs/:id/artifact/request-changes` | 修正依頼 |
@@ -160,6 +161,16 @@
 | `provider` | string | 生成に使った AI プロバイダー |
 | `skills` | SkillStatus[] | 生成結果 |
 | `message` | string | 生成結果メッセージ |
+
+### 4.8 JobSourceDiff
+
+`GET /api/jobs/:id/diff` の返却形式。
+
+| フィールド | 型 | 説明 |
+| --- | --- | --- |
+| `content` | string | unified diff 本文 |
+| `path` | string | `workspace/.../worktree` の相対パス |
+| `baseRef` | string? | 比較基準ブランチ |
 
 ## 5. エンドポイント詳細
 
@@ -365,7 +376,23 @@
 
 更新後の `Job`。
 
-### 5.11 `PATCH /api/jobs/:id/artifact`
+### 5.11 `GET /api/jobs/:id/diff`
+
+実装系ジョブのソース差分を返す。画面ではジョブ詳細から「差分確認」を押したときだけ取得する。差分は一覧には出さず、ジョブ詳細の差分ビューで確認する。承認後や `completed` 後でも、対象 worktree が残っている間は同じ API で再表示できる。
+
+現行実装では `issue_implementation`、`pr_conflict`、`pr_feedback` の実装修正系を対象にする。
+
+#### Response
+
+```json
+{
+  "content": "diff --git a/README.md b/README.md\nindex df967b9..9f30ee3 100644\n--- a/README.md\n+++ b/README.md\n@@ -1 +1,2 @@\n before\n+after\n",
+  "path": "workspace/mock-owner-mock-repo/issue-102/worktree",
+  "baseRef": "main"
+}
+```
+
+### 5.12 `PATCH /api/jobs/:id/artifact`
 
 成果物を再実行する。コメント付きで送る。
 
@@ -379,7 +406,7 @@
 
 更新後の `Job`。
 
-### 5.12 `POST /api/jobs/:id/artifact/request-changes`
+### 5.13 `POST /api/jobs/:id/artifact/request-changes`
 
 PR レビューで修正依頼を出す。
 
@@ -393,7 +420,7 @@ PR レビューで修正依頼を出す。
 
 更新後の `Job`。
 
-### 5.13 `GET /api/skills`
+### 5.14 `GET /api/skills`
 
 スキルの状態一覧を返す。
 
@@ -414,7 +441,7 @@ PR レビューで修正依頼を出す。
 }
 ```
 
-### 5.14 `POST /api/skills`
+### 5.15 `POST /api/skills`
 
 スキルを生成する。`forcePurposes` は配列、単一値、オブジェクトいずれも受け付ける。
 
@@ -463,4 +490,5 @@ PR レビューで修正依頼を出す。
 
 - 一覧のフィルタと並び替えは API ではなくフロントエンドで行う
 - ログは専用 API ではなくジョブ詳細に含める
+- ソース差分は専用 API で取得し、ジョブ詳細でのみ表示する
 - 検証者が未指定の場合は、設定上は実装者の AI 設定を流用する

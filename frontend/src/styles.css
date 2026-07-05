@@ -751,7 +751,7 @@ h1 {
 
 .detail__meta {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px 14px;
   align-items: start;
 }
@@ -800,6 +800,102 @@ h1 {
   margin-top: 2px;
   padding-top: 14px;
   border-top: 1px solid rgba(18, 32, 51, 0.1);
+}
+
+.detail-diff {
+  display: grid;
+  gap: 14px;
+  margin-top: 2px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(18, 32, 51, 0.1);
+}
+
+.detail-diff__entry,
+.detail-diff__viewer {
+  display: grid;
+  gap: 12px;
+}
+
+.detail-diff__diff {
+  overflow: auto;
+  border: 1px solid rgba(18, 32, 51, 0.08);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.detail-diff__diff .d2h-wrapper {
+  margin: 0;
+}
+
+.detail-diff__diff .d2h-file-list-wrapper {
+  margin-bottom: 0;
+  border-radius: 16px 16px 0 0;
+}
+
+.detail-diff__diff .d2h-file-list-header {
+  padding: 8px 10px 6px;
+}
+
+.detail-diff__diff .d2h-file-list-title {
+  font-size: 0.88rem;
+  letter-spacing: 0.01em;
+}
+
+.detail-diff__diff .d2h-file-list > li {
+  padding: 4px 10px;
+}
+
+.detail-diff__diff .d2h-file-name-wrapper {
+  min-width: 0;
+}
+
+.detail-diff__diff .d2h-file-name {
+  font-size: 0.9rem;
+}
+
+.detail-diff__diff .d2h-file-header {
+  min-height: 30px;
+  padding: 4px 10px;
+}
+
+.detail-diff__diff .d2h-code-linenumber,
+.detail-diff__diff .d2h-code-side-linenumber {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background-clip: padding-box;
+}
+
+.detail-diff__diff .d2h-code-line,
+.detail-diff__diff .d2h-code-side-line {
+  padding-left: 0.75em;
+  padding-right: 1.25em;
+}
+
+.detail-diff__diff .d2h-code-side-line {
+  width: calc(100% - 2em);
+}
+
+.detail-diff__diff .d2h-code-line {
+  width: calc(100% - 2em);
+}
+
+.detail-diff__diff .d2h-code-line-prefix {
+  padding-right: 0.25em;
+}
+
+.detail-diff__actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.detail-diff__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0;
+  color: rgba(18, 32, 51, 0.66);
+  font-size: 0.84rem;
 }
 
 .detail-links {
@@ -987,9 +1083,29 @@ h1 {
 
 .modal-dialog__header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-end;
   gap: 16px;
+}
+
+.modal-dialog__header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.modal-dialog__action,
+.modal-dialog__close {
+  min-width: 96px;
+}
+
+.modal-dialog__action--active {
+  background: linear-gradient(135deg, rgba(47, 91, 234, 0.18), rgba(31, 157, 143, 0.18));
+  color: #10284f;
+  box-shadow: inset 0 0 0 1px rgba(47, 91, 234, 0.16);
 }
 
 .modal-dialog__title {
@@ -1030,9 +1146,24 @@ h1 {
   line-height: 1.7;
 }
 
+.artifact-view--diff {
+  white-space: pre;
+  word-break: normal;
+}
+
 .artifact-comment {
   min-height: 120px;
   resize: vertical;
+}
+
+.detail-artifact__editor {
+  min-height: 360px;
+  font-family:
+    "Cascadia Mono",
+    "SFMono-Regular",
+    Consolas,
+    "Liberation Mono",
+    monospace;
 }
 
 .modal__actions {

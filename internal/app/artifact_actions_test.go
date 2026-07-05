@@ -258,6 +258,175 @@ func TestPublishBranchRebasesRemoteBranchBeforePush(t *testing.T) {
 	}
 }
 
+func TestGetSourceDiffReturnsBranchDiffAgainstBase(t *testing.T) {
+	baseDir := t.TempDir()
+	toolDir := t.TempDir()
+	runGitTestCommand(t, baseDir, "init", "-b", "main")
+	runGitTestCommand(t, baseDir, "config", "user.email", "test@example.com")
+	runGitTestCommand(t, baseDir, "config", "user.name", "Test User")
+	writeTestFile(t, baseDir, "README.md", "before\n")
+	runGitTestCommand(t, baseDir, "add", "README.md")
+	runGitTestCommand(t, baseDir, "commit", "-m", "initial")
+
+	job := domain.Job{
+		ID:         "issue-220",
+		Kind:       domain.JobKindIssueImplementation,
+		State:      domain.StateImplementationApproved,
+		Repository: "owner/repo",
+		Number:     220,
+		Title:      "diff target",
+	}
+	worktreePath := implementationWorktreePath(toolDir, job)
+	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	runGitTestCommand(t, baseDir, "worktree", "add", "-B", "issue_#220", worktreePath, "HEAD")
+	writeTestFile(t, worktreePath, "README.md", "before\nafter\n")
+	runGitTestCommand(t, worktreePath, "add", "README.md")
+	runGitTestCommand(t, worktreePath, "commit", "-m", "implementation change")
+
+	store := newMemoryJobStore()
+	if err := store.Upsert(context.Background(), job); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	service := NewArtifactActionService(
+		store,
+		&workflowTestSettingsStore{settings: domain.NormalizeWatchSettings(domain.WatchSettings{BaseBranch: "main"})},
+		nil,
+		nil,
+		baseDir,
+		toolDir,
+		nil,
+		nil,
+	)
+
+	diff, err := service.GetSourceDiff(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("GetSourceDiff() error = %v", err)
+	}
+	if diff.BaseRef != "main" {
+		t.Fatalf("baseRef = %q, want main", diff.BaseRef)
+	}
+	wantPath := jobSourceDiffTargetPath(job)
+	if diff.Path != wantPath {
+		t.Fatalf("path = %q, want %q", diff.Path, wantPath)
+	}
+	if !strings.Contains(diff.Content, "diff --git a/README.md b/README.md") {
+		t.Fatalf("content = %q, want README diff", diff.Content)
+	}
+	if !strings.Contains(diff.Content, "+after") {
+		t.Fatalf("content = %q, want added line", diff.Content)
+	}
+}
+
+func TestGetSourceDiffReturnsPRFeedbackDiffAgainstBase(t *testing.T) {
+	baseDir := t.TempDir()
+	toolDir := t.TempDir()
+	runGitTestCommand(t, baseDir, "init", "-b", "main")
+	runGitTestCommand(t, baseDir, "config", "user.email", "test@example.com")
+	runGitTestCommand(t, baseDir, "config", "user.name", "Test User")
+	writeTestFile(t, baseDir, "README.md", "before\n")
+	runGitTestCommand(t, baseDir, "add", "README.md")
+	runGitTestCommand(t, baseDir, "commit", "-m", "initial")
+
+	job := domain.Job{
+		ID:         "pr-feedback-220",
+		Kind:       domain.JobKindPRFeedback,
+		State:      domain.StateReviewFixImplementationReady,
+		Repository: "owner/repo",
+		Number:     220,
+		Title:      "diff target",
+	}
+	worktreePath := implementationWorktreePath(toolDir, job)
+	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	runGitTestCommand(t, baseDir, "worktree", "add", "-B", "issue_#220", worktreePath, "HEAD")
+	writeTestFile(t, worktreePath, "README.md", "before\nafter\n")
+	runGitTestCommand(t, worktreePath, "add", "README.md")
+	runGitTestCommand(t, worktreePath, "commit", "-m", "implementation change")
+
+	store := newMemoryJobStore()
+	if err := store.Upsert(context.Background(), job); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	service := NewArtifactActionService(
+		store,
+		&workflowTestSettingsStore{settings: domain.NormalizeWatchSettings(domain.WatchSettings{BaseBranch: "main"})},
+		nil,
+		nil,
+		baseDir,
+		toolDir,
+		nil,
+		nil,
+	)
+
+	diff, err := service.GetSourceDiff(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("GetSourceDiff() error = %v", err)
+	}
+	if diff.BaseRef != "main" {
+		t.Fatalf("baseRef = %q, want main", diff.BaseRef)
+	}
+	wantPath := jobSourceDiffTargetPath(job)
+	if diff.Path != wantPath {
+		t.Fatalf("path = %q, want %q", diff.Path, wantPath)
+	}
+	if !strings.Contains(diff.Content, "diff --git a/README.md b/README.md") {
+		t.Fatalf("content = %q, want README diff", diff.Content)
+	}
+}
+
+func TestUpdateArtifactWritesEditableArtifact(t *testing.T) {
+	baseDir := t.TempDir()
+	toolDir := t.TempDir()
+	job := domain.Job{
+		ID:         "issue-230",
+		Kind:       domain.JobKindIssueDesign,
+		State:      domain.StateDesignReady,
+		Repository: "owner/repo",
+		Number:     230,
+		Title:      "editable design",
+	}
+	artifactPath := filepath.Join(baseDir, ".workspace", "design", "230_editable-design.md")
+	if err := os.MkdirAll(filepath.Dir(artifactPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(artifactPath, []byte("before"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	store := newMemoryJobStore()
+	if err := store.Upsert(context.Background(), job); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	service := NewArtifactActionService(
+		store,
+		&workflowTestSettingsStore{settings: domain.NormalizeWatchSettings(domain.WatchSettings{BaseBranch: "main"})},
+		nil,
+		nil,
+		baseDir,
+		toolDir,
+		nil,
+		nil,
+	)
+
+	updated, err := service.UpdateArtifact(context.Background(), job.ID, "after")
+	if err != nil {
+		t.Fatalf("UpdateArtifact() error = %v", err)
+	}
+	if updated.Content != "after" {
+		t.Fatalf("content = %q, want after", updated.Content)
+	}
+	raw, err := os.ReadFile(artifactPath)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if string(raw) != "after" {
+		t.Fatalf("file content = %q, want after", string(raw))
+	}
+}
+
 func runGitTestCommand(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)

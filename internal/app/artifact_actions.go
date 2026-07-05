@@ -17,6 +17,8 @@ import (
 
 type ArtifactActions interface {
 	GetArtifact(context.Context, string) (web.DesignArtifact, error)
+	GetSourceDiff(context.Context, string) (web.JobSourceDiff, error)
+	UpdateArtifact(context.Context, string, string) (web.DesignArtifact, error)
 	ApproveArtifact(context.Context, string, string) (domain.Job, error)
 	RequestChanges(context.Context, string, string) (domain.Job, error)
 	RerunArtifact(context.Context, string, string) (domain.Job, error)
@@ -67,6 +69,50 @@ func (s *ArtifactActionService) GetArtifact(ctx context.Context, id string) (web
 		return web.DesignArtifact{}, err
 	}
 	return web.DesignArtifact{Content: string(raw), Path: path}, nil
+}
+
+func (s *ArtifactActionService) GetSourceDiff(ctx context.Context, id string) (web.JobSourceDiff, error) {
+	job, ok, err := s.getJob(ctx, id)
+	if err != nil {
+		return web.JobSourceDiff{}, err
+	}
+	if !ok {
+		return web.JobSourceDiff{}, fmt.Errorf("job not found")
+	}
+	if !supportsSourceDiff(job) {
+		return web.JobSourceDiff{}, fmt.Errorf("source diff is not supported for this job")
+	}
+	repoDir, err := s.jobRepoDir(ctx, job)
+	if err != nil {
+		return web.JobSourceDiff{}, err
+	}
+	baseBranch := "main"
+	if s.settings != nil {
+		settings, err := s.settings.Load(ctx)
+		if err == nil && strings.TrimSpace(settings.BaseBranch) != "" {
+			baseBranch = strings.TrimSpace(settings.BaseBranch)
+		}
+	}
+	baseRef := baseBranch
+	diff, err := gitDiffAgainstBase(ctx, repoDir, baseBranch)
+	if err != nil {
+		return web.JobSourceDiff{}, err
+	}
+	if strings.TrimSpace(diff) == "" {
+		diff, err = gitWorkingTreeDiff(ctx, repoDir)
+		if err != nil {
+			return web.JobSourceDiff{}, err
+		}
+		baseRef = ""
+	}
+	if strings.TrimSpace(diff) == "" {
+		return web.JobSourceDiff{}, fmt.Errorf("source diff is empty")
+	}
+	return web.JobSourceDiff{
+		Content: diff,
+		Path:    jobSourceDiffTargetPath(job),
+		BaseRef: baseRef,
+	}, nil
 }
 
 func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userComment string) (domain.Job, error) {
@@ -249,6 +295,30 @@ func rerunRunningState(job domain.Job) domain.JobState {
 	}
 }
 
+func (s *ArtifactActionService) UpdateArtifact(ctx context.Context, id, content string) (web.DesignArtifact, error) {
+	job, ok, err := s.getJob(ctx, id)
+	if err != nil {
+		return web.DesignArtifact{}, err
+	}
+	if !ok {
+		return web.DesignArtifact{}, fmt.Errorf("job not found")
+	}
+	if !supportsArtifactEditing(job) {
+		return web.DesignArtifact{}, fmt.Errorf("artifact editing is not supported for this job")
+	}
+	path, err := s.artifactPath(job)
+	if err != nil {
+		return web.DesignArtifact{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return web.DesignArtifact{}, err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return web.DesignArtifact{}, err
+	}
+	return web.DesignArtifact{Content: content, Path: path}, nil
+}
+
 func (s *ArtifactActionService) getJob(ctx context.Context, id string) (domain.Job, bool, error) {
 	if s.store == nil {
 		return domain.Job{}, false, fmt.Errorf("job store not configured")
@@ -329,10 +399,45 @@ func (s *ArtifactActionService) ensureBranch(ctx context.Context, job domain.Job
 }
 
 func (s *ArtifactActionService) jobRepoDir(ctx context.Context, job domain.Job) (string, error) {
-	if job.Kind != domain.JobKindIssueImplementation && job.Kind != domain.JobKindPRConflict {
+	if job.Kind != domain.JobKindIssueImplementation && job.Kind != domain.JobKindPRConflict && !isPRFeedbackImplementationJob(job) {
 		return s.baseDir, nil
 	}
 	return implementationWorktreePath(s.toolDir, job), nil
+}
+
+func supportsSourceDiff(job domain.Job) bool {
+	switch job.Kind {
+	case domain.JobKindIssueImplementation, domain.JobKindPRConflict:
+		return true
+	case domain.JobKindPRFeedback:
+		return isPRFeedbackImplementationJob(job)
+	default:
+		return false
+	}
+}
+
+func supportsArtifactEditing(job domain.Job) bool {
+	switch job.Kind {
+	case domain.JobKindIssueDesign:
+		return true
+	case domain.JobKindPRFeedback:
+		return strings.HasPrefix(string(job.State), "review_fix_design_")
+	default:
+		return false
+	}
+}
+
+func isPRFeedbackImplementationJob(job domain.Job) bool {
+	switch job.State {
+	case domain.StatePRReviewComment,
+		domain.StateReviewFixImplementationRunning,
+		domain.StateReviewFixImplementationReady,
+		domain.StateReviewFixImplementationApproved,
+		domain.StateReviewFixed:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *ArtifactActionService) updateTargetLabels(ctx context.Context, job domain.Job, add []string, remove []string) error {
@@ -535,6 +640,41 @@ func gitHasChanges(ctx context.Context, repoDir string) (bool, error) {
 	return strings.TrimSpace(string(out)) != "", nil
 }
 
+func gitWorkingTreeDiff(ctx context.Context, repoDir string) (string, error) {
+	cached, err := runGitOutput(ctx, repoDir, "diff", "--cached", "--no-ext-diff", "-U4")
+	if err != nil {
+		return "", err
+	}
+	working, err := runGitOutput(ctx, repoDir, "diff", "--no-ext-diff", "-U4")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(strings.Join([]string{strings.TrimSpace(cached), strings.TrimSpace(working)}, "\n\n")), nil
+}
+
+func gitDiffAgainstBase(ctx context.Context, repoDir, baseBranch string) (string, error) {
+	candidates := []string{
+		strings.TrimSpace(baseBranch),
+		"origin/" + strings.TrimSpace(baseBranch),
+	}
+	var lastErr error
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		diff, err := runGitOutput(ctx, repoDir, "diff", "--no-ext-diff", "-U4", candidate+"...HEAD")
+		if err == nil {
+			return strings.TrimSpace(diff), nil
+		}
+		lastErr = err
+	}
+	if lastErr != nil {
+		return "", lastErr
+	}
+	return "", nil
+}
+
 func runGit(ctx context.Context, baseDir string, args ...string) error {
 	fullArgs := append([]string{"-C", baseDir}, args...)
 	cmd := exec.CommandContext(ctx, "git", fullArgs...)
@@ -542,6 +682,16 @@ func runGit(ctx context.Context, baseDir string, args ...string) error {
 		return fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+func runGitOutput(ctx context.Context, baseDir string, args ...string) (string, error) {
+	fullArgs := append([]string{"-C", baseDir}, args...)
+	cmd := exec.CommandContext(ctx, "git", fullArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return string(out), nil
 }
 
 func gitCommitCount(ctx context.Context, baseDir, revRange string) (int, error) {

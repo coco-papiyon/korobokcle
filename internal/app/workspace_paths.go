@@ -17,6 +17,11 @@ func jobWorkspaceDir(workDir string, job domain.Job) string {
 	return filepath.Join(workDir, "workspace", repoDir, job.ID)
 }
 
+func jobSourceDiffTargetPath(job domain.Job) string {
+	repoDir := sanitizePart(strings.ReplaceAll(job.Repository, "/", "_"))
+	return filepath.ToSlash(filepath.Join("workspace", repoDir, job.ID, "worktree"))
+}
+
 func jobLogDir(workDir string, job domain.Job) string {
 	return filepath.Join(jobWorkspaceDir(workDir, job), "logs")
 }

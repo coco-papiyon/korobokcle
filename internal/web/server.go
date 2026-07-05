@@ -39,6 +39,8 @@ type JobContextLoader interface {
 
 type ArtifactActions interface {
 	GetArtifact(context.Context, string) (DesignArtifact, error)
+	GetSourceDiff(context.Context, string) (JobSourceDiff, error)
+	UpdateArtifact(context.Context, string, string) (DesignArtifact, error)
 	ApproveArtifact(context.Context, string, string) (domain.Job, error)
 	RequestChanges(context.Context, string, string) (domain.Job, error)
 	RerunArtifact(context.Context, string, string) (domain.Job, error)
@@ -52,6 +54,12 @@ type SkillActions interface {
 type DesignArtifact struct {
 	Content string `json:"content"`
 	Path    string `json:"path"`
+}
+
+type JobSourceDiff struct {
+	Content string `json:"content"`
+	Path    string `json:"path"`
+	BaseRef string `json:"baseRef,omitempty"`
 }
 
 type JobLogFile struct {
@@ -198,6 +206,59 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 					return
 				}
 				_ = json.NewEncoder(w).Encode(job)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if strings.HasSuffix(id, "/artifact/content") {
+			id = strings.TrimSuffix(id, "/artifact/content")
+			if id == "" {
+				http.NotFound(w, r)
+				return
+			}
+			if artifactActions == nil {
+				http.Error(w, "artifact actions not configured", http.StatusServiceUnavailable)
+				return
+			}
+			switch r.Method {
+			case http.MethodPut:
+				var req struct {
+					Content string `json:"content"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				artifact, err := artifactActions.UpdateArtifact(r.Context(), id, req.Content)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(artifact)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if strings.HasSuffix(id, "/diff") {
+			id = strings.TrimSuffix(id, "/diff")
+			if id == "" {
+				http.NotFound(w, r)
+				return
+			}
+			if artifactActions == nil {
+				http.Error(w, "artifact actions not configured", http.StatusServiceUnavailable)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				diff, err := artifactActions.GetSourceDiff(r.Context(), id)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusNotFound)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(diff)
 			default:
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}

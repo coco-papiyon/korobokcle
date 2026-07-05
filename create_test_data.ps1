@@ -211,11 +211,53 @@ This is a $Kind artifact for UI testing at state: $State.
 
 ## Test Results
 - create_test_data.ps1: success
+- unchanged line 1
+- unchanged line 2
+- unchanged line 3
+- unchanged line 4
+- unchanged line 5
 
 ## Remaining
 - Mock mode does not post to GitHub.
 "@
   $path = Join-Path $rootPath ".workspace/$SubDir/${Number}_${SafeTitle}.md"
+  Write-TextNoBom -Path $path -Value $content
+}
+
+function Write-Diff {
+  param(
+    [string]$SubDir,
+    [int]$Number,
+    [string]$SafeTitle,
+    [string]$Title,
+    [string]$Kind,
+    [string]$State
+  )
+  $content = @"
+diff --git a/mock-source.txt b/mock-source.txt
+index 1111111..2222222 100644
+--- a/mock-source.txt
++++ b/mock-source.txt
+@@ -1,14 +1,14 @@
+ # $Title
+ ## Summary
+  context line 1
+  context line 2
+  context line 3
+  context line 4
+-This is a mock artifact.
++This is a mock artifact for $State.
+ This line stays unchanged.
+ This line stays unchanged too.
+ ## Changes
+-This artifact is generated as mock test data.
++This artifact is generated as mock test data for UI testing.
+ This line stays unchanged.
+ This line stays unchanged too.
+ This line stays unchanged three.
+ This line stays unchanged four.
+"@
+  $path = Join-Path $rootPath ".workspace/$SubDir/${Number}_${SafeTitle}.diff"
   Write-TextNoBom -Path $path -Value $content
 }
 
@@ -265,6 +307,7 @@ foreach ($job in $jobs) {
     continue
   }
   Write-Artifact -SubDir $artifactSubDir -Number $job.number -SafeTitle $job.title -Title $job.title -Kind $job.kind -State $job.state
+  Write-Diff -SubDir $artifactSubDir -Number $job.number -SafeTitle $job.title -Title $job.title -Kind $job.kind -State $job.state
 }
 
 function Write-LogGroup {

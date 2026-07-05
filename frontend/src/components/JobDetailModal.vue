@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import JobDetailPanel from './JobDetailPanel.vue'
 
 const props = defineProps<{
@@ -13,6 +13,11 @@ const emit = defineEmits<{
   (event: 'deleted', jobId: string): void
 }>()
 
+const detailPanel = ref<InstanceType<typeof JobDetailPanel> | null>(null)
+const sourceDiffAvailable = ref(false)
+const artifactEditAvailable = ref(false)
+const activeView = ref<'result' | 'diff' | 'edit' | 'logs'>('result')
+
 function close() {
   emit('close')
 }
@@ -23,6 +28,44 @@ function handleRefresh() {
 
 function handleDeleted(jobId: string) {
   emit('deleted', jobId)
+}
+
+function handleSourceDiffAvailability(available: boolean) {
+  sourceDiffAvailable.value = available
+  if (!available) {
+    if (activeView.value === 'diff') {
+      activeView.value = 'result'
+      detailPanel.value?.openResultView()
+    }
+  }
+}
+
+function handleArtifactEditAvailability(available: boolean) {
+  artifactEditAvailable.value = available
+  if (!available && activeView.value === 'edit') {
+    activeView.value = 'result'
+    detailPanel.value?.openResultView()
+  }
+}
+
+function showResult() {
+  activeView.value = 'result'
+  detailPanel.value?.openResultView()
+}
+
+function openSourceDiff() {
+  activeView.value = 'diff'
+  detailPanel.value?.openSourceDiff()
+}
+
+function openEditView() {
+  activeView.value = 'edit'
+  detailPanel.value?.openEditView()
+}
+
+function showLogs() {
+  activeView.value = 'logs'
+  detailPanel.value?.openLogsView()
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -47,19 +90,58 @@ onBeforeUnmount(() => {
   <div class="modal-overlay" @click.self="close">
     <section class="modal-dialog" role="dialog" aria-modal="true" aria-label="ジョブ詳細">
       <div class="modal-dialog__header">
-        <button class="button button--ghost modal-dialog__close" type="button" aria-label="閉じる" @click="close">
-          閉じる
-        </button>
+        <div class="modal-dialog__header-actions">
+          <button
+            class="button button--ghost modal-dialog__action"
+            :class="{ 'modal-dialog__action--active': activeView === 'result' }"
+            type="button"
+            @click="showResult"
+          >
+            結果
+          </button>
+          <button
+            v-if="sourceDiffAvailable"
+            class="button button--ghost modal-dialog__action"
+            :class="{ 'modal-dialog__action--active': activeView === 'diff' }"
+            type="button"
+            @click="openSourceDiff"
+          >
+            差分確認
+          </button>
+          <button
+            v-if="artifactEditAvailable"
+            class="button button--ghost modal-dialog__action"
+            :class="{ 'modal-dialog__action--active': activeView === 'edit' }"
+            type="button"
+            @click="openEditView"
+          >
+            編集
+          </button>
+          <button
+            class="button button--ghost modal-dialog__action"
+            :class="{ 'modal-dialog__action--active': activeView === 'logs' }"
+            type="button"
+            @click="showLogs"
+          >
+            ログ
+          </button>
+          <button class="button button--ghost modal-dialog__close" type="button" aria-label="閉じる" @click="close">
+            閉じる
+          </button>
+        </div>
       </div>
 
       <div class="modal-dialog__body">
         <JobDetailPanel
+          ref="detailPanel"
           :active="true"
           :job-id="props.jobId"
           :refresh-key="props.refreshKey"
           @close="close"
           @refresh="handleRefresh"
           @deleted="handleDeleted"
+          @source-diff-availability="handleSourceDiffAvailability"
+          @artifact-edit-availability="handleArtifactEditAvailability"
         />
       </div>
     </section>

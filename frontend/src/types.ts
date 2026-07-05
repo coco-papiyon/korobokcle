@@ -21,6 +21,12 @@ export type JobArtifact = {
   path: string
 }
 
+export type JobSourceDiff = {
+  content: string
+  path: string
+  baseRef?: string
+}
+
 export type JobListResponse = {
   updatedAt: string
   jobs?: Job[]

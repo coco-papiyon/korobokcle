@@ -251,14 +251,95 @@ func TestArtifactRequestChangesAPI(t *testing.T) {
 	}
 }
 
+func TestArtifactUpdateAPI(t *testing.T) {
+	actions := &testArtifactActions{
+		job: domain.Job{
+			ID:         "issue-14",
+			Kind:       domain.JobKindIssueDesign,
+			State:      domain.StateDesignReady,
+			Repository: "owner/repo",
+			Number:     14,
+			Title:      "design target",
+		},
+	}
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil, nil)
+
+	body := bytes.NewBufferString(`{"content":"edited artifact"}`)
+	req := httptest.NewRequest(http.MethodPut, "/api/jobs/issue-14/artifact/content", body)
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("update artifact status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var artifact DesignArtifact
+	if err := json.Unmarshal(rec.Body.Bytes(), &artifact); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if artifact.Content != "edited artifact" {
+		t.Fatalf("artifact content = %q, want edited artifact", artifact.Content)
+	}
+	if actions.updateArtifactID != "issue-14" || actions.updateArtifactContent != "edited artifact" {
+		t.Fatalf("update artifact id=%q content=%q", actions.updateArtifactID, actions.updateArtifactContent)
+	}
+}
+
+func TestJobSourceDiffAPI(t *testing.T) {
+	actions := &testArtifactActions{
+		job: domain.Job{
+			ID:         "issue-102",
+			Kind:       domain.JobKindIssueImplementation,
+			State:      domain.StateImplementationApproved,
+			Repository: "owner/repo",
+			Number:     102,
+			Title:      "implementation target",
+		},
+	}
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/jobs/issue-102/diff", nil)
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("source diff status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+
+	var diff JobSourceDiff
+	if err := json.Unmarshal(rec.Body.Bytes(), &diff); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if !strings.Contains(diff.Content, "diff --git") {
+		t.Fatalf("content = %q, want git diff", diff.Content)
+	}
+	if diff.BaseRef != "main" {
+		t.Fatalf("baseRef = %q, want main", diff.BaseRef)
+	}
+}
+
 type testArtifactActions struct {
 	job                   domain.Job
 	requestChangesID      string
 	requestChangesComment string
+	updateArtifactID      string
+	updateArtifactContent string
 }
 
 func (a *testArtifactActions) GetArtifact(context.Context, string) (DesignArtifact, error) {
 	return DesignArtifact{Content: "artifact", Path: ".workspace/review/12_review.md"}, nil
+}
+
+func (a *testArtifactActions) GetSourceDiff(context.Context, string) (JobSourceDiff, error) {
+	return JobSourceDiff{
+		Content: "diff --git a/README.md b/README.md\n+after\n",
+		Path:    "workspace/mock-owner_mock-repo/issue-102/worktree",
+		BaseRef: "main",
+	}, nil
+}
+
+func (a *testArtifactActions) UpdateArtifact(_ context.Context, id, content string) (DesignArtifact, error) {
+	a.updateArtifactID = id
+	a.updateArtifactContent = content
+	return DesignArtifact{Content: content, Path: ".workspace/design/14_design.md"}, nil
 }
 
 func (a *testArtifactActions) ApproveArtifact(context.Context, string, string) (domain.Job, error) {

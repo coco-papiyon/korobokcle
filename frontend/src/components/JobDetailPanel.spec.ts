@@ -187,11 +187,11 @@ describe('JobDetailPanel', () => {
     expect(stateChip.classes()).not.toContain('chip--running')
     expect(stateChip.text()).toBe('実装完了')
     const metaItems = wrapper.findAll('.detail__meta-item')
-    expect(metaItems).toHaveLength(5)
-    expect(metaItems[2].text()).toContain('#2')
-    expect(metaItems[3].text()).toContain('ブランチ')
-    expect(metaItems[4].text()).toContain('取得時間')
-    expect(metaItems[4].text()).toContain('2026/07/01 09:00:00')
+    expect(metaItems).toHaveLength(4)
+    expect(metaItems[2].text()).toContain('ブランチ')
+    expect(metaItems[2].text()).toContain('-')
+    expect(metaItems[3].text()).toContain('取得時間')
+    expect(metaItems[3].text()).toContain('2026/07/01 09:00:00')
   })
 
   it('uses approved chip colors for review approvals in detail view', async () => {
@@ -257,11 +257,11 @@ describe('JobDetailPanel', () => {
     await flushPromises()
 
     const metaItems = wrapper.findAll('.detail__meta-item')
-    expect(metaItems).toHaveLength(5)
-    expect(metaItems[2].text()).toContain('#9')
-    expect(metaItems[3].text()).toContain('issue_#9')
-    expect(metaItems[4].text()).toContain('取得時間')
-    expect(metaItems[4].text()).toContain('2026/07/01 09:00:00')
+    expect(metaItems).toHaveLength(4)
+    expect(metaItems[2].text()).toContain('ブランチ')
+    expect(metaItems[2].text()).toContain('issue_#9')
+    expect(metaItems[3].text()).toContain('取得時間')
+    expect(metaItems[3].text()).toContain('2026/07/01 09:00:00')
   })
 
   it('shows issue context above the artifact section for issue jobs', async () => {
@@ -367,6 +367,9 @@ describe('JobDetailPanel', () => {
         refreshKey: 0,
       },
     })
+    await flushPromises()
+
+    await (wrapper.vm as any).openLogsView()
     await flushPromises()
 
     expect(wrapper.text()).toContain('実装者 / 試行 1')
@@ -636,6 +639,251 @@ describe('JobDetailPanel', () => {
     expect(wrapper.text()).toContain('artifact content v2')
   })
 
+  it('opens source diff on demand and returns to the job detail view', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#26',
+          job: {
+            id: 'job-26',
+            kind: 'issue_implementation',
+            state: 'implementation_approved',
+            repository: 'owner/repo',
+            number: 26,
+            title: '差分表示',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'artifact content',
+          path: 'artifact.md',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: [
+            'diff --git a/README.md b/README.md',
+            'index 1111111..2222222 100644',
+            '--- a/README.md',
+            '+++ b/README.md',
+            '@@ -1 +1 @@',
+            '-before',
+            '+after',
+          ].join('\n'),
+          path: 'workspace/mock-owner_mock-repo/job-26/worktree',
+          baseRef: 'main',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-26',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('実装結果')
+
+    await (wrapper.vm as any).openSourceDiff()
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/jobs/job-26/diff', { cache: 'no-store' })
+    expect(wrapper.text()).toContain('比較基準: main')
+    expect(wrapper.find('.d2h-wrapper').exists()).toBe(true)
+    expect(wrapper.text()).toContain('after')
+    expect(wrapper.text()).not.toContain('実装結果')
+
+    await (wrapper.vm as any).openResultView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('実装結果')
+    expect(wrapper.text()).toContain('artifact content')
+  })
+
+  it('opens the editor for editable artifacts and saves changes', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#16',
+          job: {
+            id: 'job-16',
+            kind: 'issue_design',
+            state: 'design_ready',
+            repository: 'owner/repo',
+            number: 16,
+            title: '編集可能な設計',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: '# design\ninitial content',
+          path: '.workspace/design/16_編集可能な設計.md',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: '# design\nupdated content',
+          path: '.workspace/design/16_編集可能な設計.md',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-16',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('設計結果')
+    await (wrapper.vm as any).openEditView()
+    await flushPromises()
+
+    const editor = wrapper.get('.detail-artifact__editor')
+    await editor.setValue('# design\nupdated content')
+    await wrapper.get('.detail-artifact .button').trigger('click')
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/jobs/job-16/artifact/content',
+      expect.objectContaining({
+        method: 'PUT',
+      }),
+    )
+    expect(wrapper.text()).toContain('# design')
+    expect(wrapper.text()).toContain('updated content')
+    expect(wrapper.emitted('refresh')).toHaveLength(1)
+  })
+
+  it('does not refresh while editing an artifact', async () => {
+    let intervalHandler: TimerHandler | undefined
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#16',
+          job: {
+            id: 'job-16',
+            kind: 'issue_design',
+            state: 'design_ready',
+            repository: 'owner/repo',
+            number: 16,
+            title: '編集停止確認',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: '# design\ninitial content',
+          path: '.workspace/design/16_編集停止確認.md',
+        }),
+      )
+    const setIntervalSpy = vi.spyOn(window, 'setInterval').mockImplementation((handler) => {
+      intervalHandler = handler
+      return 1 as unknown as number
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-16',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    await (wrapper.vm as any).openEditView()
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    intervalHandler?.(0 as never)
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    await wrapper.setProps({ refreshKey: 1 })
+    await flushPromises()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    setIntervalSpy.mockRestore()
+  })
+
+  it('shows source diff for PR feedback implementation jobs', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#27',
+          job: {
+            id: 'job-27',
+            kind: 'pr_feedback',
+            state: 'review_fix_implementation_ready',
+            repository: 'owner/repo',
+            number: 27,
+            title: '修正実装',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'artifact content',
+          path: 'artifact.md',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: [
+            'diff --git a/README.md b/README.md',
+            'index 1111111..2222222 100644',
+            '--- a/README.md',
+            '+++ b/README.md',
+            '@@ -1 +1 @@',
+            '-before',
+            '+after',
+          ].join('\n'),
+          path: 'workspace/mock-owner_mock-repo/job-27/worktree',
+          baseRef: 'main',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-27',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    await (wrapper.vm as any).openSourceDiff()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('比較基準: main')
+    expect(wrapper.find('.d2h-wrapper').exists()).toBe(true)
+    expect(wrapper.text()).toContain('after')
+  })
+
   it('shows an issue link for issue jobs', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       jsonResponse({
@@ -853,9 +1101,9 @@ describe('JobDetailPanel', () => {
     await flushPromises()
 
     const metaItems = wrapper.findAll('.detail__meta-item')
-    expect(metaItems).toHaveLength(5)
-    expect(metaItems[4].text()).toContain('取得時間')
-    expect(metaItems[4].text()).toContain('-')
+    expect(metaItems).toHaveLength(4)
+    expect(metaItems[3].text()).toContain('取得時間')
+    expect(metaItems[3].text()).toContain('-')
   })
 
   it('deletes the current job after confirmation', async () => {
@@ -940,7 +1188,9 @@ describe('JobDetailPanel', () => {
     })
     await flushPromises()
 
-    await wrapper.get('button.button').trigger('click')
+    const approveButton = wrapper.findAll('button').find((button) => button.text() === '承認')
+    expect(approveButton).toBeTruthy()
+    await approveButton!.trigger('click')
     await flushPromises()
 
     expect(fetchMock).toHaveBeenCalledWith('/api/jobs/job-11/artifact', {

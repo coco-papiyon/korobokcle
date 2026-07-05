@@ -158,12 +158,22 @@ func (p *MockWorkflowProcessor) Process(ctx context.Context, job domain.Job) err
 	if err := os.WriteFile(artifactPath, []byte(p.mockArtifact(ctx, job)), 0o644); err != nil {
 		return fmt.Errorf("write mock artifact: %w", err)
 	}
+	diffPath, err := mockSourceDiffPath(p.baseDir, job)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(diffPath), 0o755); err != nil {
+		return fmt.Errorf("create mock diff dir: %w", err)
+	}
+	if err := os.WriteFile(diffPath, []byte(p.mockSourceDiff(ctx, job, artifactPath)), 0o644); err != nil {
+		return fmt.Errorf("write mock diff: %w", err)
+	}
 	job = markJobState(job, readyState)
 	if err := p.store.Upsert(ctx, job); err != nil {
 		return err
 	}
 	if p.logger != nil {
-		p.logger.Infof("mock workflow complete job=%s state=%s artifact=%s", job.ID, job.State, artifactPath)
+		p.logger.Infof("mock workflow complete job=%s state=%s artifact=%s diff=%s", job.ID, job.State, artifactPath, diffPath)
 	}
 	return nil
 }
@@ -227,6 +237,98 @@ func (s *MockArtifactActionService) GetArtifact(ctx context.Context, id string) 
 		return web.DesignArtifact{}, err
 	}
 	return web.DesignArtifact{Content: string(raw), Path: path}, nil
+}
+
+func (s *MockArtifactActionService) GetSourceDiff(ctx context.Context, id string) (web.JobSourceDiff, error) {
+	job, ok, err := s.store.Get(ctx, id)
+	if err != nil {
+		return web.JobSourceDiff{}, err
+	}
+	if !ok {
+		return web.JobSourceDiff{}, fmt.Errorf("job not found")
+	}
+	path, err := mockSourceDiffPath(s.baseDir, job)
+	if err != nil {
+		return web.JobSourceDiff{}, err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			artifactPath, artifactErr := mockArtifactPath(s.baseDir, job)
+			if artifactErr != nil {
+				return web.JobSourceDiff{}, artifactErr
+			}
+			artifactRaw, artifactErr := os.ReadFile(artifactPath)
+			if artifactErr != nil {
+				return web.JobSourceDiff{}, artifactErr
+			}
+			content := s.mockSourceDiff(ctx, job, artifactPath)
+			if writeErr := os.WriteFile(path, []byte(content), 0o644); writeErr == nil {
+				raw = []byte(content)
+			} else {
+				raw = artifactRaw
+			}
+		} else {
+			return web.JobSourceDiff{}, err
+		}
+	}
+	return web.JobSourceDiff{
+		Content: string(raw),
+		Path:    jobSourceDiffTargetPath(job),
+		BaseRef: "mock",
+	}, nil
+}
+
+func (s *MockArtifactActionService) UpdateArtifact(ctx context.Context, id, content string) (web.DesignArtifact, error) {
+	job, ok, err := s.store.Get(ctx, id)
+	if err != nil {
+		return web.DesignArtifact{}, err
+	}
+	if !ok {
+		return web.DesignArtifact{}, fmt.Errorf("job not found")
+	}
+	if !supportsArtifactEditing(job) {
+		return web.DesignArtifact{}, fmt.Errorf("artifact editing is not supported for this job")
+	}
+	path, err := mockArtifactPath(s.baseDir, job)
+	if err != nil {
+		return web.DesignArtifact{}, err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return web.DesignArtifact{}, err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return web.DesignArtifact{}, err
+	}
+	return web.DesignArtifact{Content: content, Path: path}, nil
+}
+
+func (s *MockArtifactActionService) mockSourceDiff(ctx context.Context, job domain.Job, artifactPath string) string {
+	lines := []string{
+		"diff --git a/mock-source.txt b/mock-source.txt",
+		"index 1111111..2222222 100644",
+		"--- a/mock-source.txt",
+		"+++ b/mock-source.txt",
+		"@@ -1,14 +1,14 @@",
+		" # " + job.Title,
+		" ## Summary",
+		"  context line 1",
+		"  context line 2",
+		"  context line 3",
+		"  context line 4",
+		"-This is a mock artifact.",
+		"+This is a mock artifact for " + string(job.State) + ".",
+		"  This line stays unchanged.",
+		"  This line stays unchanged too.",
+		" ## Changes",
+		"-This artifact is generated as mock test data.",
+		"+This artifact is generated as mock test data for UI testing.",
+		"  This line stays unchanged.",
+		"  This line stays unchanged too.",
+		"  This line stays unchanged three.",
+		"  This line stays unchanged four.",
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
 
 func (s *MockArtifactActionService) ApproveArtifact(ctx context.Context, id, userComment string) (domain.Job, error) {
@@ -300,4 +402,31 @@ func mockArtifactPath(baseDir string, job domain.Job) (string, error) {
 		return "", fmt.Errorf("job is not supported")
 	}
 	return filepath.Join(baseDir, ".workspace", artifactSubdir(job), fmt.Sprintf("%d_%s.md", job.Number, sanitizePart(job.Title))), nil
+}
+
+func mockSourceDiffPath(baseDir string, job domain.Job) (string, error) {
+	if artifactSubdir(job) == "" {
+		return "", fmt.Errorf("job is not supported")
+	}
+	return filepath.Join(baseDir, ".workspace", artifactSubdir(job), fmt.Sprintf("%d_%s.diff", job.Number, sanitizePart(job.Title))), nil
+}
+
+func (p *MockWorkflowProcessor) mockSourceDiff(ctx context.Context, job domain.Job, artifactPath string) string {
+	lines := []string{
+		"diff --git a/mock-source.txt b/mock-source.txt",
+		"index 1111111..2222222 100644",
+		"--- a/mock-source.txt",
+		"+++ b/mock-source.txt",
+		"@@ -1,7 +1,7 @@",
+		" # " + job.Title,
+		" ## Summary",
+		"-This is a mock artifact.",
+		"+This is a mock artifact for " + string(job.State) + ".",
+		" ## Changes",
+		"-This artifact is generated as mock test data.",
+		"+This artifact is generated as mock test data for UI testing.",
+		"  This line stays unchanged.",
+		" ## Test Results",
+	}
+	return strings.Join(lines, "\n") + "\n"
 }
