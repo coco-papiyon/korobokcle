@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -297,6 +298,9 @@ func copilotExecuteAllowed(rawInput json.RawMessage, allowed []string, worktree 
 	}
 	currentDir := worktree
 	for _, command := range commands {
+		if copilotAllowedHeredocWrite(command, allowed, currentDir) {
+			continue
+		}
 		command = strings.TrimSpace(copilotRedirectPattern.ReplaceAllString(command, ""))
 		matches := copilotCDCommandPattern.FindStringSubmatch(command)
 		if len(matches) == 4 {
@@ -323,6 +327,77 @@ func copilotExecuteAllowed(rawInput json.RawMessage, allowed []string, worktree 
 		}
 	}
 	return true
+}
+
+func copilotAllowedHeredocWrite(command string, allowed []string, currentDir string) bool {
+	lines := strings.Split(command, "\n")
+	if len(lines) < 2 {
+		return false
+	}
+	header := strings.TrimSpace(lines[0])
+	parts := strings.SplitN(header, "<<", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	left := strings.TrimSpace(parts[0])
+	right := strings.TrimSpace(parts[1])
+	if len(right) < 3 {
+		return false
+	}
+	quote := right[0]
+	if quote != '\'' && quote != '"' {
+		return false
+	}
+	if right[len(right)-1] != quote {
+		return false
+	}
+	delim := strings.TrimSpace(right[1 : len(right)-1])
+	if delim == "" {
+		return false
+	}
+	last := strings.TrimSpace(lines[len(lines)-1])
+	if last != delim {
+		return false
+	}
+	cmdPart, pathPart, ok := strings.Cut(left, ">")
+	if !ok {
+		return false
+	}
+	cmd := strings.TrimSpace(cmdPart)
+	if !allowedCommandExists(cmd, allowed) {
+		return false
+	}
+	path := strings.TrimSpace(pathPart)
+	path = strings.Trim(path, `"'`)
+	if path == "" {
+		return false
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(currentDir, path)
+	}
+	resolved, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	tempDir, err := filepath.Abs(os.TempDir())
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(tempDir, resolved)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
+}
+
+func allowedCommandExists(command string, allowed []string) bool {
+	normalized := normalizeCommand(command)
+	for _, item := range normalizeAllowedCommands(allowed) {
+		if normalizeCommand(item) == normalized {
+			return true
+		}
+	}
+	return false
 }
 
 func splitShellCommandSequence(command string) ([]string, bool) {

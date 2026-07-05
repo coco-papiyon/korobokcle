@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -50,6 +51,7 @@ func defaultAllowedCommands() []string {
 		"git log",
 		"git diff",
 		"git status",
+		"git stash",
 
 		// shell commands
 		"ls",
@@ -58,6 +60,14 @@ func defaultAllowedCommands() []string {
 		"type",
 		"more",
 		"head",
+		"echo",
+		"sed",
+		"set",
+		"pwd",
+		"grep",
+		"find",
+		"tee",
+		"wc",
 
 		// powershell commands
 		"get-childitem",
@@ -267,7 +277,54 @@ func commandMatchesAllowed(command string, allowedSet map[string]struct{}) bool 
 }
 
 func safeCommandArguments(arguments string) bool {
-	return !strings.ContainsAny(arguments, ";|><`&\r\n") && !strings.Contains(arguments, "$(")
+	arguments = stripAllowedStderrRedirection(arguments)
+	return !containsUnsafeShellMetacharacter(arguments) && !strings.Contains(arguments, "$(")
+}
+
+func stripAllowedStderrRedirection(arguments string) string {
+	trimmed := strings.TrimSpace(arguments)
+	devNull := strings.ToLower(strings.TrimSpace(os.DevNull))
+	candidates := []string{
+		"2> " + devNull,
+		"2>" + devNull,
+		"2> " + strings.ToUpper(devNull),
+		"2>" + strings.ToUpper(devNull),
+	}
+	for _, suffix := range candidates {
+		if strings.HasSuffix(strings.ToLower(trimmed), suffix) {
+			return strings.TrimSpace(trimmed[:len(trimmed)-len(suffix)])
+		}
+	}
+	return trimmed
+}
+
+func containsUnsafeShellMetacharacter(arguments string) bool {
+	var quote byte
+	escaped := false
+	for i := 0; i < len(arguments); i++ {
+		ch := arguments[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"':
+			quote = ch
+		case ';', '|', '>', '<', '`', '&', '\r', '\n':
+			return true
+		}
+	}
+	return false
 }
 
 func commandCandidates(command string) []string {

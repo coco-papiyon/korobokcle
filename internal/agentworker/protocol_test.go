@@ -134,13 +134,25 @@ func TestCommandRequestAllowedWithBuiltInCommands(t *testing.T) {
 	for _, raw := range []string{
 		`{"command":"git diff --stat"}`,
 		`{"command":"git status --short"}`,
+		`{"command":"pwd"}`,
 		`{"command":"Select-String -Pattern TODO README.md"}`,
 		`{"command":"Select-Object -First 10"}`,
 		`{"command":"head -20 README.md"}`,
+		`{"command":"echo hello world"}`,
+		`{"command":"sed -n '1,20p' README.md"}`,
+		`{"command":"set -o pipefail"}`,
+		`{"command":"grep -r \"maxFixLoops\\|MaxFixLoops\" . 2>/dev/null"}`,
 	} {
 		if !commandRequestAllowed(json.RawMessage(raw), nil) {
 			t.Fatalf("expected built-in command to be allowed: %s", raw)
 		}
+	}
+}
+
+func TestCommandRequestAllowedRejectsStderrRedirectionOutsideDevNull(t *testing.T) {
+	params := json.RawMessage(`{"command":"grep -r \"maxFixLoops\\|MaxFixLoops\" . 2>/tmp/verification.log"}`)
+	if commandRequestAllowed(params, nil) {
+		t.Fatal("expected stderr redirection outside devnull to be rejected")
 	}
 }
 
@@ -365,6 +377,51 @@ func TestCopilotServerResponseAllowsBuiltInCommandWithoutConfiguredAllowedComman
 	got := copilotServerResponse("session/request_permission", params, nil, t.TempDir())
 	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
 		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+	}
+}
+
+func TestCopilotServerResponseAllowsGrepRegexContainingPipe(t *testing.T) {
+	params := json.RawMessage(`{
+		"toolCall": {
+			"kind": "execute",
+			"rawInput": {"command": "grep -A 30 \"FAIL\\|Error\""}
+		}
+	}`)
+	got := copilotServerResponse("session/request_permission", params, nil, t.TempDir())
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+	}
+}
+
+func TestCopilotServerResponseAllowsTempHeredocSummaryWrite(t *testing.T) {
+	tmpFile := filepath.Join(os.TempDir(), "verification_summary.txt")
+	command := "cat > " + tmpFile + " << 'EOF'\n=== VERIFICATION SUMMARY ===\nEOF"
+	params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
+		"kind":     "execute",
+		"rawInput": map[string]any{"command": command},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := copilotServerResponse("session/request_permission", params, []string{"cat"}, t.TempDir())
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+	}
+}
+
+func TestCopilotServerResponseRejectsHeredocWriteOutsideTemp(t *testing.T) {
+	target := string(filepath.Separator) + "non-temp" + string(filepath.Separator) + "verification_summary.txt"
+	command := "cat > " + target + " << 'EOF'\n=== VERIFICATION SUMMARY ===\nEOF"
+	params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
+		"kind":     "execute",
+		"rawInput": map[string]any{"command": command},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := copilotServerResponse("session/request_permission", params, []string{"cat"}, t.TempDir())
+	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "cancelled"}}) {
+		t.Fatalf("copilotServerResponse() = %+v, want cancelled", got)
 	}
 }
 
