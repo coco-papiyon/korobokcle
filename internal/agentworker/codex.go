@@ -69,10 +69,9 @@ func defaultAllowedCommands() []string {
 
 func NewCodex(cfg CodexConfig) *CodexWorker {
 	if cfg.Command == "" {
-		cfg.Command = "codex"
-	}
-	if len(cfg.Args) == 0 {
-		cfg.Args = []string{"app-server", "--stdio"}
+		cfg.Command, cfg.Args = currentDefaultCodexLaunchConfig()
+	} else if len(cfg.Args) == 0 {
+		_, cfg.Args = defaultCodexLaunchConfig("")
 	}
 	if cfg.StopTimeout <= 0 {
 		cfg.StopTimeout = 5 * time.Second

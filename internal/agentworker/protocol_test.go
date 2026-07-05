@@ -41,6 +41,66 @@ func TestCopilotWorkerSendPromptAt(t *testing.T) {
 	testRequestWorker(t, w)
 }
 
+func TestDefaultCodexLaunchConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		goos    string
+		command string
+		args    []string
+	}{
+		{
+			name:    "windows",
+			goos:    "windows",
+			command: "cmd",
+			args:    []string{"/c", "codex", "app-server", "--stdio"},
+		},
+		{
+			name:    "linux",
+			goos:    "linux",
+			command: "codex",
+			args:    []string{"app-server", "--stdio"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			command, args := defaultCodexLaunchConfig(tt.goos)
+			if command != tt.command || !reflect.DeepEqual(args, tt.args) {
+				t.Fatalf("defaultCodexLaunchConfig(%q) = %q, %v, want %q, %v", tt.goos, command, args, tt.command, tt.args)
+			}
+		})
+	}
+}
+
+func TestDefaultCopilotLaunchConfig(t *testing.T) {
+	tests := []struct {
+		name    string
+		goos    string
+		command string
+		args    []string
+	}{
+		{
+			name:    "windows",
+			goos:    "windows",
+			command: "cmd",
+			args:    []string{"/c", "copilot", "--acp", "--stdio"},
+		},
+		{
+			name:    "linux",
+			goos:    "linux",
+			command: "copilot",
+			args:    []string{"--acp", "--stdio"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			command, args := defaultCopilotLaunchConfig(tt.goos)
+			if command != tt.command || !reflect.DeepEqual(args, tt.args) {
+				t.Fatalf("defaultCopilotLaunchConfig(%q) = %q, %v, want %q, %v", tt.goos, command, args, tt.command, tt.args)
+			}
+		})
+	}
+}
+
 func TestCommandRequestAllowed(t *testing.T) {
 	params := json.RawMessage(`{
 		"command": "\"C:\\Program Files\\PowerShell\\7\\pwsh.exe\" -Command 'npm run build'",

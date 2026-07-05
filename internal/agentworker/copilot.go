@@ -37,10 +37,9 @@ type CopilotWorker struct {
 
 func NewCopilot(cfg CopilotConfig) *CopilotWorker {
 	if cfg.Command == "" {
-		cfg.Command = "copilot"
-	}
-	if len(cfg.Args) == 0 {
-		cfg.Args = []string{"--acp", "--stdio"}
+		cfg.Command, cfg.Args = currentDefaultCopilotLaunchConfig()
+	} else if len(cfg.Args) == 0 {
+		_, cfg.Args = defaultCopilotLaunchConfig("")
 	}
 	if cfg.StopTimeout <= 0 {
 		cfg.StopTimeout = 5 * time.Second

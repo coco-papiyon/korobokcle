@@ -41,7 +41,13 @@ Issue / PR の取得で `gh` の API を使います。必要に応じて `read:
 start.bat
 ```
 
-バックエンド（既定 `http://localhost:8080`）と Vite 開発サーバー（`http://localhost:5173`）が別ウィンドウで起動します。画面は `http://localhost:5173` を開いてください。フロントエンドのソース変更は Vite HMR により自動反映されます。
+Linux や macOS では次を使えます。
+
+```bash
+./start.sh
+```
+
+Windows ではバックエンドと Vite 開発サーバーが別ウィンドウで起動します。Linux や macOS では Vite 開発サーバーをバックグラウンドで起動し、バックエンドはこのシェルで動きます。画面は `http://localhost:5173` を開いてください。フロントエンドのソース変更は Vite HMR により自動反映されます。
 
 以下は個別に起動する場合の手順です。
 
