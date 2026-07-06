@@ -291,7 +291,7 @@ func (p *WorkflowProcessor) runSingleAI(ctx context.Context, job domain.Job, set
 		ExpectPatch:     implementationJob(job),
 		Stdout:          stdoutLog,
 		Stderr:          stderrLog,
-		AllowedCommands: settings.AIAllowedCommands,
+		AllowedCommands: effectiveAllowedCommands(settings),
 	}
 	p.appendIssueAILog(job, attempt, role, "request", strings.Join([]string{
 		fmt.Sprintf("provider: %s", provider),
@@ -413,7 +413,7 @@ func (p *WorkflowProcessor) verifyImplementation(ctx context.Context, job domain
 		Provider: provider, Model: model,
 		System: "You are an independent software verification agent. Inspect and test the implementation without modifying the repository.",
 		Prompt: prompt, WorkingDir: workDir, Stdout: stdoutLog, Stderr: stderrLog,
-		AllowedCommands: settings.AIAllowedCommands,
+		AllowedCommands: effectiveAllowedCommands(settings),
 	})
 	if err != nil {
 		return implementationVerification{}, err
@@ -863,6 +863,13 @@ func selectedModel(settings domain.WatchSettings, key string) string {
 		return selection.Value
 	}
 	return ""
+}
+
+func effectiveAllowedCommands(settings domain.WatchSettings) []string {
+	allowed := make([]string, 0, len(settings.BuiltinAllowedCommands)+len(settings.AIAllowedCommands))
+	allowed = append(allowed, settings.BuiltinAllowedCommands...)
+	allowed = append(allowed, settings.AIAllowedCommands...)
+	return allowed
 }
 
 func displayModel(model string) string {

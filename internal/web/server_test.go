@@ -417,14 +417,15 @@ func (a *testSkillActions) GenerateSkills(_ context.Context, _ domain.SkillGener
 
 func TestSettingsAPI(t *testing.T) {
 	store := newTestSettingsStore(domain.WatchSettings{
-		Repository:        "owner/repo",
-		BaseBranch:        "develop",
-		AIProvider:        domain.AIProviderGitHubCopilot,
+		Repository:             "owner/repo",
+		BaseBranch:             "develop",
+		AIProvider:             domain.AIProviderGitHubCopilot,
 		VerificationAIProvider: domain.AIProviderCodex,
 		VerificationAIModel:    domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-5.4-mini"},
 		ReviewerAIProvider:     domain.AIProviderGitHubCopilot,
 		ReviewerAIModel:        domain.ModelSelection{Mode: domain.ModelModeDefault},
-		AIAllowedCommands: []string{"npm ci"},
+		AIAllowedCommands:      []string{"npm ci"},
+		BuiltinAllowedCommands: []string{"git diff", "git status"},
 		Models: domain.AIModels{
 			Codex:         domain.ModelSelection{Mode: domain.ModelModeDefault},
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-4.1"},
@@ -461,6 +462,9 @@ func TestSettingsAPI(t *testing.T) {
 	if len(settings.AIAllowedCommands) != 1 || settings.AIAllowedCommands[0] != "npm ci" {
 		t.Fatalf("ai allowed commands = %+v, want [npm ci]", settings.AIAllowedCommands)
 	}
+	if len(settings.BuiltinAllowedCommands) != 2 || settings.BuiltinAllowedCommands[0] != "git diff" || settings.BuiltinAllowedCommands[1] != "git status" {
+		t.Fatalf("builtin allowed commands = %+v, want [git diff git status]", settings.BuiltinAllowedCommands)
+	}
 	if settings.AIProvider != domain.AIProviderGitHubCopilot {
 		t.Fatalf("ai provider = %q, want %q", settings.AIProvider, domain.AIProviderGitHubCopilot)
 	}
@@ -481,13 +485,14 @@ func TestSettingsAPI(t *testing.T) {
 	}
 
 	updateBody, err := json.Marshal(domain.WatchSettings{
-		Repository:          "owner/updated",
-		AIProvider:          domain.AIProviderCodex,
-		PollIntervalSeconds: 240,
-		JobConcurrency:      6,
-		BaseBranch:          "release",
-		BranchNamePattern:   "feature/<issue番号>",
-		AIAllowedCommands:   []string{"npm ci", "go test ./..."},
+		Repository:             "owner/updated",
+		AIProvider:             domain.AIProviderCodex,
+		PollIntervalSeconds:    240,
+		JobConcurrency:         6,
+		BaseBranch:             "release",
+		BranchNamePattern:      "feature/<issue番号>",
+		AIAllowedCommands:      []string{"npm ci", "go test ./..."},
+		BuiltinAllowedCommands: []string{"git diff", "git status"},
 		Models: domain.AIModels{
 			Codex: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "codex-1"},
 		},
@@ -533,6 +538,9 @@ func TestSettingsAPI(t *testing.T) {
 	}
 	if len(updated.AIAllowedCommands) != 2 || updated.AIAllowedCommands[0] != "npm ci" || updated.AIAllowedCommands[1] != "go test ./..." {
 		t.Fatalf("updated ai allowed commands = %+v, want [npm ci go test ./...]", updated.AIAllowedCommands)
+	}
+	if len(updated.BuiltinAllowedCommands) != 2 || updated.BuiltinAllowedCommands[0] != "git diff" || updated.BuiltinAllowedCommands[1] != "git status" {
+		t.Fatalf("updated builtin allowed commands = %+v, want [git diff git status]", updated.BuiltinAllowedCommands)
 	}
 	if updated.Models.Codex.Mode != domain.ModelModeCustom || updated.Models.Codex.Value != "codex-1" {
 		t.Fatalf("updated codex model = %+v, want custom codex-1", updated.Models.Codex)

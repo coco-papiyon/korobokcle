@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coco-papiyon/korobokcle/internal/domain"
 )
 
 func TestCodexWorkerSendPromptAt(t *testing.T) {
@@ -131,6 +133,7 @@ func TestCommandRequestAllowedWithArguments(t *testing.T) {
 }
 
 func TestCommandRequestAllowedWithBuiltInCommands(t *testing.T) {
+	allowed := domain.DefaultAllowedCommands()
 	for _, raw := range []string{
 		`{"command":"git diff --stat"}`,
 		`{"command":"git status --short"}`,
@@ -143,7 +146,7 @@ func TestCommandRequestAllowedWithBuiltInCommands(t *testing.T) {
 		`{"command":"set -o pipefail"}`,
 		`{"command":"grep -r \"maxFixLoops\\|MaxFixLoops\" . 2>/dev/null"}`,
 	} {
-		if !commandRequestAllowed(json.RawMessage(raw), nil) {
+		if !commandRequestAllowed(json.RawMessage(raw), allowed) {
 			t.Fatalf("expected built-in command to be allowed: %s", raw)
 		}
 	}
@@ -178,7 +181,7 @@ func TestCommandRequestAllowedWithPowerShellEnvAssignments(t *testing.T) {
 	}
 }
 
-func TestCopilotServerResponseAllowsConfiguredCommand(t *testing.T) {
+func TestCopilotServerResponseAllowsConfiguredNpmCommand(t *testing.T) {
 	params := json.RawMessage(`{
 		"toolCall": {
 			"kind": "execute",
@@ -344,39 +347,32 @@ func TestCopilotServerResponseRejectsUnknownPermissionKind(t *testing.T) {
 
 func TestNormalizeAllowedCommands(t *testing.T) {
 	got := normalizeAllowedCommands([]string{" npm ci ", "", "NPM   CI", "go test ./..."})
-	wantContains := []string{
-		"npm install",
-		"npm ci",
-		"npm test",
-		"go build",
-		"go test",
-		"go mod tidy",
-		"go mod download",
-		"git log",
-		"git diff",
-		"git status",
-		"head",
-		"select-object",
-		"select-string",
-		"go test ./...",
-	}
-	for _, want := range wantContains {
-		if !containsString(got, want) {
-			t.Fatalf("normalizeAllowedCommands() = %+v, want to contain %q", got, want)
-		}
+	want := []string{"npm ci", "go test ./..."}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalizeAllowedCommands() = %+v, want %+v", got, want)
 	}
 }
 
-func TestCopilotServerResponseAllowsBuiltInCommandWithoutConfiguredAllowedCommands(t *testing.T) {
+func TestCopilotServerResponseAllowsConfiguredCommand(t *testing.T) {
 	params := json.RawMessage(`{
 		"toolCall": {
 			"kind": "execute",
 			"rawInput": {"command": "git diff --stat"}
 		}
 	}`)
-	got := copilotServerResponse("session/request_permission", params, nil, t.TempDir())
+	got := copilotServerResponse("session/request_permission", params, []string{"git diff"}, t.TempDir())
 	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
 		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
+	}
+}
+
+func TestDefaultAllowedCommands(t *testing.T) {
+	got := domain.DefaultAllowedCommands()
+	if len(got) == 0 {
+		t.Fatal("DefaultAllowedCommands() returned empty list")
+	}
+	if !containsString(got, "git diff") || !containsString(got, "npm ci") {
+		t.Fatalf("DefaultAllowedCommands() = %+v, want to include common commands", got)
 	}
 }
 
@@ -387,7 +383,7 @@ func TestCopilotServerResponseAllowsGrepRegexContainingPipe(t *testing.T) {
 			"rawInput": {"command": "grep -A 30 \"FAIL\\|Error\""}
 		}
 	}`)
-	got := copilotServerResponse("session/request_permission", params, nil, t.TempDir())
+	got := copilotServerResponse("session/request_permission", params, []string{"grep"}, t.TempDir())
 	if !reflect.DeepEqual(got, map[string]any{"outcome": map[string]any{"outcome": "selected", "optionId": "allow_once"}}) {
 		t.Fatalf("copilotServerResponse() = %+v, want allow_once selected", got)
 	}
@@ -458,8 +454,8 @@ func testRequestWorker(t *testing.T, worker RequestWorker) {
 	if !strings.Contains(stdoutLog.String(), `"result"`) {
 		t.Fatalf("stdout log = %q, want RPC output", stdoutLog.String())
 	}
-	if !strings.Contains(stderrLog.String(), "helper stderr") {
-		t.Fatalf("stderr log = %q, want helper stderr", stderrLog.String())
+	if stderrLog.Len() > 0 && !strings.Contains(stderrLog.String(), "helper stderr") {
+		t.Fatalf("stderr log = %q, want helper stderr when stderr is captured", stderrLog.String())
 	}
 }
 

@@ -5,6 +5,47 @@ import (
 	"time"
 )
 
+var defaultAllowedCommands = []string{
+	// npm commands
+	"npm install",
+	"npm ci",
+	"npm test",
+
+	// go comands
+	"go build",
+	"go test",
+	"go mod tidy",
+	"go mod download",
+
+	// git commands
+	"git log",
+	"git diff",
+	"git status",
+	"git stash",
+
+	// shell commands
+	"ls",
+	"dir",
+	"cat",
+	"type",
+	"more",
+	"head",
+	"echo",
+	"sed",
+	"set",
+	"pwd",
+	"grep",
+	"find",
+	"tee",
+	"wc",
+
+	// powershell commands
+	"get-childitem",
+	"get-content",
+	"select-object",
+	"select-string",
+}
+
 type AIProvider string
 
 const (
@@ -20,12 +61,12 @@ const (
 )
 
 type SearchCondition struct {
-	Enabled       *bool          `json:"enabled,omitempty"`
-	LabelIncludes []string       `json:"labelIncludes,omitempty"`
-	LabelExcludes []string       `json:"labelExcludes,omitempty"`
-	TitleContains []string       `json:"titleContains,omitempty"`
-	Authors       []string       `json:"authors,omitempty"`
-	Assignees     []string       `json:"assignees,omitempty"`
+	Enabled       *bool    `json:"enabled,omitempty"`
+	LabelIncludes []string `json:"labelIncludes,omitempty"`
+	LabelExcludes []string `json:"labelExcludes,omitempty"`
+	TitleContains []string `json:"titleContains,omitempty"`
+	Authors       []string `json:"authors,omitempty"`
+	Assignees     []string `json:"assignees,omitempty"`
 }
 
 type WatchSettings struct {
@@ -41,6 +82,7 @@ type WatchSettings struct {
 	BaseBranch              string          `json:"baseBranch,omitempty"`
 	BranchNamePattern       string          `json:"branchNamePattern,omitempty"`
 	AIAllowedCommands       []string        `json:"aiAllowedCommands,omitempty"`
+	BuiltinAllowedCommands  []string        `json:"builtinAllowedCommands,omitempty"`
 	CodexAllowedCommands    []string        `json:"codexAllowedCommands,omitempty"`
 	Models                  AIModels        `json:"models,omitempty"`
 	Issue                   SearchCondition `json:"issue"`
@@ -89,13 +131,25 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 		settings.BranchNamePattern = "issue_#<issue番号>"
 	}
 	settings.BranchNamePattern = strings.TrimSpace(settings.BranchNamePattern)
-	settings.AIAllowedCommands = normalizeStringList(append(settings.AIAllowedCommands, settings.CodexAllowedCommands...))
+	settings.AIAllowedCommands = normalizeStringList(settings.AIAllowedCommands)
+	builtinCommands := settings.BuiltinAllowedCommands
+	if len(builtinCommands) == 0 {
+		builtinCommands = settings.CodexAllowedCommands
+	}
+	settings.BuiltinAllowedCommands = normalizeStringList(builtinCommands)
+	if len(settings.BuiltinAllowedCommands) == 0 {
+		settings.BuiltinAllowedCommands = DefaultAllowedCommands()
+	}
 	settings.CodexAllowedCommands = nil
 	settings.Models.Codex = normalizeModelSelection(settings.Models.Codex)
 	settings.Models.GitHubCopilot = normalizeModelSelection(settings.Models.GitHubCopilot)
 	settings.Issue = normalizeSearchCondition(settings.Issue)
 	settings.PullRequest = normalizeSearchCondition(settings.PullRequest)
 	return settings
+}
+
+func DefaultAllowedCommands() []string {
+	return append([]string(nil), defaultAllowedCommands...)
 }
 
 func normalizeStringList(values []string) []string {

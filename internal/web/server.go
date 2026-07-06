@@ -444,6 +444,17 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
+			current, err := settingsStore.Load(r.Context())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if len(settings.BuiltinAllowedCommands) == 0 {
+				settings.BuiltinAllowedCommands = current.BuiltinAllowedCommands
+			}
+			if len(settings.CodexAllowedCommands) == 0 {
+				settings.CodexAllowedCommands = current.CodexAllowedCommands
+			}
 			settings = domain.NormalizeWatchSettings(settings)
 			if err := settingsStore.Save(r.Context(), settings); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)

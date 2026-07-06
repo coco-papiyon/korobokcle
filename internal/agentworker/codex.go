@@ -34,49 +34,6 @@ type CodexWorker struct {
 	allowed  []string
 }
 
-func defaultAllowedCommands() []string {
-	return []string{
-		// npm commands
-		"npm install",
-		"npm ci",
-		"npm test",
-
-		// go comands
-		"go build",
-		"go test",
-		"go mod tidy",
-		"go mod download",
-
-		// git commands
-		"git log",
-		"git diff",
-		"git status",
-		"git stash",
-
-		// shell commands
-		"ls",
-		"dir",
-		"cat",
-		"type",
-		"more",
-		"head",
-		"echo",
-		"sed",
-		"set",
-		"pwd",
-		"grep",
-		"find",
-		"tee",
-		"wc",
-
-		// powershell commands
-		"get-childitem",
-		"get-content",
-		"select-object",
-		"select-string",
-	}
-}
-
 func NewCodex(cfg CodexConfig) *CodexWorker {
 	if cfg.Command == "" {
 		cfg.Command, cfg.Args = currentDefaultCodexLaunchConfig()
@@ -361,11 +318,9 @@ func stripPowerShellEnvAssignments(command string) (string, bool) {
 }
 
 func normalizeAllowedCommands(commands []string) []string {
-	allCommands := append([]string{}, defaultAllowedCommands()...)
-	allCommands = append(allCommands, commands...)
-	seen := make(map[string]struct{}, len(allCommands))
-	out := make([]string, 0, len(allCommands))
-	for _, command := range allCommands {
+	seen := make(map[string]struct{}, len(commands))
+	out := make([]string, 0, len(commands))
+	for _, command := range commands {
 		command = strings.TrimSpace(command)
 		if command == "" {
 			continue
