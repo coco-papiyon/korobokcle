@@ -620,16 +620,20 @@ func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, s
 	}
 	worktreeBranch := branch
 	worktreePath := implementationWorktreePath(p.toolDir, job)
+	worktreeNote := ""
+	if p.toolDir != "" {
+		worktreeNote = "worktree=" + relativePathForLog(p.toolDir, worktreePath)
+	}
 	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
 		return "", "", fmt.Errorf("create worktree parent: %w", err)
 	}
 	if _, err := os.Stat(filepath.Join(worktreePath, ".git")); err == nil {
-		if job.Kind == domain.JobKindPRConflict && mergeInProgress(ctx, worktreePath) {
+		if job.Kind == domain.JobKindPRConflict && mergeInProgressLogged(ctx, p.logger, worktreePath, worktreeNote) {
 			return worktreePath, branch, nil
 		}
-		currentBranchName, currentErr := currentBranch(ctx, worktreePath)
+		currentBranchName, currentErr := currentBranchLogged(ctx, p.logger, worktreePath, worktreeNote)
 		if currentErr == nil && strings.TrimSpace(currentBranchName) != "" {
-			dirty, dirtyErr := gitHasChanges(ctx, worktreePath)
+			dirty, dirtyErr := gitHasChangesLogged(ctx, p.logger, worktreePath, worktreeNote)
 			if dirtyErr != nil {
 				return "", "", dirtyErr
 			}
@@ -639,40 +643,40 @@ func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, s
 				}
 				return worktreePath, currentBranchName, nil
 			}
-			if err := syncBranchFromRemote(ctx, worktreePath, currentBranchName); err != nil {
+			if err := syncBranchFromRemoteLogged(ctx, p.logger, worktreePath, worktreeNote, currentBranchName); err != nil {
 				return "", "", err
 			}
 			if job.Kind == domain.JobKindPRConflict {
-				if err := prepareConflictMerge(ctx, worktreePath, baseBranch); err != nil {
+				if err := prepareConflictMergeLogged(ctx, p.logger, worktreePath, worktreeNote, baseBranch); err != nil {
 					return "", "", err
 				}
 			}
 			return worktreePath, currentBranchName, nil
 		}
-		if err := syncBranchFromRemote(ctx, worktreePath, worktreeBranch); err != nil {
+		if err := syncBranchFromRemoteLogged(ctx, p.logger, worktreePath, worktreeNote, worktreeBranch); err != nil {
 			return "", "", err
 		}
 		return worktreePath, worktreeBranch, nil
 	}
 	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
-		if pruneErr := runGit(ctx, p.baseDir, "worktree", "prune"); pruneErr != nil {
+		if pruneErr := runGitLogged(ctx, p.logger, p.baseDir, "", "worktree", "prune"); pruneErr != nil {
 			return "", "", fmt.Errorf("prune stale worktrees: %w", pruneErr)
 		}
 	}
-	if err := addImplementationWorktree(ctx, p.baseDir, worktreeBranch, worktreePath); err != nil {
+	if err := addImplementationWorktreeLogged(ctx, p.logger, p.baseDir, worktreeBranch, worktreePath); err != nil {
 		if !strings.Contains(err.Error(), "already used by worktree") {
 			return "", "", fmt.Errorf("create worktree: %w", err)
 		}
 		worktreeBranch = implementationWorktreeBranchName(branch, job)
-		if retryErr := addImplementationWorktree(ctx, p.baseDir, worktreeBranch, worktreePath); retryErr != nil {
+		if retryErr := addImplementationWorktreeLogged(ctx, p.logger, p.baseDir, worktreeBranch, worktreePath); retryErr != nil {
 			return "", "", fmt.Errorf("create worktree: %w", retryErr)
 		}
 	}
-	if err := syncBranchFromRemote(ctx, worktreePath, worktreeBranch); err != nil {
+	if err := syncBranchFromRemoteLogged(ctx, p.logger, worktreePath, worktreeNote, worktreeBranch); err != nil {
 		return "", "", err
 	}
 	if job.Kind == domain.JobKindPRConflict {
-		if err := prepareConflictMerge(ctx, worktreePath, baseBranch); err != nil {
+		if err := prepareConflictMergeLogged(ctx, p.logger, worktreePath, worktreeNote, baseBranch); err != nil {
 			return "", "", err
 		}
 	}
@@ -699,19 +703,22 @@ func pullRequestBranches(ctx context.Context, job domain.Job) (string, string, e
 	return refs.Head, refs.Base, nil
 }
 
-func prepareConflictMerge(ctx context.Context, repoDir, baseBranch string) error {
-	if mergeInProgress(ctx, repoDir) {
+func prepareConflictMergeLogged(ctx context.Context, logger workflowLogger, repoDir, note, baseBranch string) error {
+	if mergeInProgressLogged(ctx, logger, repoDir, note) {
 		return nil
 	}
-	if err := runGit(ctx, repoDir, "fetch", "origin", baseBranch); err != nil {
+	if err := runGitLogged(ctx, logger, repoDir, note, "fetch", "origin", baseBranch); err != nil {
 		return fmt.Errorf("fetch PR base branch: %w", err)
+	}
+	if logger != nil {
+		logger.Debugf("%s merge --no-edit origin/%s", gitLogPrefix(repoDir, note), baseBranch)
 	}
 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "merge", "--no-edit", "origin/"+baseBranch)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		return nil
 	}
-	if mergeInProgress(ctx, repoDir) {
+	if mergeInProgressLogged(ctx, logger, repoDir, note) {
 		return nil
 	}
 	return fmt.Errorf("merge PR base branch: %w: %s", err, strings.TrimSpace(string(out)))
@@ -722,32 +729,42 @@ func mergeInProgress(ctx context.Context, repoDir string) bool {
 	return cmd.Run() == nil
 }
 
-func syncBranchFromRemote(ctx context.Context, repoDir, branch string) error {
+func mergeInProgressLogged(ctx context.Context, logger workflowLogger, repoDir, note string) bool {
+	if logger != nil {
+		logger.Debugf("%s rev-parse -q --verify MERGE_HEAD", gitLogPrefix(repoDir, note))
+	}
+	return mergeInProgress(ctx, repoDir)
+}
+
+func syncBranchFromRemoteLogged(ctx context.Context, logger workflowLogger, repoDir, note, branch string) error {
 	branch = strings.TrimSpace(branch)
 	if branch == "" {
 		return nil
 	}
-	hasOrigin, err := hasRemote(ctx, repoDir, "origin")
+	hasOrigin, err := hasRemoteLogged(ctx, logger, repoDir, note, "origin")
 	if err != nil {
 		return err
 	}
 	if !hasOrigin {
 		return nil
 	}
-	exists, err := remoteBranchExists(ctx, repoDir, branch)
+	exists, err := remoteBranchExistsLogged(ctx, logger, repoDir, note, branch)
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return nil
 	}
-	if err := runGit(ctx, repoDir, "pull", "--rebase", "origin", branch); err != nil {
+	if err := runGitLogged(ctx, logger, repoDir, note, "pull", "--rebase", "origin", branch); err != nil {
 		return fmt.Errorf("rebase remote branch before implementation: %w", err)
 	}
 	return nil
 }
 
-func hasRemote(ctx context.Context, repoDir, remote string) (bool, error) {
+func hasRemoteLogged(ctx context.Context, logger workflowLogger, repoDir, note, remote string) (bool, error) {
+	if logger != nil {
+		logger.Debugf("%s remote get-url %s", gitLogPrefix(repoDir, note), remote)
+	}
 	cmd := exec.CommandContext(ctx, "git", "-C", repoDir, "remote", "get-url", remote)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -760,18 +777,22 @@ func hasRemote(ctx context.Context, repoDir, remote string) (bool, error) {
 	return false, fmt.Errorf("git remote get-url %s: %w: %s", remote, err, strings.TrimSpace(string(out)))
 }
 
-func addImplementationWorktree(ctx context.Context, baseDir, branch, worktreePath string) error {
-	err := runGit(ctx, baseDir, "worktree", "add", "-B", branch, worktreePath, "HEAD")
+func addImplementationWorktreeLogged(ctx context.Context, logger workflowLogger, baseDir, branch, worktreePath string) error {
+	note := ""
+	if worktreePath != "" {
+		note = "new-worktree=" + relativePathForLog(baseDir, worktreePath)
+	}
+	err := runGitLogged(ctx, logger, baseDir, note, "worktree", "add", "-B", branch, worktreePath, "HEAD")
 	if err == nil {
 		return nil
 	}
 	if !strings.Contains(err.Error(), "missing but already registered worktree") {
 		return err
 	}
-	if pruneErr := runGit(ctx, baseDir, "worktree", "prune"); pruneErr != nil {
+	if pruneErr := runGitLogged(ctx, logger, baseDir, note, "worktree", "prune"); pruneErr != nil {
 		return fmt.Errorf("%w; prune stale worktree: %v", err, pruneErr)
 	}
-	return runGit(ctx, baseDir, "worktree", "add", "-B", branch, worktreePath, "HEAD")
+	return runGitLogged(ctx, logger, baseDir, note, "worktree", "add", "-B", branch, worktreePath, "HEAD")
 }
 
 func (p *WorkflowProcessor) applyGitDiff(ctx context.Context, workDir string, diff string) error {
@@ -780,7 +801,11 @@ func (p *WorkflowProcessor) applyGitDiff(ctx context.Context, workDir string, di
 		return fmt.Errorf("write diff file: %w", err)
 	}
 	defer os.Remove(diffPath)
-	if err := runGit(ctx, workDir, "apply", "--index", "--reject", "--whitespace=nowarn", diffPath); err != nil {
+	note := ""
+	if p.toolDir != "" {
+		note = "worktree=" + relativePathForLog(p.toolDir, workDir)
+	}
+	if err := runGitLogged(ctx, p.logger, workDir, note, "apply", "--index", "--reject", "--whitespace=nowarn", diffPath); err != nil {
 		return fmt.Errorf("apply AI diff: %w", err)
 	}
 	return nil

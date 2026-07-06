@@ -322,6 +322,7 @@ type testArtifactActions struct {
 	requestChangesComment string
 	updateArtifactID      string
 	updateArtifactContent string
+	approveErr            error
 }
 
 func (a *testArtifactActions) GetArtifact(context.Context, string) (DesignArtifact, error) {
@@ -343,6 +344,9 @@ func (a *testArtifactActions) UpdateArtifact(_ context.Context, id, content stri
 }
 
 func (a *testArtifactActions) ApproveArtifact(context.Context, string, string) (domain.Job, error) {
+	if a.approveErr != nil {
+		return domain.Job{}, a.approveErr
+	}
 	return a.job, nil
 }
 
@@ -389,6 +393,20 @@ func TestSkillsAPI(t *testing.T) {
 	server.httpServer.Handler.ServeHTTP(mapRec, mapReq)
 	if mapRec.Code != http.StatusOK || actions.generateCalls != 3 {
 		t.Fatalf("POST map /api/skills status=%d calls=%d", mapRec.Code, actions.generateCalls)
+	}
+}
+
+func TestApproveArtifactReturnsConflictStatusForRebaseErrors(t *testing.T) {
+	actions := &testArtifactActions{
+		approveErr: errors.New("rebase remote branch before push: could not apply e215b54"),
+	}
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/jobs/issue-1/artifact", bytes.NewBufferString(`{"comment":"ok"}`))
+	rec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("POST /api/jobs/:id/artifact status = %d, want %d", rec.Code, http.StatusConflict)
 	}
 }
 

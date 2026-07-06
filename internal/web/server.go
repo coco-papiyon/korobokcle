@@ -292,7 +292,11 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 				}
 				job, err := artifactActions.ApproveArtifact(r.Context(), id, req.Comment)
 				if err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
+					status := http.StatusBadRequest
+					if isApprovalConflictError(err) {
+						status = http.StatusConflict
+					}
+					http.Error(w, err.Error(), status)
 					return
 				}
 				_ = json.NewEncoder(w).Encode(job)
@@ -557,6 +561,23 @@ func buildJobID(kind domain.JobKind, repository string, number int, title string
 		return fmt.Sprintf("%s-%s-%d", kind, repo, number)
 	}
 	return fmt.Sprintf("%s-%s-%d-%s", kind, repo, number, titlePart)
+}
+
+func isApprovalConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	switch {
+	case strings.Contains(message, "rebase remote branch before push"):
+		return true
+	case strings.Contains(message, "merge pr base branch"):
+		return true
+	case strings.Contains(message, "could not apply"):
+		return true
+	default:
+		return false
+	}
 }
 
 func sanitizePart(value string) string {

@@ -94,12 +94,16 @@ func (s *ArtifactActionService) GetSourceDiff(ctx context.Context, id string) (w
 		}
 	}
 	baseRef := baseBranch
-	diff, err := gitDiffAgainstBase(ctx, repoDir, baseBranch)
+	diffNote := ""
+	if s.toolDir != "" {
+		diffNote = "worktree=" + relativePathForLog(s.toolDir, repoDir)
+	}
+	diff, err := gitDiffAgainstBaseLogged(ctx, s.logger, repoDir, diffNote, baseBranch)
 	if err != nil {
 		return web.JobSourceDiff{}, err
 	}
 	if strings.TrimSpace(diff) == "" {
-		diff, err = gitWorkingTreeDiff(ctx, repoDir)
+		diff, err = gitWorkingTreeDiffLogged(ctx, s.logger, repoDir, diffNote)
 		if err != nil {
 			return web.JobSourceDiff{}, err
 		}
@@ -151,11 +155,19 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		if err != nil {
 			return domain.Job{}, err
 		}
-		branch, err := currentBranch(ctx, repoDir)
+		worktreeNote := ""
+		if s.toolDir != "" {
+			worktreeNote = "worktree=" + relativePathForLog(s.toolDir, repoDir)
+		}
+		localBranch, err := currentBranchLogged(ctx, s.logger, repoDir, worktreeNote)
 		if err != nil {
 			return domain.Job{}, err
 		}
-		if err := publishBranch(ctx, repoDir, branch); err != nil {
+		headBranch, _, err := pullRequestBranches(ctx, job)
+		if err != nil {
+			return domain.Job{}, err
+		}
+		if err := publishBranchLogged(ctx, s.logger, repoDir, worktreeNote, localBranch, headBranch); err != nil {
 			return domain.Job{}, err
 		}
 		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
@@ -334,7 +346,7 @@ func (s *ArtifactActionService) artifactPath(job domain.Job) (string, error) {
 }
 
 func (s *ArtifactActionService) postTargetComment(ctx context.Context, job domain.Job, artifact string, userComment string) error {
-	return runGH(ctx, append(githubCommentArgs(job), "--body", buildResultBody(job, artifact, userComment))...)
+	return runGHLogged(ctx, s.logger, append(githubCommentArgs(job), "--body", buildResultBody(job, artifact, userComment))...)
 }
 
 func (s *ArtifactActionService) createPullRequest(ctx context.Context, job domain.Job, body string) error {
@@ -342,11 +354,15 @@ func (s *ArtifactActionService) createPullRequest(ctx context.Context, job domai
 	if err != nil {
 		return err
 	}
-	branch, err := currentBranch(ctx, repoDir)
+	prepareNote := ""
+	if s.toolDir != "" {
+		prepareNote = "worktree=" + relativePathForLog(s.toolDir, repoDir)
+	}
+	branch, err := currentBranchLogged(ctx, s.logger, repoDir, prepareNote)
 	if err != nil {
 		return err
 	}
-	if err := ensureBranchHasCommit(ctx, repoDir, branch); err != nil {
+	if err := ensureBranchHasCommitLogged(ctx, s.logger, repoDir, prepareNote, branch); err != nil {
 		return err
 	}
 	baseBranch := "main"
@@ -356,7 +372,7 @@ func (s *ArtifactActionService) createPullRequest(ctx context.Context, job domai
 			baseBranch = strings.TrimSpace(settings.BaseBranch)
 		}
 	}
-	if err := publishBranch(ctx, repoDir, branch); err != nil {
+	if err := publishBranchLogged(ctx, s.logger, repoDir, prepareNote, branch, branch); err != nil {
 		return err
 	}
 	args := []string{
@@ -367,7 +383,7 @@ func (s *ArtifactActionService) createPullRequest(ctx context.Context, job domai
 		"--body", body,
 		"--head", branch,
 	}
-	return runGH(ctx, args...)
+	return runGHLogged(ctx, s.logger, args...)
 }
 
 func (s *ArtifactActionService) prepareImplementationBranch(ctx context.Context, job domain.Job) error {
@@ -375,7 +391,11 @@ func (s *ArtifactActionService) prepareImplementationBranch(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	if err := stageAndCommitIfNeeded(ctx, repoDir, fmt.Sprintf("feat: implement #%d %s", job.Number, job.Title)); err != nil {
+	prepareNote := ""
+	if s.toolDir != "" {
+		prepareNote = "worktree=" + relativePathForLog(s.toolDir, repoDir)
+	}
+	if err := stageAndCommitIfNeededLogged(ctx, s.logger, repoDir, prepareNote, fmt.Sprintf("feat: implement #%d %s", job.Number, job.Title)); err != nil {
 		return err
 	}
 	return nil
@@ -392,7 +412,7 @@ func (s *ArtifactActionService) ensureBranch(ctx context.Context, job domain.Job
 		}
 	}
 	branch := renderBranchName(pattern, job.Number)
-	if err := checkoutOrCreateBranch(ctx, s.baseDir, branch); err != nil {
+	if err := checkoutOrCreateBranchLogged(ctx, s.logger, s.baseDir, "", branch); err != nil {
 		return "", err
 	}
 	return branch, nil
@@ -442,11 +462,11 @@ func isPRFeedbackImplementationJob(job domain.Job) bool {
 
 func (s *ArtifactActionService) updateTargetLabels(ctx context.Context, job domain.Job, add []string, remove []string) error {
 	for _, label := range add {
-		if err := ensureGHLabel(ctx, job.Repository, label); err != nil {
+		if err := ensureGHLabelLogged(ctx, s.logger, job.Repository, label); err != nil {
 			return err
 		}
 	}
-	currentLabels, err := currentTargetLabels(ctx, job)
+	currentLabels, err := currentTargetLabelsLogged(ctx, s.logger, job)
 	if err != nil {
 		return err
 	}
@@ -458,7 +478,7 @@ func (s *ArtifactActionService) updateTargetLabels(ctx context.Context, job doma
 	for _, label := range remove {
 		args = append(args, "--remove-label", label)
 	}
-	return runGH(ctx, args...)
+	return runGHLogged(ctx, s.logger, args...)
 }
 
 func currentTargetLabels(ctx context.Context, job domain.Job) ([]string, error) {
