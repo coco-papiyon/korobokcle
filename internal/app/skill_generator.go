@@ -105,7 +105,6 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 		fmt.Sprintf("work_dir: %s", g.workDir),
 		fmt.Sprintf("project_context: %s", strings.TrimSpace(req.ProjectContext)),
 		fmt.Sprintf("test_command: %s", strings.TrimSpace(req.TestCommand)),
-		fmt.Sprintf("max_fix_loops: %d", req.MaxFixLoops),
 		fmt.Sprintf("force_purposes: %v", req.ForcePurposes),
 		fmt.Sprintf("overwrite_existing: %t", req.OverwriteExisting),
 	}, "\n"))
@@ -125,13 +124,6 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 	if req.TestCommand == "" {
 		g.appendSkillGenerationLog(logRunID, "error", "testCommand is required")
 		return domain.SkillGenerationResult{}, fmt.Errorf("testCommand is required")
-	}
-	if req.MaxFixLoops < 1 {
-		req.MaxFixLoops = 3
-	}
-	if req.MaxFixLoops > 20 {
-		g.appendSkillGenerationLog(logRunID, "error", "maxFixLoops must be 20 or less")
-		return domain.SkillGenerationResult{}, fmt.Errorf("maxFixLoops must be 20 or less")
 	}
 	forceTargets := make(map[domain.SkillPurpose]struct{}, len(req.ForcePurposes))
 	for _, purpose := range req.ForcePurposes {
@@ -553,7 +545,6 @@ func buildSkillGenerationPrompt(toolDir string, provider domain.AIProvider, miss
 		StageDir:            stageDir,
 		ProjectContext:      req.ProjectContext,
 		TestCommand:         req.TestCommand,
-		MaxFixLoops:         req.MaxFixLoops,
 		Missing:             items,
 		IsCodex:             provider == domain.AIProviderCodex,
 	})
@@ -639,23 +630,26 @@ func validateGeneratedSkill(dir string, definition skillDefinition, req domain.S
 	}
 	if definition.purpose == domain.SkillPurposeIssueImplementation || definition.purpose == domain.SkillPurposeReviewFeedbackImplement {
 		if !containsAllFold(content, "概要", "変更内容", "テスト結果", "残課題") {
-			return fmt.Errorf("generated implementation skill %s is missing required output sections or test command", definition.name)
+			return fmt.Errorf("generated implementation skill %s is missing required output sections", definition.name)
 		}
 		if !containsAllCommandsFold(content, req.TestCommand) {
-			return fmt.Errorf("generated implementation skill %s is missing required output sections or test command", definition.name)
+			return fmt.Errorf("generated implementation skill %s is missing required test command", definition.name)
 		}
 	}
 	if definition.purpose == domain.SkillPurposeIssueVerification {
 		if !containsAllFold(content, "判定結果", "確認内容", "検証結果", "残課題") {
-			return fmt.Errorf("generated verification skill %s is missing required output sections or test command", definition.name)
+			return fmt.Errorf("generated verification skill %s is missing required output sections", definition.name)
 		}
 		if !containsAllCommandsFold(content, req.TestCommand) {
-			return fmt.Errorf("generated verification skill %s is missing required output sections or test command", definition.name)
+			return fmt.Errorf("generated verification skill %s is missing required test command", definition.name)
 		}
 	}
 	if definition.purpose == domain.SkillPurposePRConflictResolution {
-		if !containsAllFold(content, "概要", "確認した情報", "解消方針", "変更内容", "テスト結果", "残課題") || !containsAllCommandsFold(content, req.TestCommand) {
-			return fmt.Errorf("generated conflict resolution skill %s is missing required output sections or test command", definition.name)
+		if !containsAllFold(content, "概要", "確認した情報", "解消方針", "変更内容", "テスト結果", "残課題") {
+			return fmt.Errorf("generated conflict resolution skill %s is missing required output sections", definition.name)
+		}
+		if !containsAllCommandsFold(content, req.TestCommand) {
+			return fmt.Errorf("generated conflict resolution skill %s is missing required test command", definition.name)
 		}
 	}
 	return nil

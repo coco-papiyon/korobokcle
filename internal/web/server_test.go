@@ -367,7 +367,7 @@ func TestSkillsAPI(t *testing.T) {
 		t.Fatalf("GET /api/skills status = %d", getRec.Code)
 	}
 
-	body := bytes.NewBufferString(`{"testCommand":"go test ./...","maxFixLoops":3}`)
+	body := bytes.NewBufferString(`{"testCommand":"go test ./..."}`)
 	postReq := httptest.NewRequest(http.MethodPost, "/api/skills", body)
 	postRec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(postRec, postReq)
@@ -375,7 +375,7 @@ func TestSkillsAPI(t *testing.T) {
 		t.Fatalf("POST /api/skills status=%d calls=%d", postRec.Code, actions.generateCalls)
 	}
 
-	objectBody := bytes.NewBufferString(`{"testCommand":"go test ./...","maxFixLoops":3,"forcePurposes":{"purpose":"issue_design"}}`)
+	objectBody := bytes.NewBufferString(`{"testCommand":"go test ./...","forcePurposes":{"purpose":"issue_design"}}`)
 	objectReq := httptest.NewRequest(http.MethodPost, "/api/skills", objectBody)
 	objectRec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(objectRec, objectReq)
@@ -383,7 +383,7 @@ func TestSkillsAPI(t *testing.T) {
 		t.Fatalf("POST object /api/skills status=%d calls=%d", objectRec.Code, actions.generateCalls)
 	}
 
-	mapBody := bytes.NewBufferString(`{"testCommand":"go test ./...","maxFixLoops":3,"forcePurposes":{"issue_design":true}}`)
+	mapBody := bytes.NewBufferString(`{"testCommand":"go test ./...","forcePurposes":{"issue_design":true}}`)
 	mapReq := httptest.NewRequest(http.MethodPost, "/api/skills", mapBody)
 	mapRec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(mapRec, mapReq)
@@ -417,14 +417,14 @@ func (a *testSkillActions) GenerateSkills(_ context.Context, _ domain.SkillGener
 
 func TestSettingsAPI(t *testing.T) {
 	store := newTestSettingsStore(domain.WatchSettings{
-		Repository:        "owner/repo",
-		BaseBranch:        "develop",
-		AIProvider:        domain.AIProviderGitHubCopilot,
+		Repository:             "owner/repo",
+		BaseBranch:             "develop",
+		AIProvider:             domain.AIProviderGitHubCopilot,
 		VerificationAIProvider: domain.AIProviderCodex,
 		VerificationAIModel:    domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-5.4-mini"},
 		ReviewerAIProvider:     domain.AIProviderGitHubCopilot,
 		ReviewerAIModel:        domain.ModelSelection{Mode: domain.ModelModeDefault},
-		AIAllowedCommands: []string{"npm ci"},
+		AIAllowedCommands:      []string{"npm ci"},
 		Models: domain.AIModels{
 			Codex:         domain.ModelSelection{Mode: domain.ModelModeDefault},
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-4.1"},

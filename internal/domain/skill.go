@@ -30,7 +30,6 @@ type SkillStatus struct {
 type SkillGenerationRequest struct {
 	ProjectContext    string        `json:"projectContext"`
 	TestCommand       string        `json:"testCommand"`
-	MaxFixLoops       int           `json:"maxFixLoops"`
 	ForcePurposes     SkillPurposes `json:"forcePurposes,omitempty"`
 	OverwriteExisting bool          `json:"overwriteExisting,omitempty"`
 }

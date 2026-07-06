@@ -130,7 +130,6 @@ describe('SkillGeneratorPanel', () => {
     expect(JSON.parse(generateRequest[1]?.body as string)).toEqual({
       projectContext: '',
       testCommand: 'go test ./...\ngo test ./internal/app',
-      maxFixLoops: 3,
       forcePurposes: ['implement-from-design', 'issue_verification', 'review-pull-request', 'pr_conflict_resolution'],
       overwriteExisting: false,
     })
@@ -142,7 +141,6 @@ describe('SkillGeneratorPanel', () => {
     expect(JSON.parse(regenerateRequest[1]?.body as string)).toEqual({
       projectContext: '',
       testCommand: 'go test ./...\ngo test ./internal/app',
-      maxFixLoops: 3,
       forcePurposes: ['implement-from-design', 'issue_verification', 'review-pull-request', 'pr_conflict_resolution'],
       overwriteExisting: true,
     })
@@ -154,7 +152,6 @@ describe('SkillGeneratorPanel', () => {
       JSON.stringify({
         projectContext: 'バックエンドはGo、フロントはVue',
         testCommand: 'go test ./...\nnpm test',
-        maxFixLoops: 5,
       }),
     )
     mockInitialFetch()
@@ -170,6 +167,16 @@ describe('SkillGeneratorPanel', () => {
       'value',
       'go test ./...\nnpm test',
     )
-    expect(wrapper.get('input[type="number"]').element).toHaveProperty('value', '5')
+    expect(wrapper.find('input[type="number"]').exists()).toBe(false)
+
+    await wrapper.get('textarea[placeholder="使用言語、フレームワーク、設計規約、確認必須事項など"]').setValue(
+      'バックエンドはGo、フロントはVue 2',
+    )
+    await flushPromises()
+
+    expect(JSON.parse(window.localStorage.getItem('korobokcle.skillGenerationForm.v1') ?? '{}')).toEqual({
+      projectContext: 'バックエンドはGo、フロントはVue 2',
+      testCommand: 'go test ./...\nnpm test',
+    })
   })
 })
