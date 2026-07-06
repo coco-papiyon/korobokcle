@@ -13,7 +13,6 @@ const error = ref('')
 const message = ref('')
 const projectContext = ref('')
 const testCommand = ref('go test ./...')
-const maxFixLoops = ref(3)
 
 const selectedCount = computed(() => selectedPurposes.value.length)
 const allSelected = computed({
@@ -50,11 +49,9 @@ function restoreSavedForm() {
     const saved = JSON.parse(raw) as {
       projectContext?: string
       testCommand?: string
-      maxFixLoops?: number
     }
     projectContext.value = typeof saved.projectContext === 'string' ? saved.projectContext : ''
     testCommand.value = typeof saved.testCommand === 'string' && saved.testCommand.length > 0 ? saved.testCommand : 'go test ./...'
-    maxFixLoops.value = typeof saved.maxFixLoops === 'number' && Number.isFinite(saved.maxFixLoops) ? saved.maxFixLoops : 3
   } catch {
     window.localStorage.removeItem(formStorageKey)
   }
@@ -66,7 +63,6 @@ function persistForm() {
     JSON.stringify({
       projectContext: projectContext.value,
       testCommand: testCommand.value,
-      maxFixLoops: maxFixLoops.value,
     }),
   )
 }
@@ -107,7 +103,6 @@ async function submitSkillsGeneration(overwriteExisting = false) {
       body: JSON.stringify({
         projectContext: projectContext.value.trim(),
         testCommand: testCommand.value.trim(),
-        maxFixLoops: maxFixLoops.value,
         forcePurposes,
         overwriteExisting,
       }),
@@ -137,7 +132,7 @@ onMounted(() => {
   void loadSkills()
 })
 
-watch([projectContext, testCommand, maxFixLoops], () => {
+watch([projectContext, testCommand], () => {
   persistForm()
 })
 
@@ -176,11 +171,6 @@ defineExpose({
           placeholder="go test ./...\ngo test ./internal/app"
         ></textarea>
       </label>
-      <label class="field">
-        <span>テスト失敗時の再修正上限</span>
-        <input v-model.number="maxFixLoops" class="control" type="number" min="1" max="20" step="1" />
-      </label>
-      <p class="field-note">実装スキルはテストと再修正をこの回数まで繰り返す。設計スキルにはテスト実装方針を含める。</p>
     </section>
 
     <section>

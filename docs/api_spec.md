@@ -150,7 +150,6 @@
 | --- | --- | --- |
 | `projectContext` | string | プロジェクト固有情報 |
 | `testCommand` | string | 設計に従うテストコマンド |
-| `maxFixLoops` | number | 再修正上限 |
 | `forcePurposes` | string[] / string / object | 生成対象の強制指定 |
 | `overwriteExisting` | boolean | 既存上書き可否 |
 
@@ -451,7 +450,6 @@ PR レビューで修正依頼を出す。
 {
   "projectContext": "Go + Vue のローカルツール",
   "testCommand": "go test ./...",
-  "maxFixLoops": 3,
   "forcePurposes": ["issue_design", "issue_verification"],
   "overwriteExisting": false
 }

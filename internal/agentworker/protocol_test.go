@@ -144,7 +144,7 @@ func TestCommandRequestAllowedWithBuiltInCommands(t *testing.T) {
 		`{"command":"echo hello world"}`,
 		`{"command":"sed -n '1,20p' README.md"}`,
 		`{"command":"set -o pipefail"}`,
-		`{"command":"grep -r \"maxFixLoops\\|MaxFixLoops\" . 2>/dev/null"}`,
+		`{"command":"grep -r \"issue_design\\|pr_review\" . 2>/dev/null"}`,
 	} {
 		if !commandRequestAllowed(json.RawMessage(raw), allowed) {
 			t.Fatalf("expected built-in command to be allowed: %s", raw)
@@ -153,7 +153,7 @@ func TestCommandRequestAllowedWithBuiltInCommands(t *testing.T) {
 }
 
 func TestCommandRequestAllowedRejectsStderrRedirectionOutsideDevNull(t *testing.T) {
-	params := json.RawMessage(`{"command":"grep -r \"maxFixLoops\\|MaxFixLoops\" . 2>/tmp/verification.log"}`)
+	params := json.RawMessage(`{"command":"grep -r \"issue_design\\|pr_review\" . 2>/tmp/verification.log"}`)
 	if commandRequestAllowed(params, nil) {
 		t.Fatal("expected stderr redirection outside devnull to be rejected")
 	}
