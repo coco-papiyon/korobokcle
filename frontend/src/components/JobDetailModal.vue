@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import JobDetailPanel from './JobDetailPanel.vue'
 
 const props = defineProps<{
@@ -16,7 +16,7 @@ const emit = defineEmits<{
 const detailPanel = ref<InstanceType<typeof JobDetailPanel> | null>(null)
 const sourceDiffAvailable = ref(false)
 const artifactEditAvailable = ref(false)
-const activeView = ref<'result' | 'diff' | 'edit' | 'logs'>('result')
+const activeView = ref<'chat' | 'diff' | 'edit' | 'logs'>('chat')
 
 function close() {
   emit('close')
@@ -34,8 +34,8 @@ function handleSourceDiffAvailability(available: boolean) {
   sourceDiffAvailable.value = available
   if (!available) {
     if (activeView.value === 'diff') {
-      activeView.value = 'result'
-      detailPanel.value?.openResultView()
+      activeView.value = 'chat'
+      detailPanel.value?.openChatView()
     }
   }
 }
@@ -43,14 +43,14 @@ function handleSourceDiffAvailability(available: boolean) {
 function handleArtifactEditAvailability(available: boolean) {
   artifactEditAvailable.value = available
   if (!available && activeView.value === 'edit') {
-    activeView.value = 'result'
-    detailPanel.value?.openResultView()
+    activeView.value = 'chat'
+    detailPanel.value?.openChatView()
   }
 }
 
-function showResult() {
-  activeView.value = 'result'
-  detailPanel.value?.openResultView()
+function showChat() {
+  activeView.value = 'chat'
+  detailPanel.value?.openChatView()
 }
 
 function openSourceDiff() {
@@ -78,6 +78,9 @@ function handleKeydown(event: KeyboardEvent) {
 onMounted(() => {
   document.body.classList.add('modal-open')
   window.addEventListener('keydown', handleKeydown)
+  void nextTick(() => {
+    detailPanel.value?.openChatView?.()
+  })
 })
 
 onBeforeUnmount(() => {
@@ -93,11 +96,11 @@ onBeforeUnmount(() => {
         <div class="modal-dialog__header-actions">
           <button
             class="button button--ghost modal-dialog__action"
-            :class="{ 'modal-dialog__action--active': activeView === 'result' }"
+            :class="{ 'modal-dialog__action--active': activeView === 'chat' }"
             type="button"
-            @click="showResult"
+            @click="showChat"
           >
-            結果
+            チャット
           </button>
           <button
             v-if="sourceDiffAvailable"
@@ -131,7 +134,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="modal-dialog__body">
+      <div class="modal-dialog__body" :class="{ 'modal-dialog__body--chat': activeView === 'chat' }">
         <JobDetailPanel
           ref="detailPanel"
           :active="true"

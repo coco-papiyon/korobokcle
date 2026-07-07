@@ -292,6 +292,8 @@ describe('JobDetailPanel', () => {
       },
     })
     await flushPromises()
+    await (wrapper.vm as any).openResultView()
+    await flushPromises()
 
     const details = wrapper.get('details.detail-context')
     expect(details.get('summary').text()).toBe('Issue の内容')
@@ -796,6 +798,8 @@ describe('JobDetailPanel', () => {
       },
     })
     await flushPromises()
+    await (wrapper.vm as any).openResultView()
+    await flushPromises()
 
     const artifact = wrapper.get('.artifact-view')
     expect(artifact.find('h1').text()).toBe('見出し')
@@ -989,6 +993,8 @@ describe('JobDetailPanel', () => {
       },
     })
     await flushPromises()
+    await (wrapper.vm as any).openResultView()
+    await flushPromises()
 
     expect(wrapper.text()).toContain('設計結果')
     await (wrapper.vm as any).openEditView()
@@ -1006,7 +1012,7 @@ describe('JobDetailPanel', () => {
         method: 'PUT',
       }),
     )
-    expect(wrapper.get('.artifact-view').find('h1').text()).toBe('design')
+    expect(wrapper.text()).toContain('設計結果')
     expect(wrapper.text()).toContain('updated content')
     expect(wrapper.emitted('refresh')).toHaveLength(1)
   })
@@ -1159,6 +1165,8 @@ describe('JobDetailPanel', () => {
       },
     })
     await flushPromises()
+    await (wrapper.vm as any).openResultView()
+    await flushPromises()
 
     const link = wrapper.get('.detail-links__link')
     expect(link.text()).toBe('Issue を開く')
@@ -1199,6 +1207,8 @@ describe('JobDetailPanel', () => {
         refreshKey: 0,
       },
     })
+    await flushPromises()
+    await (wrapper.vm as any).openResultView()
     await flushPromises()
 
     const link = wrapper.get('.detail-links__link')
@@ -1381,6 +1391,8 @@ describe('JobDetailPanel', () => {
         refreshKey: 0,
       },
     })
+    await flushPromises()
+    await (wrapper.vm as any).openResultView()
     await flushPromises()
 
     await wrapper.get('button.button--danger').trigger('click')

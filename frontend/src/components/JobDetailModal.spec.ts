@@ -52,7 +52,7 @@ describe('JobDetailModal', () => {
   })
 
   it('shows the source diff button next to the close button when available', async () => {
-    const showResult = vi.fn()
+    const showChat = vi.fn()
     const openSourceDiff = vi.fn()
     const openEditView = vi.fn()
     const showLogs = vi.fn()
@@ -67,10 +67,10 @@ describe('JobDetailModal', () => {
             emits: ['source-diff-availability', 'artifact-edit-availability'],
             setup(_, { expose, emit }) {
               expose({
-                openResultView: showResult,
-                openSourceDiff,
-                openEditView,
-                openLogsView: showLogs,
+              openChatView: showChat,
+              openSourceDiff,
+              openEditView,
+              openLogsView: showLogs,
               })
               onMounted(() => {
                 emit('source-diff-availability', true)
@@ -85,7 +85,8 @@ describe('JobDetailModal', () => {
     await flushPromises()
 
     const buttons = wrapper.findAll('.modal-dialog__header button')
-    expect(buttons.map((button) => button.text())).toEqual(['結果', '差分確認', '編集', 'ログ', '閉じる'])
+    expect(buttons.map((button) => button.text())).toEqual(['チャット', '差分確認', '編集', 'ログ', '閉じる'])
+    expect(showChat).toHaveBeenCalledTimes(1)
 
     expect(buttons[0].classes()).toContain('modal-dialog__action--active')
     await buttons[1].trigger('click')
@@ -103,7 +104,7 @@ describe('JobDetailModal', () => {
     await buttons[0].trigger('click')
     await flushPromises()
     expect(wrapper.findAll('.modal-dialog__header button')[0].classes()).toContain('modal-dialog__action--active')
-    expect(showResult).toHaveBeenCalledTimes(1)
+    expect(showChat).toHaveBeenCalledTimes(2)
 
     wrapper.unmount()
   })

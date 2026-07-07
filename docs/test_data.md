@@ -70,6 +70,7 @@
 
 - `issue_*` のジョブには `issueContext` を含める
 - `issue-201` は `subStatus: 検証(2回目)` を持つ
+- `issue-203` はチャット画面の見本として、Markdown の表・引用・コードブロック・HTML を含む成果物を持つ
 - `failed` 状態のジョブには `failedFromState` と `errorMessage` を含める
 
 ### `db/mock_jobs.json`
@@ -118,6 +119,7 @@
 - 保存先: `tests/workspace/mock-owner_mock-repo/<job-id>/logs/...`
 - 実装ジョブには `agent` と `verifier` の両方のログを作る
 - それ以外のジョブには `agent` ログを作る
+- `issue-203` はチャット表示確認用に、会話を意識した `agent` ログを含める
 
 ## 補足
 
