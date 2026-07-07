@@ -163,9 +163,15 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		if err != nil {
 			return domain.Job{}, err
 		}
-		headBranch, _, err := pullRequestBranches(ctx, job)
-		if err != nil {
-			return domain.Job{}, err
+		headBranch := strings.TrimSpace(job.Branch)
+		if headBranch == "" {
+			if s.logger != nil {
+				s.logger.Debugf("resolve PR head branch from GitHub repo=%s number=%d", job.Repository, job.Number)
+			}
+			headBranch, _, err = pullRequestBranches(ctx, job)
+			if err != nil {
+				return domain.Job{}, err
+			}
 		}
 		if err := publishBranchLogged(ctx, s.logger, repoDir, worktreeNote, localBranch, headBranch); err != nil {
 			return domain.Job{}, err
