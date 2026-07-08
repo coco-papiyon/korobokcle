@@ -611,9 +611,80 @@ describe('JobDetailPanel', () => {
     })
     await flushPromises()
 
+    await (wrapper.vm as any).openResultView()
+    await flushPromises()
+
     expect(wrapper.text()).toContain('設計結果')
     expect(wrapper.text()).toContain('design artifact content')
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/jobs/job-16/artifact', { cache: 'no-store' })
+  })
+
+  it('sends chat instructions from vue-advanced-chat event details', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          updatedAt: '2026-07-01T00:00:00Z',
+          branch: 'issue_#16',
+          job: {
+            id: 'job-16',
+            kind: 'issue_design',
+            state: 'design_ready',
+            repository: 'owner/repo',
+            number: 16,
+            title: '修正対象の設計',
+            issueContext: '#16 修正対象の設計',
+            fetchedAt: '2026-07-01T00:00:00Z',
+            updatedAt: '2026-07-01T03:04:05Z',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          content: 'design artifact content',
+          path: 'artifact.md',
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: 'job-16',
+          kind: 'issue_design',
+          state: 'design_running',
+          repository: 'owner/repo',
+          number: 16,
+          title: '修正対象の設計',
+          issueContext: '#16 修正対象の設計',
+          fetchedAt: '2026-07-01T00:00:00Z',
+          updatedAt: '2026-07-01T03:05:00Z',
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const wrapper = mount(JobDetailPanel, {
+      props: {
+        active: true,
+        jobId: 'job-16',
+        refreshKey: 0,
+      },
+    })
+    await flushPromises()
+
+    ;(wrapper.vm as any).handleChatSendMessage(
+      new CustomEvent('send-message', {
+        detail: [{ content: '表現を少し柔らかくして' }],
+      }),
+    )
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('表現を少し柔らかくして')
+    expect(wrapper.text()).toContain('設計中')
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      '/api/jobs/job-16/artifact',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ comment: '表現を少し柔らかくして' }),
+      }),
+    )
   })
 
   it('shows implementation artifacts for completed issue implementation jobs', async () => {
@@ -649,6 +720,9 @@ describe('JobDetailPanel', () => {
         refreshKey: 0,
       },
     })
+    await flushPromises()
+
+    await (wrapper.vm as any).openResultView()
     await flushPromises()
 
     expect(wrapper.text()).toContain('実装結果')
@@ -751,6 +825,9 @@ describe('JobDetailPanel', () => {
       })
       await flushPromises()
 
+      await (wrapper.vm as any).openResultView()
+      await flushPromises()
+
       expect(wrapper.text()).toContain(testCase.artifactLabel)
       expect(wrapper.text()).toContain(testCase.artifactContent)
       expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/jobs/${testCase.jobId}/artifact`, { cache: 'no-store' })
@@ -808,8 +885,7 @@ describe('JobDetailPanel', () => {
     expect(artifact.findAll('td')).toHaveLength(2)
   })
 
-  it('reloads artifacts when the same job is refreshed', async () => {
-    let resolveSecondArtifact: ((value: Response) => void) | undefined
+  it('keeps the current artifact when the same job is refreshed without updates', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(
         jsonResponse({
@@ -849,11 +925,6 @@ describe('JobDetailPanel', () => {
           },
         }),
       )
-      .mockResolvedValueOnce(
-        new Promise<Response>((resolve) => {
-          resolveSecondArtifact = resolve
-        }),
-      )
     vi.stubGlobal('fetch', fetchMock)
 
     const wrapper = mount(JobDetailPanel, {
@@ -870,19 +941,9 @@ describe('JobDetailPanel', () => {
     await wrapper.setProps({ refreshKey: 1 })
     await flushPromises()
 
-    expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/jobs/job-25/artifact', { cache: 'no-store' })
+    expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(wrapper.text()).toContain('artifact content v1')
     expect(wrapper.text()).not.toContain('読み込み中...')
-
-    resolveSecondArtifact?.(
-      jsonResponse({
-        content: 'artifact content v2',
-        path: 'artifact.md',
-      }),
-    )
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('artifact content v2')
   })
 
   it('opens source diff on demand and returns to the job detail view', async () => {
@@ -935,7 +996,7 @@ describe('JobDetailPanel', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('実装結果')
+    expect(wrapper.text()).toContain('artifact content')
 
     await (wrapper.vm as any).openSourceDiff()
     await flushPromises()
@@ -1012,7 +1073,6 @@ describe('JobDetailPanel', () => {
         method: 'PUT',
       }),
     )
-    expect(wrapper.text()).toContain('設計結果')
     expect(wrapper.text()).toContain('updated content')
     expect(wrapper.emitted('refresh')).toHaveLength(1)
   })

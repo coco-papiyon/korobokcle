@@ -361,7 +361,11 @@ func (s *MockArtifactActionService) RerunArtifact(ctx context.Context, id, userC
 	if err := s.store.Upsert(ctx, job); err != nil {
 		return domain.Job{}, err
 	}
-	if s.monitor != nil {
+	if s.manager != nil {
+		if err := s.manager.Submit(job); err != nil {
+			return domain.Job{}, err
+		}
+	} else if s.monitor != nil {
 		if err := s.monitor.PollNow(ctx); err != nil {
 			return domain.Job{}, err
 		}

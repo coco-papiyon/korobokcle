@@ -51,6 +51,7 @@ const chatComponentReady = ref(false)
 const chatRenderKey = ref(0)
 const isTestMode = import.meta.env.MODE === 'test'
 const detailScrollRef = ref<HTMLElement | null>(null)
+const chatElementRef = ref<(HTMLElement & { shadowRoot?: ShadowRoot | null }) | null>(null)
 const markdown = new MarkdownIt({
   html: true,
   breaks: true,
@@ -98,6 +99,11 @@ type ChatMessage = {
   seen?: boolean
   disableActions?: boolean
   disableReactions?: boolean
+}
+
+type ChatSendPayload = {
+  content?: string
+  message?: string
 }
 const emit = defineEmits<{
   (event: 'close'): void
@@ -178,7 +184,7 @@ const chatRooms = computed<ChatRoom[]>(() => {
   return [
     {
       roomId: chatRoomId.value,
-      roomName: detailTitle.value,
+      roomName: '',
       avatar: '',
       users: chatUsers.value,
       lastMessage: lastMessage
@@ -197,6 +203,7 @@ const chatMessages = computed<ChatMessage[]>(() => {
     return []
   }
   const messages: ChatMessage[] = []
+  let artifactMessage: ChatMessage | null = null
   if (issueContextMarkdown.value.trim()) {
     messages.push(createChatMessage('context', 'user', issueContextMarkdown.value.trim()))
   }
@@ -204,8 +211,7 @@ const chatMessages = computed<ChatMessage[]>(() => {
     messages.push(createChatMessage('artifact-loading', 'system', `${artifactTitle(job)}を取得中です。`, true))
   }
   if (artifact.value) {
-    messages.push(createChatMessage('artifact-title', 'system', artifactTitle(job), true))
-    messages.push(createChatMessage('artifact', 'assistant', artifact.value.content))
+    artifactMessage = createChatMessage(`artifact-${job.updatedAt || detailUpdatedAt.value}`, 'assistant', artifact.value.content)
   }
   if (sourceDiff.value) {
     messages.push(
@@ -222,10 +228,8 @@ const chatMessages = computed<ChatMessage[]>(() => {
   if (artifactError.value) {
     messages.push(createChatMessage('artifact-error', 'system', `結果取得エラー: ${artifactError.value}`, true))
   }
-  return [
-    ...messages,
-    ...chatDraftMessages.value.filter((message) => message._id.startsWith(`${job.id}-draft-`)),
-  ]
+  const draftMessages = chatDraftMessages.value.filter((message) => message._id.startsWith(`${job.id}-draft-`))
+  return artifactMessage ? [...messages, ...draftMessages, artifactMessage] : [...messages, ...draftMessages]
 })
 const chatRoomsJson = computed(() => JSON.stringify(chatRooms.value))
 const chatMessagesJson = computed(() => JSON.stringify(chatMessages.value))
@@ -256,7 +260,7 @@ const chatStylesJson = computed(() => JSON.stringify({
     },
     message: {
       backgroundMe: '#dce9ff',
-      background: '#f8fafc',
+      background: '#eef3fb',
       color: '#122033',
       colorMe: '#10284f',
     },
@@ -392,26 +396,174 @@ async function scrollDetailToTop() {
   detailScrollRef.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
-function appendChatInstruction(content: string) {
+function chatShadowRoot() {
+  const element = chatElementRef.value
+  if (element?.shadowRoot) {
+    return element.shadowRoot
+  }
+  const vueElement = (element as { $el?: HTMLElement & { shadowRoot?: ShadowRoot | null } } | null)?.$el
+  return vueElement?.shadowRoot ?? null
+}
+
+async function applyChatInternalStyles(attempt = 0) {
+  await nextTick()
+  const root = chatShadowRoot()
+  if (!root) {
+    if (attempt < 5) {
+      window.setTimeout(() => {
+        void applyChatInternalStyles(attempt + 1)
+      }, 20)
+    }
+    return
+  }
+  const styleId = 'korobokcle-chat-layout'
+  let style = root.getElementById(styleId) as HTMLStyleElement | null
+  if (!style) {
+    style = document.createElement('style')
+    style.id = styleId
+    root.appendChild(style)
+  }
+  style.textContent = `
+    .vac-room-header {
+      display: none !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      border: 0 !important;
+    }
+
+    .vac-col-messages .vac-container-scroll {
+      margin-top: 0 !important;
+      background: #f7f9fc !important;
+    }
+
+    .vac-col-messages .vac-messages-container {
+      padding-top: 0 !important;
+    }
+
+    .vac-col-messages .vac-text-started {
+      margin-top: 0 !important;
+    }
+
+    .vac-message-wrapper .vac-message-box {
+      flex: 0 0 100% !important;
+      max-width: 100% !important;
+    }
+
+    .vac-message-wrapper .vac-offset-current {
+      flex: 0 0 75% !important;
+      max-width: 75% !important;
+      margin-left: auto !important;
+      justify-content: flex-end !important;
+    }
+
+    .vac-message-wrapper .vac-offset-current .vac-message-container {
+      width: 100% !important;
+      max-width: 100% !important;
+      min-width: 0 !important;
+      display: flex !important;
+      justify-content: flex-end !important;
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      box-sizing: border-box !important;
+      overflow: hidden !important;
+    }
+
+    .vac-message-wrapper .vac-offset-current .vac-message-card {
+      width: 100% !important;
+      max-width: 100% !important;
+    }
+
+    .vac-message-wrapper .vac-message-card:not(.vac-message-current) {
+      width: 100% !important;
+      max-width: 100% !important;
+      border: 1px solid rgba(36, 59, 100, 0.08) !important;
+    }
+
+    @media only screen and (max-width: 768px) {
+      .vac-message-wrapper .vac-offset-current {
+        flex-basis: 88% !important;
+        max-width: 88% !important;
+      }
+
+      .vac-message-wrapper .vac-offset-current .vac-message-container {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+
+      .vac-message-wrapper .vac-offset-current .vac-message-card {
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+
+      .vac-message-wrapper .vac-message-box {
+        flex-basis: 100% !important;
+        max-width: 100% !important;
+      }
+    }
+  `
+}
+
+async function submitChatInstruction(content: string) {
   const normalized = content.trim()
   if (!normalized || !detailJob.value) {
     return
   }
+  const jobId = detailJob.value.id
+  const now = Date.now()
+  const nextMessages = [...chatDraftMessages.value]
+  if (artifact.value !== null && artifactJobId.value === jobId) {
+    nextMessages.push(createChatMessage(`draft-artifact-${now}`, 'assistant', artifact.value.content))
+  }
+  nextMessages.push(createChatMessage(`draft-${now}`, 'user', normalized))
   chatDraftMessages.value = [
-    ...chatDraftMessages.value,
-    createChatMessage(`draft-${Date.now()}`, 'user', normalized),
-    createChatMessage(
-      `draft-response-${Date.now()}`,
-      'assistant',
-      'AIへの修正指示を受け付けました。変更結果はこの画面で更新されます。',
-      true,
-    ),
+    ...nextMessages,
   ]
+  artifactRequestSequence += 1
+  artifact.value = null
+  artifactJobId.value = ''
+  artifactLoading.value = false
+  artifactError.value = ''
+  artifactActionLoading.value = true
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/artifact`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ comment: normalized }),
+    })
+    if (!res.ok) {
+      const message = await res.text()
+      throw new Error(message || `HTTP ${res.status}`)
+    }
+    const job = (await res.json()) as Job
+    detailJob.value = job
+    detailUpdatedAt.value = job.updatedAt || new Date().toISOString()
+    detailRevisionKey = jobRevisionKey(job, detailBranch.value || job.branch || '')
+    emit('refresh')
+    startPolling()
+    refreshChatMessages({ remount: false })
+  } catch (err) {
+    artifactError.value = err instanceof Error ? err.message : 'unknown error'
+    void scrollDetailToTop()
+  } finally {
+    artifactActionLoading.value = false
+  }
+}
+
+function chatSendContent(event: Event) {
+  const detail = (event as CustomEvent<ChatSendPayload | ChatSendPayload[] | string>).detail
+  const payload = Array.isArray(detail) ? detail[0] : detail
+  if (typeof payload === 'string') {
+    return payload
+  }
+  return payload?.content ?? payload?.message ?? ''
 }
 
 function handleChatSendMessage(event: Event) {
-  const detail = (event as CustomEvent<{ content?: string }>).detail
-  appendChatInstruction(detail?.content ?? '')
+  void submitChatInstruction(chatSendContent(event))
 }
 
 function clearChatReadyTimer() {
@@ -443,6 +595,7 @@ function refreshChatMessages(options: { remount?: boolean } = {}) {
       void nextTick(() => {
         if (detailViewMode.value === 'chat') {
           chatMessagesLoaded.value = true
+          void applyChatInternalStyles()
         }
       })
     }, 0)
@@ -452,6 +605,7 @@ function refreshChatMessages(options: { remount?: boolean } = {}) {
 function handleChatFetchMessages() {
   chatReady.value = true
   chatMessagesLoaded.value = true
+  void applyChatInternalStyles()
 }
 
 function jobRevisionKey(job: Job, branch: string) {
@@ -530,14 +684,20 @@ async function loadJobDetail(id: string, options: { refreshArtifact?: boolean } 
           refreshChatMessages()
         }
       }
-      if (refreshArtifact && canInspectArtifact(payload.job)) {
+      const shouldRefreshArtifact =
+        refreshArtifact &&
+        canInspectArtifact(payload.job) &&
+        (!isSameRevision || artifactJobId.value !== payload.job.id || artifact.value === null)
+      if (shouldRefreshArtifact) {
         void loadArtifact(payload.job.id)
       } else if (refreshArtifact) {
-        artifactRequestSequence += 1
-        artifactLoading.value = false
-        artifactError.value = ''
-        artifact.value = null
-        artifactJobId.value = ''
+        if (!canInspectArtifact(payload.job)) {
+          artifactRequestSequence += 1
+          artifactLoading.value = false
+          artifactError.value = ''
+          artifact.value = null
+          artifactJobId.value = ''
+        }
       }
       if (!canInspectSourceDiff(payload.job)) {
         sourceDiffRequestSequence += 1
@@ -909,6 +1069,7 @@ onMounted(() => {
     await registerChatComponent()
     chatComponentReady.value = true
     refreshChatMessages()
+    void applyChatInternalStyles()
   })()
 })
 
@@ -924,11 +1085,17 @@ defineExpose({
   openLogsView,
   openEditView,
   detailViewMode,
+  handleChatSendMessage,
 })
 </script>
 
 <template>
   <div>
+    <div class="panel__title-row">
+      <h2>ジョブ詳細</h2>
+      <span class="panel__hint">GET /api/jobs/:id</span>
+    </div>
+
     <div v-if="detailLoading" class="empty-state">読み込み中...</div>
     <div v-else-if="detailError" class="error">{{ detailError }}</div>
     <div v-else-if="detailJob" ref="detailScrollRef" class="detail" :class="{ 'detail--chat': detailViewMode === 'chat' }">
@@ -976,6 +1143,7 @@ defineExpose({
         <div class="detail-chat__body">
           <vue-advanced-chat
             v-if="chatComponentReady && !isTestMode"
+            ref="chatElementRef"
             class="detail-chat__component"
             :key="`${chatRoomId}-${chatRenderKey}`"
             height="100%"
