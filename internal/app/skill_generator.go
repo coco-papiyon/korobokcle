@@ -105,7 +105,6 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 		fmt.Sprintf("work_dir: %s", g.workDir),
 		fmt.Sprintf("project_context: %s", strings.TrimSpace(req.ProjectContext)),
 		fmt.Sprintf("test_command: %s", strings.TrimSpace(req.TestCommand)),
-		fmt.Sprintf("max_fix_loops: %d", req.MaxFixLoops),
 		fmt.Sprintf("force_purposes: %v", req.ForcePurposes),
 		fmt.Sprintf("overwrite_existing: %t", req.OverwriteExisting),
 	}, "\n"))
@@ -125,13 +124,6 @@ func (g *SkillGenerator) GenerateSkills(ctx context.Context, req domain.SkillGen
 	if req.TestCommand == "" {
 		g.appendSkillGenerationLog(logRunID, "error", "testCommand is required")
 		return domain.SkillGenerationResult{}, fmt.Errorf("testCommand is required")
-	}
-	if req.MaxFixLoops < 1 {
-		req.MaxFixLoops = 3
-	}
-	if req.MaxFixLoops > 20 {
-		g.appendSkillGenerationLog(logRunID, "error", "maxFixLoops must be 20 or less")
-		return domain.SkillGenerationResult{}, fmt.Errorf("maxFixLoops must be 20 or less")
 	}
 	forceTargets := make(map[domain.SkillPurpose]struct{}, len(req.ForcePurposes))
 	for _, purpose := range req.ForcePurposes {
@@ -553,7 +545,6 @@ func buildSkillGenerationPrompt(toolDir string, provider domain.AIProvider, miss
 		StageDir:            stageDir,
 		ProjectContext:      req.ProjectContext,
 		TestCommand:         req.TestCommand,
-		MaxFixLoops:         req.MaxFixLoops,
 		Missing:             items,
 		IsCodex:             provider == domain.AIProviderCodex,
 	})

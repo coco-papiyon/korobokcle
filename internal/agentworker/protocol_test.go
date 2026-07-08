@@ -144,16 +144,25 @@ func TestCommandRequestAllowedWithBuiltInCommands(t *testing.T) {
 		`{"command":"echo hello world"}`,
 		`{"command":"sed -n '1,20p' README.md"}`,
 		`{"command":"set -o pipefail"}`,
-		`{"command":"grep -r \"maxFixLoops\\|MaxFixLoops\" . 2>/dev/null"}`,
 	} {
 		if !commandRequestAllowed(json.RawMessage(raw), allowed) {
 			t.Fatalf("expected built-in command to be allowed: %s", raw)
 		}
 	}
+	grepBody, err := json.Marshal(map[string]any{"command": "grep -r \"AIProvider\" . 2> " + os.DevNull})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !commandRequestAllowed(json.RawMessage(grepBody), allowed) {
+		t.Fatalf("expected built-in command to be allowed: %s", string(grepBody))
+	}
 }
 
 func TestCommandRequestAllowedRejectsStderrRedirectionOutsideDevNull(t *testing.T) {
-	params := json.RawMessage(`{"command":"grep -r \"maxFixLoops\\|MaxFixLoops\" . 2>/tmp/verification.log"}`)
+	params, err := json.Marshal(map[string]any{"command": "grep -r \"AIProvider\" . 2> /tmp/verification.log"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if commandRequestAllowed(params, nil) {
 		t.Fatal("expected stderr redirection outside devnull to be rejected")
 	}
@@ -406,7 +415,7 @@ func TestCopilotServerResponseAllowsTempHeredocSummaryWrite(t *testing.T) {
 }
 
 func TestCopilotServerResponseRejectsHeredocWriteOutsideTemp(t *testing.T) {
-	target := string(filepath.Separator) + "non-temp" + string(filepath.Separator) + "verification_summary.txt"
+	target := filepath.Join(filepath.Dir(os.TempDir()), "non-temp", "verification_summary.txt")
 	command := "cat > " + target + " << 'EOF'\n=== VERIFICATION SUMMARY ===\nEOF"
 	params, err := json.Marshal(map[string]any{"toolCall": map[string]any{
 		"kind":     "execute",

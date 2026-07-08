@@ -371,7 +371,7 @@ func TestSkillsAPI(t *testing.T) {
 		t.Fatalf("GET /api/skills status = %d", getRec.Code)
 	}
 
-	body := bytes.NewBufferString(`{"testCommand":"go test ./...","maxFixLoops":3}`)
+	body := bytes.NewBufferString(`{"testCommand":"go test ./..."}`)
 	postReq := httptest.NewRequest(http.MethodPost, "/api/skills", body)
 	postRec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(postRec, postReq)
@@ -379,7 +379,7 @@ func TestSkillsAPI(t *testing.T) {
 		t.Fatalf("POST /api/skills status=%d calls=%d", postRec.Code, actions.generateCalls)
 	}
 
-	objectBody := bytes.NewBufferString(`{"testCommand":"go test ./...","maxFixLoops":3,"forcePurposes":{"purpose":"issue_design"}}`)
+	objectBody := bytes.NewBufferString(`{"testCommand":"go test ./...","forcePurposes":{"purpose":"issue_design"}}`)
 	objectReq := httptest.NewRequest(http.MethodPost, "/api/skills", objectBody)
 	objectRec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(objectRec, objectReq)
@@ -387,7 +387,7 @@ func TestSkillsAPI(t *testing.T) {
 		t.Fatalf("POST object /api/skills status=%d calls=%d", objectRec.Code, actions.generateCalls)
 	}
 
-	mapBody := bytes.NewBufferString(`{"testCommand":"go test ./...","maxFixLoops":3,"forcePurposes":{"issue_design":true}}`)
+	mapBody := bytes.NewBufferString(`{"testCommand":"go test ./...","forcePurposes":{"issue_design":true}}`)
 	mapReq := httptest.NewRequest(http.MethodPost, "/api/skills", mapBody)
 	mapRec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(mapRec, mapReq)

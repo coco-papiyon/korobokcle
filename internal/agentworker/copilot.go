@@ -283,9 +283,6 @@ var (
 )
 
 func copilotExecuteAllowed(rawInput json.RawMessage, allowed []string, worktree string) bool {
-	if commandRequestAllowed(rawInput, allowed) {
-		return true
-	}
 	var input struct {
 		Command string `json:"command"`
 	}
@@ -298,8 +295,11 @@ func copilotExecuteAllowed(rawInput json.RawMessage, allowed []string, worktree 
 	}
 	currentDir := worktree
 	for _, command := range commands {
-		if copilotAllowedHeredocWrite(command, allowed, currentDir) {
-			continue
+		if strings.Contains(command, "<<") {
+			if copilotAllowedHeredocWrite(command, allowed, currentDir) {
+				continue
+			}
+			return false
 		}
 		command = strings.TrimSpace(copilotRedirectPattern.ReplaceAllString(command, ""))
 		matches := copilotCDCommandPattern.FindStringSubmatch(command)
