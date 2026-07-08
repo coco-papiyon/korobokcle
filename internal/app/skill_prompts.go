@@ -12,7 +12,6 @@ type skillGenerationPromptData struct {
 	StageDir            string
 	ProjectContext      string
 	TestCommand         string
-	MaxFixLoops         int
 	Missing             []skillPromptDefinition
 	IsCodex             bool
 }
