@@ -26,7 +26,7 @@ func TestJobsAPI(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, store, settingsStore, nil, testBranchResolver{branch: "issue_#42"}, nil, nil)
+	server := NewServer(cfg, store, settingsStore, nil, testBranchResolver{branch: "issue_#42"}, nil, nil, nil)
 
 	body := map[string]any{
 		"kind":       string(domain.JobKindIssueDesign),
@@ -158,7 +158,7 @@ func TestJobsAPIIncludesSubStatus(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, store, settingsStore, nil, testBranchResolver{branch: "issue_#42"}, nil, nil)
+	server := NewServer(cfg, store, settingsStore, nil, testBranchResolver{branch: "issue_#42"}, nil, nil, nil)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/jobs", nil)
 	getRec := httptest.NewRecorder()
@@ -188,7 +188,7 @@ func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, store, settingsStore, nil, testBranchResolver{branch: "issue_#42"}, nil, nil)
+	server := NewServer(cfg, store, settingsStore, nil, testBranchResolver{branch: "issue_#42"}, nil, nil, nil)
 
 	job := domain.Job{
 		ID:         "job-1",
@@ -217,12 +217,83 @@ func TestJobsAPIRejectsInvalidStateTransition(t *testing.T) {
 }
 
 func TestHealthz(t *testing.T) {
-	server := NewServer(config.Default(), nil, nil, nil, nil, nil)
+	server := NewServer(config.Default(), nil, nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+func TestRuntimeAPI(t *testing.T) {
+	store := newTestJobStore(filepath.Join(t.TempDir(), "jobs.json"))
+	job := domain.Job{
+		ID:         "issue-impl",
+		Kind:       domain.JobKindIssueImplementation,
+		State:      domain.StateImplementationReady,
+		Repository: "owner/repo",
+		Number:     42,
+		Title:      "implementation target",
+	}
+	if err := store.Upsert(context.Background(), job); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	actions := &testRuntimeActions{
+		status: domain.RuntimeStatus{
+			Running:      false,
+			Command:      "npm run dev",
+			ResidentMode: true,
+			LogPath:      "workspace/owner_repo/issue-impl/logs/startup.log",
+		},
+		logs: domain.RuntimeLogResponse{
+			Content:   "startup ready",
+			Path:      "workspace/owner_repo/issue-impl/logs/startup.log",
+			UpdatedAt: "2026-07-11T00:00:00Z",
+		},
+	}
+	server := NewServer(config.Default(), store, nil, nil, nil, nil, actions)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/jobs/issue-impl/runtime", nil)
+	getRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/jobs/:id/runtime status = %d, want %d", getRec.Code, http.StatusOK)
+	}
+
+	var status domain.RuntimeStatus
+	if err := json.Unmarshal(getRec.Body.Bytes(), &status); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if status.Command != "npm run dev" {
+		t.Fatalf("command = %q, want npm run dev", status.Command)
+	}
+
+	startReq := httptest.NewRequest(http.MethodPost, "/api/jobs/issue-impl/runtime", bytes.NewBufferString(`{"action":"start"}`))
+	startRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(startRec, startReq)
+	if startRec.Code != http.StatusOK {
+		t.Fatalf("POST /api/jobs/:id/runtime start status = %d, want %d", startRec.Code, http.StatusOK)
+	}
+	if actions.startCalls != 1 {
+		t.Fatalf("start calls = %d, want 1", actions.startCalls)
+	}
+	if actions.lastJobID != "issue-impl" {
+		t.Fatalf("start job id = %q, want issue-impl", actions.lastJobID)
+	}
+
+	logsReq := httptest.NewRequest(http.MethodGet, "/api/jobs/issue-impl/runtime/logs", nil)
+	logsRec := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(logsRec, logsReq)
+	if logsRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/jobs/:id/runtime/logs status = %d, want %d", logsRec.Code, http.StatusOK)
+	}
+	var logs domain.RuntimeLogResponse
+	if err := json.Unmarshal(logsRec.Body.Bytes(), &logs); err != nil {
+		t.Fatalf("json.Unmarshal() logs error = %v", err)
+	}
+	if logs.Content != "startup ready" {
+		t.Fatalf("logs content = %q, want startup ready", logs.Content)
 	}
 }
 
@@ -237,7 +308,7 @@ func TestArtifactRequestChangesAPI(t *testing.T) {
 			Title:      "review target",
 		},
 	}
-	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil, nil)
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil, nil, nil)
 
 	body := bytes.NewBufferString(`{"comment":"追加でここも修正"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/jobs/pr-12/artifact/request-changes", body)
@@ -262,7 +333,7 @@ func TestArtifactUpdateAPI(t *testing.T) {
 			Title:      "design target",
 		},
 	}
-	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil, nil)
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil, nil, nil)
 
 	body := bytes.NewBufferString(`{"content":"edited artifact"}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/jobs/issue-14/artifact/content", body)
@@ -295,7 +366,7 @@ func TestJobSourceDiffAPI(t *testing.T) {
 			Title:      "implementation target",
 		},
 	}
-	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil, nil)
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/jobs/issue-102/diff", nil)
 	rec := httptest.NewRecorder()
@@ -362,7 +433,7 @@ func (a *testArtifactActions) RerunArtifact(context.Context, string, string) (do
 
 func TestSkillsAPI(t *testing.T) {
 	actions := &testSkillActions{statuses: []domain.SkillStatus{{Purpose: domain.SkillPurposeIssueDesign, Name: "design-from-issue"}}}
-	server := NewServer(config.Default(), nil, nil, nil, nil, nil, actions)
+	server := NewServer(config.Default(), nil, nil, nil, nil, nil, nil, actions)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
 	getRec := httptest.NewRecorder()
@@ -400,7 +471,7 @@ func TestApproveArtifactReturnsConflictStatusForRebaseErrors(t *testing.T) {
 	actions := &testArtifactActions{
 		approveErr: errors.New("rebase remote branch before push: could not apply e215b54"),
 	}
-	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil)
+	server := NewServer(config.Default(), newTestJobStore(filepath.Join(t.TempDir(), "jobs.json")), nil, actions, nil, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/jobs/issue-1/artifact", bytes.NewBufferString(`{"comment":"ok"}`))
 	rec := httptest.NewRecorder()
@@ -413,6 +484,42 @@ func TestApproveArtifactReturnsConflictStatusForRebaseErrors(t *testing.T) {
 type testSkillActions struct {
 	statuses      []domain.SkillStatus
 	generateCalls int
+}
+
+type testRuntimeActions struct {
+	status      domain.RuntimeStatus
+	logs        domain.RuntimeLogResponse
+	startCalls  int
+	stopCalls   int
+	statusCalls int
+	logCalls    int
+	lastJobID   string
+}
+
+func (a *testRuntimeActions) Status(_ context.Context, jobID string) (domain.RuntimeStatus, error) {
+	a.statusCalls++
+	a.lastJobID = jobID
+	return a.status, nil
+}
+
+func (a *testRuntimeActions) Start(_ context.Context, jobID string) (domain.RuntimeStatus, error) {
+	a.startCalls++
+	a.lastJobID = jobID
+	a.status.Running = true
+	return a.status, nil
+}
+
+func (a *testRuntimeActions) Stop(_ context.Context, jobID string) (domain.RuntimeStatus, error) {
+	a.stopCalls++
+	a.lastJobID = jobID
+	a.status.Running = false
+	return a.status, nil
+}
+
+func (a *testRuntimeActions) Logs(_ context.Context, jobID string) (domain.RuntimeLogResponse, error) {
+	a.logCalls++
+	a.lastJobID = jobID
+	return a.logs, nil
 }
 
 type testBranchResolver struct {
@@ -449,7 +556,7 @@ func TestSettingsAPI(t *testing.T) {
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-4.1"},
 		},
 	})
-	server := NewServer(config.Default(), nil, store, nil, nil, nil)
+	server := NewServer(config.Default(), nil, store, nil, nil, nil, nil)
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/settings", nil)
 	getRec := httptest.NewRecorder()
@@ -594,7 +701,7 @@ func TestJobDetailAPIIncludesBranch(t *testing.T) {
 		t.Fatalf("Upsert() error = %v", err)
 	}
 
-	server := NewServer(config.Default(), store, nil, nil, testBranchResolver{branch: "feature/pr-7"}, nil, nil)
+	server := NewServer(config.Default(), store, nil, nil, testBranchResolver{branch: "feature/pr-7"}, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
 	rec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(rec, req)
@@ -634,6 +741,7 @@ func TestJobDetailAPIIncludesIssueContext(t *testing.T) {
 		nil,
 		testBranchResolver{branch: "issue_#1"},
 		testContextLoader{content: "#1 design target\n\nDetailed description"},
+		nil,
 		nil,
 	)
 	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
@@ -693,7 +801,7 @@ func TestJobDetailAPIIncludesLogs(t *testing.T) {
 	cfg := config.Default()
 	cfg.ToolDir = dir
 	cfg.WorkDir = dir
-	server := NewServer(cfg, store, nil, nil, testBranchResolver{branch: "issue_#2"}, nil, nil)
+	server := NewServer(cfg, store, nil, nil, testBranchResolver{branch: "issue_#2"}, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
 	rec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(rec, req)
@@ -735,7 +843,7 @@ func TestJobDetailAPIEmptyBranchOnResolverError(t *testing.T) {
 		t.Fatalf("Upsert() error = %v", err)
 	}
 
-	server := NewServer(config.Default(), store, nil, nil, testBranchResolver{err: errors.New("boom")}, nil, nil)
+	server := NewServer(config.Default(), store, nil, nil, testBranchResolver{err: errors.New("boom")}, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/jobs/"+job.ID, nil)
 	rec := httptest.NewRecorder()
 	server.httpServer.Handler.ServeHTTP(rec, req)
@@ -782,7 +890,7 @@ func TestStaticAssetsAndSPAFallback(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.ToolDir = dir
-	server := NewServer(cfg, nil, nil, nil, nil, nil)
+	server := NewServer(cfg, nil, nil, nil, nil, nil, nil)
 
 	assetReq := httptest.NewRequest(http.MethodGet, "/assets/index-test.js", nil)
 	assetRec := httptest.NewRecorder()

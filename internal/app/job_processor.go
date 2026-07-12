@@ -611,76 +611,16 @@ func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, s
 	}
 	branch := renderBranchName(settings.BranchNamePattern, job.Number)
 	baseBranch := ""
+	prepareMerge := false
 	if job.Kind == domain.JobKindPRConflict {
 		var err error
 		branch, baseBranch, err = pullRequestBranches(ctx, job)
 		if err != nil {
 			return "", "", err
 		}
+		prepareMerge = true
 	}
-	worktreeBranch := branch
-	worktreePath := implementationWorktreePath(p.toolDir, job)
-	worktreeNote := ""
-	if p.toolDir != "" {
-		worktreeNote = "worktree=" + relativePathForLog(p.toolDir, worktreePath)
-	}
-	if err := os.MkdirAll(filepath.Dir(worktreePath), 0o755); err != nil {
-		return "", "", fmt.Errorf("create worktree parent: %w", err)
-	}
-	if _, err := os.Stat(filepath.Join(worktreePath, ".git")); err == nil {
-		if job.Kind == domain.JobKindPRConflict && mergeInProgressLogged(ctx, p.logger, worktreePath, worktreeNote) {
-			return worktreePath, branch, nil
-		}
-		currentBranchName, currentErr := currentBranchLogged(ctx, p.logger, worktreePath, worktreeNote)
-		if currentErr == nil && strings.TrimSpace(currentBranchName) != "" {
-			dirty, dirtyErr := gitHasChangesLogged(ctx, p.logger, worktreePath, worktreeNote)
-			if dirtyErr != nil {
-				return "", "", dirtyErr
-			}
-			if dirty {
-				if p.logger != nil {
-					p.logger.Infof("workflow reuse dirty worktree job=%s path=%s branch=%s", job.ID, worktreePath, currentBranchName)
-				}
-				return worktreePath, currentBranchName, nil
-			}
-			if err := syncBranchFromRemoteLogged(ctx, p.logger, worktreePath, worktreeNote, currentBranchName); err != nil {
-				return "", "", err
-			}
-			if job.Kind == domain.JobKindPRConflict {
-				if err := prepareConflictMergeLogged(ctx, p.logger, worktreePath, worktreeNote, baseBranch); err != nil {
-					return "", "", err
-				}
-			}
-			return worktreePath, currentBranchName, nil
-		}
-		if err := syncBranchFromRemoteLogged(ctx, p.logger, worktreePath, worktreeNote, worktreeBranch); err != nil {
-			return "", "", err
-		}
-		return worktreePath, worktreeBranch, nil
-	}
-	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
-		if pruneErr := runGitLogged(ctx, p.logger, p.baseDir, "", "worktree", "prune"); pruneErr != nil {
-			return "", "", fmt.Errorf("prune stale worktrees: %w", pruneErr)
-		}
-	}
-	if err := addImplementationWorktreeLogged(ctx, p.logger, p.baseDir, worktreeBranch, worktreePath); err != nil {
-		if !strings.Contains(err.Error(), "already used by worktree") {
-			return "", "", fmt.Errorf("create worktree: %w", err)
-		}
-		worktreeBranch = implementationWorktreeBranchName(branch, job)
-		if retryErr := addImplementationWorktreeLogged(ctx, p.logger, p.baseDir, worktreeBranch, worktreePath); retryErr != nil {
-			return "", "", fmt.Errorf("create worktree: %w", retryErr)
-		}
-	}
-	if err := syncBranchFromRemoteLogged(ctx, p.logger, worktreePath, worktreeNote, worktreeBranch); err != nil {
-		return "", "", err
-	}
-	if job.Kind == domain.JobKindPRConflict {
-		if err := prepareConflictMergeLogged(ctx, p.logger, worktreePath, worktreeNote, baseBranch); err != nil {
-			return "", "", err
-		}
-	}
-	return worktreePath, worktreeBranch, nil
+	return ensureJobWorktree(ctx, p.baseDir, p.toolDir, p.logger, job, branch, baseBranch, prepareMerge)
 }
 
 func pullRequestBranches(ctx context.Context, job domain.Job) (string, string, error) {

@@ -10,6 +10,8 @@ const settingsSuccessMessage = ref('')
 const settingsForm = ref({
   repository: '',
   aiProvider: 'codex' as AIProvider,
+  startupCommand: '',
+  residentMode: false,
   pollIntervalSeconds: 120,
   jobConcurrency: 4,
   implementationLoopCount: 3,
@@ -137,6 +139,8 @@ function settingsToForm(settings: WatchSettings) {
   const githubCopilotModel = settings.models?.githubCopilot
   settingsForm.value.repository = settings.repository ?? ''
   settingsForm.value.aiProvider = settings.aiProvider ?? 'codex'
+  settingsForm.value.startupCommand = settings.startupCommand?.trim() ?? ''
+  settingsForm.value.residentMode = settings.residentMode ?? false
   settingsForm.value.pollIntervalSeconds = settings.pollIntervalSeconds ?? 120
   settingsForm.value.jobConcurrency = settings.jobConcurrency ?? 4
   settingsForm.value.implementationLoopCount = settings.implementationLoopCount ?? 3
@@ -178,6 +182,8 @@ function formToSettings(): WatchSettings {
   return {
     repository: settingsForm.value.repository.trim(),
     aiProvider: settingsForm.value.aiProvider,
+    startupCommand: settingsForm.value.startupCommand.trim(),
+    residentMode: settingsForm.value.residentMode,
     pollIntervalSeconds:
       Number.isFinite(settingsForm.value.pollIntervalSeconds) && settingsForm.value.pollIntervalSeconds > 0
         ? Math.floor(settingsForm.value.pollIntervalSeconds)
@@ -382,6 +388,26 @@ defineExpose({
   </div>
 
   <div class="form settings-grid">
+    <label class="field field--full">
+      <span>起動コマンド</span>
+      <textarea
+        v-model="settingsForm.startupCommand"
+        class="control"
+        rows="4"
+        placeholder='cd /d ".\tests\mock-app"\nnpm run dev'
+      ></textarea>
+      <span class="field-note">起動ボタンで実行するコマンド。複数行で指定でき、`base_dir` で実行される。</span>
+    </label>
+
+    <div class="field field--full settings-section__toggle-row">
+      <span>常駐モード</span>
+      <label class="settings-section__toggle">
+        <input v-model="settingsForm.residentMode" type="checkbox" />
+        <span>有効にする</span>
+      </label>
+      <span class="field-note">ON の場合は起動中プロセスを常駐対象として扱い、停止ボタンで終了できます。</span>
+    </div>
+
     <label class="field field--full">
       <span>ジョブ多重度</span>
       <input v-model.number="settingsForm.jobConcurrency" class="control" type="number" min="1" step="1" />

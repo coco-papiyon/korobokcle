@@ -72,6 +72,8 @@ foreach ($artifactDir in $artifactDirs) {
 $settings = @{
   repository = "mock-owner/mock-repo"
   aiProvider = "codex"
+  startupCommand = "..\..\..\..\start_mock_app.bat"
+  residentMode = $true
   pollIntervalSeconds = 3600
   baseBranch = "main"
   branchNamePattern = "issue_#<issueNumber>"
@@ -586,4 +588,3 @@ summary: $verificationSummary
 }
 
 Write-Host "Test data created: $rootPath"
-Write-Host "Run: go run ./cmd/korobokcle --tool-dir . --base-dir tests --work-dir tests --mock-mode"

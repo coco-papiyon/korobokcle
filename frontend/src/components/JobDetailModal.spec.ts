@@ -56,6 +56,7 @@ describe('JobDetailModal', () => {
     const openSourceDiff = vi.fn()
     const openEditView = vi.fn()
     const showLogs = vi.fn()
+    const openRuntimeView = vi.fn()
     const wrapper = mount(JobDetailModal, {
       props: {
         jobId: 'job-1',
@@ -64,17 +65,19 @@ describe('JobDetailModal', () => {
       global: {
         stubs: {
           JobDetailPanel: {
-            emits: ['source-diff-availability', 'artifact-edit-availability'],
+            emits: ['source-diff-availability', 'artifact-edit-availability', 'runtime-availability'],
             setup(_, { expose, emit }) {
               expose({
-              openChatView: showChat,
-              openSourceDiff,
-              openEditView,
-              openLogsView: showLogs,
+                openChatView: showChat,
+                openSourceDiff,
+                openEditView,
+                openLogsView: showLogs,
+                openRuntimeView,
               })
               onMounted(() => {
                 emit('source-diff-availability', true)
                 emit('artifact-edit-availability', true)
+                emit('runtime-availability', true)
               })
               return () => h('div', { class: 'job-detail-panel-stub' })
             },
@@ -85,7 +88,7 @@ describe('JobDetailModal', () => {
     await flushPromises()
 
     const buttons = wrapper.findAll('.modal-dialog__header button')
-    expect(buttons.map((button) => button.text())).toEqual(['チャット', '差分確認', '編集', 'ログ', '閉じる'])
+    expect(buttons.map((button) => button.text())).toEqual(['チャット', '差分確認', '編集', '動作確認', 'ログ', '閉じる'])
     expect(showChat).toHaveBeenCalledTimes(1)
 
     expect(buttons[0].classes()).toContain('modal-dialog__action--active')
@@ -100,6 +103,10 @@ describe('JobDetailModal', () => {
     await buttons[3].trigger('click')
     await flushPromises()
     expect(wrapper.findAll('.modal-dialog__header button')[3].classes()).toContain('modal-dialog__action--active')
+    expect(openRuntimeView).toHaveBeenCalledTimes(1)
+    await buttons[4].trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.modal-dialog__header button')[4].classes()).toContain('modal-dialog__action--active')
     expect(showLogs).toHaveBeenCalledTimes(1)
     await buttons[0].trigger('click')
     await flushPromises()

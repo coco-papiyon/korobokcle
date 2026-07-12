@@ -103,6 +103,7 @@ func Run(ctx context.Context, opts Options) error {
 	if err := manager.Start(ctx); err != nil {
 		return err
 	}
+	runtimeController := NewRuntimeController(cfg.BaseDir, cfg.WorkDir, store, settingsStore, logger)
 
 	var source JobSource = NewGitHubSource(settingsStore, cfg.Repository, logger)
 	if opts.MockMode {
@@ -128,7 +129,7 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}()
 
-	srv := web.NewServer(cfg, store, settingsStore, artifactActions, branchResolver, detailLoader, skillGenerator)
+	srv := web.NewServer(cfg, store, settingsStore, artifactActions, branchResolver, detailLoader, runtimeController, skillGenerator)
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- srv.ListenAndServe()

@@ -9,13 +9,22 @@
 /config/
 /state/
 /static/
-/tests/
 
 frontend/node_modules/
 frontend/dist/
 frontend/.npm-cache/
 frontend/.vite-dist-temp/
 frontend/coverage
+
+
+/tests/.workspace/
+/tests/config/
+/tests/db/
+/tests/logs/
+/tests/prompt/
+/tests/state/
+/tests/static/
+/tests/workspace/
 
 *.exe
 /korobokcle

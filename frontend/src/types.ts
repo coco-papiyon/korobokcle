@@ -78,6 +78,8 @@ export type AIModels = {
 export type WatchSettings = {
   repository: string
   aiProvider: AIProvider
+  startupCommand?: string
+  residentMode?: boolean
   pollIntervalSeconds: number
   jobConcurrency: number
   implementationLoopCount: number
@@ -92,6 +94,25 @@ export type WatchSettings = {
   models: AIModels
   issue: SearchCondition
   pullRequest: SearchCondition
+}
+
+export type RuntimeStatus = {
+  running: boolean
+  pid?: number
+  command?: string
+  residentMode?: boolean
+  workingDir?: string
+  startedAt?: string
+  stoppedAt?: string
+  exitCode?: number | null
+  error?: string
+  logPath: string
+}
+
+export type RuntimeLogResponse = {
+  content: string
+  path: string
+  updatedAt?: string
 }
 
 export type SkillStatus = {

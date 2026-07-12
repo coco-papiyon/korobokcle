@@ -72,6 +72,8 @@ type SearchCondition struct {
 type WatchSettings struct {
 	Repository              string          `json:"repository"`
 	AIProvider              AIProvider      `json:"aiProvider,omitempty"`
+	StartupCommand          string          `json:"startupCommand,omitempty"`
+	ResidentMode            bool            `json:"residentMode,omitempty"`
 	PollIntervalSeconds     int             `json:"pollIntervalSeconds,omitempty"`
 	JobConcurrency          int             `json:"jobConcurrency,omitempty"`
 	ImplementationLoopCount int             `json:"implementationLoopCount,omitempty"`
@@ -103,6 +105,9 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 	if !settings.AIProvider.IsValid() {
 		settings.AIProvider = AIProviderCodex
 	}
+	settings.StartupCommand = strings.TrimSpace(settings.StartupCommand)
+	settings.StartupCommand = strings.ReplaceAll(settings.StartupCommand, "\r\n", "\n")
+	settings.StartupCommand = strings.ReplaceAll(settings.StartupCommand, "\r", "\n")
 	if settings.PollIntervalSeconds <= 0 {
 		settings.PollIntervalSeconds = 120
 	}

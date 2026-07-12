@@ -51,6 +51,13 @@ type SkillActions interface {
 	GenerateSkills(context.Context, domain.SkillGenerationRequest) (domain.SkillGenerationResult, error)
 }
 
+type RuntimeActions interface {
+	Status(context.Context, string) (domain.RuntimeStatus, error)
+	Start(context.Context, string) (domain.RuntimeStatus, error)
+	Stop(context.Context, string) (domain.RuntimeStatus, error)
+	Logs(context.Context, string) (domain.RuntimeLogResponse, error)
+}
+
 type DesignArtifact struct {
 	Content string `json:"content"`
 	Path    string `json:"path"`
@@ -88,10 +95,11 @@ type Server struct {
 	httpServer      *http.Server
 	artifactActions ArtifactActions
 	skillActions    SkillActions
+	runtimeActions  RuntimeActions
 	detailLoader    JobContextLoader
 }
 
-func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, artifactActions ArtifactActions, branchResolver JobBranchResolver, detailLoader JobContextLoader, optionalSkillActions ...SkillActions) *Server {
+func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, artifactActions ArtifactActions, branchResolver JobBranchResolver, detailLoader JobContextLoader, runtimeActions RuntimeActions, optionalSkillActions ...SkillActions) *Server {
 	mux := http.NewServeMux()
 	var skillActions SkillActions
 	if len(optionalSkillActions) > 0 {
@@ -259,6 +267,79 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 					return
 				}
 				_ = json.NewEncoder(w).Encode(diff)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
+		if strings.HasSuffix(id, "/runtime/logs") {
+			id = strings.TrimSuffix(id, "/runtime/logs")
+			if id == "" {
+				http.NotFound(w, r)
+				return
+			}
+			if runtimeActions == nil {
+				http.Error(w, "runtime actions not configured", http.StatusServiceUnavailable)
+				return
+			}
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			logs, err := runtimeActions.Logs(r.Context(), id)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(logs)
+			return
+		}
+		if strings.HasSuffix(id, "/runtime") {
+			id = strings.TrimSuffix(id, "/runtime")
+			if id == "" {
+				http.NotFound(w, r)
+				return
+			}
+			if runtimeActions == nil {
+				http.Error(w, "runtime actions not configured", http.StatusServiceUnavailable)
+				return
+			}
+			switch r.Method {
+			case http.MethodGet:
+				status, err := runtimeActions.Status(r.Context(), id)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(status)
+			case http.MethodPost:
+				var req struct {
+					Action string `json:"action"`
+				}
+				if r.ContentLength > 0 {
+					if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				switch strings.ToLower(strings.TrimSpace(req.Action)) {
+				case "", "start":
+					status, err := runtimeActions.Start(r.Context(), id)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(status)
+				case "stop":
+					status, err := runtimeActions.Stop(r.Context(), id)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					_ = json.NewEncoder(w).Encode(status)
+				default:
+					http.Error(w, "unsupported action", http.StatusBadRequest)
+				}
 			default:
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			}
@@ -538,6 +619,7 @@ func NewServer(cfg config.Config, store JobStore, settingsStore SettingsStore, a
 		},
 		artifactActions: artifactActions,
 		skillActions:    skillActions,
+		runtimeActions:  runtimeActions,
 		detailLoader:    detailLoader,
 	}
 }

@@ -16,7 +16,8 @@ const emit = defineEmits<{
 const detailPanel = ref<InstanceType<typeof JobDetailPanel> | null>(null)
 const sourceDiffAvailable = ref(false)
 const artifactEditAvailable = ref(false)
-const activeView = ref<'chat' | 'diff' | 'edit' | 'logs'>('chat')
+const runtimeAvailable = ref(false)
+const activeView = ref<'chat' | 'diff' | 'edit' | 'logs' | 'runtime'>('chat')
 
 function close() {
   emit('close')
@@ -48,6 +49,14 @@ function handleArtifactEditAvailability(available: boolean) {
   }
 }
 
+function handleRuntimeAvailability(available: boolean) {
+  runtimeAvailable.value = available
+  if (!available && activeView.value === 'runtime') {
+    activeView.value = 'chat'
+    detailPanel.value?.openChatView()
+  }
+}
+
 function showChat() {
   activeView.value = 'chat'
   detailPanel.value?.openChatView()
@@ -66,6 +75,11 @@ function openEditView() {
 function showLogs() {
   activeView.value = 'logs'
   detailPanel.value?.openLogsView()
+}
+
+function showRuntime() {
+  activeView.value = 'runtime'
+  detailPanel.value?.openRuntimeView()
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -121,6 +135,15 @@ onBeforeUnmount(() => {
             編集
           </button>
           <button
+            v-if="runtimeAvailable"
+            class="button button--ghost modal-dialog__action"
+            :class="{ 'modal-dialog__action--active': activeView === 'runtime' }"
+            type="button"
+            @click="showRuntime"
+          >
+            動作確認
+          </button>
+          <button
             class="button button--ghost modal-dialog__action"
             :class="{ 'modal-dialog__action--active': activeView === 'logs' }"
             type="button"
@@ -145,6 +168,7 @@ onBeforeUnmount(() => {
           @deleted="handleDeleted"
           @source-diff-availability="handleSourceDiffAvailability"
           @artifact-edit-availability="handleArtifactEditAvailability"
+          @runtime-availability="handleRuntimeAvailability"
         />
       </div>
     </section>

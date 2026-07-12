@@ -46,6 +46,8 @@ function baseSettings(overrides: JsonBody = {}) {
   return {
     repository: 'owner/repository',
     aiProvider: 'codex',
+    startupCommand: 'npm run dev',
+    residentMode: true,
     pollIntervalSeconds: 120,
     jobConcurrency: 4,
     implementationLoopCount: 3,
@@ -132,6 +134,7 @@ describe('SettingsPanel', () => {
     await flushPromises()
 
     const repoInput = wrapper.get('input[placeholder="owner/repository"]')
+    const startupCommandInput = wrapper.get('textarea[placeholder^="cd /d"]')
     const numberInputs = wrapper.findAll('input[type="number"]')
     const concurrencyInput = numberInputs[0]
     const implementationLoopInput = numberInputs[1]
@@ -155,10 +158,12 @@ describe('SettingsPanel', () => {
 
     expect(headings).toEqual(['プロバイダー設定', '実行設定', '監視設定'])
     expect(roleHeadings).toEqual(['実装者', '検証者', 'レビューア'])
-    expect(conditionToggles).toHaveLength(2)
+    expect(conditionToggles).toHaveLength(3)
     expect((conditionToggles[0].element as HTMLInputElement).checked).toBe(true)
     expect((conditionToggles[1].element as HTMLInputElement).checked).toBe(true)
+    expect((conditionToggles[2].element as HTMLInputElement).checked).toBe(true)
     expect(repoInput.element).toHaveProperty('value', 'owner/repository')
+    expect(startupCommandInput.element).toHaveProperty('value', 'cd /d ".\\tests\\mock-app"\nnpm run dev')
     expect(pollInput.element).toHaveProperty('value', '120')
     expect(concurrencyInput.element).toHaveProperty('value', '4')
     expect(implementationLoopInput.element).toHaveProperty('value', '3')
@@ -181,9 +186,11 @@ describe('SettingsPanel', () => {
     expect(selects[4].element).toHaveProperty('value', '')
     expect(selects[5].element).toHaveProperty('value', 'default')
     const textareas = wrapper.findAll('textarea')
-    expect(textareas[0].element).toHaveProperty('value', 'npm ci\ngo test ./...')
+    expect(textareas[0].element).toHaveProperty('value', 'cd /d ".\\tests\\mock-app"\nnpm run dev')
+    expect(textareas[1].element).toHaveProperty('value', 'npm ci\ngo test ./...')
 
     await repoInput.setValue(' owner/new-repository ')
+    await startupCommandInput.setValue(' cd /d ".\\tests\\mock-app"\nnpm run dev -- --host ')
     await pollInput.setValue('59.7')
     await concurrencyInput.setValue('6')
     await implementationLoopInput.setValue('5')
@@ -194,7 +201,7 @@ describe('SettingsPanel', () => {
     await selects[3].setValue('gpt-5.4-mini')
     await selects[4].setValue('github_copilot')
     await selects[5].setValue('claude-opus-4.6')
-    await conditionToggles[0].setChecked(false)
+    await conditionToggles[1].setChecked(false)
     await textareas[0].setValue('npm ci\nnpm test\n')
     await selects[0].setValue('github_copilot')
     await selects[1].setValue('claude-opus-4.6')
@@ -215,6 +222,8 @@ describe('SettingsPanel', () => {
     expect(JSON.parse(request[1]?.body as string)).toEqual({
       repository: 'owner/new-repository',
       aiProvider: 'github_copilot',
+      startupCommand: 'cd /d ".\\tests\\mock-app"\nnpm run dev -- --host',
+      residentMode: true,
       pollIntervalSeconds: 59,
       jobConcurrency: 6,
       implementationLoopCount: 5,

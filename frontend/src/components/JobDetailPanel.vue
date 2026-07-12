@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch, onBeforeUnmount, onMounted } from 'vue'
 import MarkdownIt from 'markdown-it'
 import { html as diff2Html } from 'diff2html'
 import 'diff2html/bundles/css/diff2html.min.css'
+import RuntimePanel from './RuntimePanel.vue'
 import type { Job, JobArtifact, JobDetailResponse, JobLogGroup, JobSourceDiff } from '../types'
 import { jobStateChipClass, jobStateLabel as formatJobStateLabel } from '../utils/jobState'
 import { formatJobTimestampValue } from '../utils/jobTime'
@@ -39,7 +40,7 @@ const sourceDiffLoading = ref(false)
 const sourceDiffError = ref('')
 const sourceDiff = ref<JobSourceDiff | null>(null)
 const sourceDiffJobId = ref('')
-const detailViewMode = ref<'chat' | 'detail' | 'diff' | 'logs' | 'edit'>('chat')
+const detailViewMode = ref<'chat' | 'detail' | 'diff' | 'logs' | 'edit' | 'runtime'>('chat')
 const artifactUserComment = ref('')
 const chatDraftMessages = ref<ChatMessage[]>([])
 const artifactActionLoading = ref(false)
@@ -111,6 +112,7 @@ const emit = defineEmits<{
   (event: 'deleted', jobId: string): void
   (event: 'source-diff-availability', available: boolean): void
   (event: 'artifact-edit-availability', available: boolean): void
+  (event: 'runtime-availability', available: boolean): void
 }>()
 
 const inspectableStates = new Set([
@@ -323,6 +325,25 @@ function canEditArtifact(job: Job | null) {
     return job.state === 'design_ready'
   }
   return job.kind === 'pr_feedback' && job.state === 'review_fix_design_ready'
+}
+
+function canOpenRuntime(job: Job | null) {
+  if (!job) {
+    return false
+  }
+  if (job.kind === 'issue_implementation') {
+    return ['implementation_ready', 'implementation_approved', 'pr_created', 'completed'].includes(job.state)
+  }
+  if (job.kind === 'pr_review') {
+    return ['review_ready', 'review_approved', 'completed'].includes(job.state)
+  }
+  if (job.kind === 'pr_feedback') {
+    return ['review_fix_implementation_ready', 'review_fix_implementation_approved', 'review_fixed', 'completed'].includes(job.state)
+  }
+  if (job.kind === 'pr_conflict') {
+    return ['pr_conflict_ready', 'pr_conflict_resolved', 'completed'].includes(job.state)
+  }
+  return false
 }
 
 function jobStateClass(state: string) {
@@ -652,6 +673,7 @@ async function loadJobDetail(id: string, options: { refreshArtifact?: boolean } 
     chatDraftMessages.value = []
     emit('source-diff-availability', false)
     emit('artifact-edit-availability', false)
+    emit('runtime-availability', false)
     artifactUserComment.value = ''
     return
   }
@@ -712,8 +734,12 @@ async function loadJobDetail(id: string, options: { refreshArtifact?: boolean } 
       if (!canEditArtifact(payload.job) && detailViewMode.value === 'edit') {
         detailViewMode.value = 'chat'
       }
+      if (!canOpenRuntime(payload.job) && detailViewMode.value === 'runtime') {
+        detailViewMode.value = 'chat'
+      }
       emit('source-diff-availability', canInspectSourceDiff(payload.job))
       emit('artifact-edit-availability', canEditArtifact(payload.job))
+      emit('runtime-availability', canOpenRuntime(payload.job))
     }
   } catch (err) {
     if (requestSequence === detailRequestSequence) {
@@ -746,6 +772,7 @@ async function loadJobDetail(id: string, options: { refreshArtifact?: boolean } 
       detailRevisionKey = ''
       emit('source-diff-availability', false)
       emit('artifact-edit-availability', false)
+      emit('runtime-availability', false)
       artifactUserComment.value = ''
     }
   } finally {
@@ -875,6 +902,13 @@ function openChatView() {
 
 function openLogsView() {
   detailViewMode.value = 'logs'
+}
+
+function openRuntimeView() {
+  if (!canOpenRuntime(detailJob.value)) {
+    return
+  }
+  detailViewMode.value = 'runtime'
 }
 
 async function approveArtifact() {
@@ -1084,6 +1118,7 @@ defineExpose({
   openSourceDiff,
   openLogsView,
   openEditView,
+  openRuntimeView,
   detailViewMode,
   handleChatSendMessage,
 })
@@ -1346,6 +1381,10 @@ defineExpose({
           </details>
         </div>
         <div v-else class="empty-state">ログはまだありません。</div>
+      </section>
+
+      <section v-if="detailViewMode === 'runtime'" class="detail-runtime" aria-label="動作確認">
+        <RuntimePanel :active="detailViewMode === 'runtime'" :job-id="detailJob.id" />
       </section>
 
       <section v-if="detailViewMode === 'detail' && relatedLink" class="detail-links" aria-label="関連リンク">
