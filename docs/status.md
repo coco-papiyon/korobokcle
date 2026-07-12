@@ -6,7 +6,7 @@
 
 - ドメイン定義: [`internal/domain/job.go`](../internal/domain/job.go)
 - UI 表示: [`frontend/src/utils/jobState.ts`](../frontend/src/utils/jobState.ts)
-- テストデータ: [`create_test_data.ps1`](../create_test_data.ps1)
+- テストデータ: [`tests/scripts/create-testdata/main.go`](../tests/scripts/create-testdata/main.go)
 - 画面説明: [`README.md`](../README.md), [`docs/design.md`](design.md)
 
 ## 結論
@@ -98,7 +98,7 @@
 
 ## テストデータでの使われ方
 
-`create_test_data.ps1` では、状態が個別に分かれていることを確認できるようにしている。
+`go run ./tests/scripts/create-testdata` では、状態が個別に分かれていることを確認できるようにしている。
 
 - `issue-101` は `completed`
 - `issue-102` は `completed`

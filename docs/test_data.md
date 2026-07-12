@@ -1,6 +1,6 @@
 # テストデータ一覧
 
-`create_test_data.ps1` で作成されるテストデータを、実際の出力先ごとに整理する。
+`go run ./tests/scripts/create-testdata` で作成されるテストデータを、実際の出力先ごとに整理する。
 
 ## 生成先
 
@@ -123,6 +123,6 @@
 
 ## 補足
 
-- `create_test_data.ps1` は、画面確認用に各状態を固定表示できるデータセットを作る
+- `go run ./tests/scripts/create-testdata` は、画面確認用に各状態を固定表示できるデータセットを作る
 - モックモードでは GitHub への投稿と AI 実行は行わない
 - `tests/` 配下は画面テスト用の固定データとして使う

@@ -5,7 +5,7 @@ set "SCRIPT_DIR=%~dp0"
 pushd "%SCRIPT_DIR%" || exit /b 1
 
 if not exist "mock-app\package.json" (
-  echo tests\mock-app not found. Run create_test_data.ps1 first.
+  echo tests\mock-app not found. Run go run ./tests/scripts/create-testdata first.
   popd
   exit /b 1
 )
