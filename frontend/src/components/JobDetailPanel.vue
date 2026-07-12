@@ -50,6 +50,7 @@ const chatReady = ref(false)
 const chatMessagesLoaded = ref(false)
 const chatComponentReady = ref(false)
 const chatRenderKey = ref(0)
+const chatContextExpanded = ref(false)
 const isTestMode = import.meta.env.MODE === 'test'
 const detailScrollRef = ref<HTMLElement | null>(null)
 const chatElementRef = ref<(HTMLElement & { shadowRoot?: ShadowRoot | null }) | null>(null)
@@ -146,6 +147,16 @@ const issueContextMarkdown = computed(() =>
   issueContext.value.replace(/^#(\d+)\s+/m, '# $1 '),
 )
 const issueContextHtml = computed(() => markdown.render(issueContextMarkdown.value))
+const chatContextLabel = computed(() => {
+  switch (detailJob.value?.kind) {
+    case 'issue_design':
+      return '設計を実行'
+    case 'issue_implementation':
+      return '実装を実行'
+    default:
+      return 'ジョブを実行'
+  }
+})
 const detailSubStatus = computed(() =>
   detailJob.value?.kind === 'issue_implementation' ? detailJob.value?.subStatus?.trim() ?? '' : '',
 )
@@ -235,6 +246,7 @@ const chatMessages = computed<ChatMessage[]>(() => {
 })
 const chatRoomsJson = computed(() => JSON.stringify(chatRooms.value))
 const chatMessagesJson = computed(() => JSON.stringify(chatMessages.value))
+const chatContextMessages = computed(() => chatMessages.value.filter((message) => message._id.endsWith('-context')))
 const chatMessageActionsJson = computed(() => JSON.stringify([]))
 const chatTextMessagesJson = computed(() => JSON.stringify({
     ROOMS_EMPTY: 'ジョブが選択されていません',
@@ -502,6 +514,53 @@ async function applyChatInternalStyles(attempt = 0) {
       border: 1px solid rgba(36, 59, 100, 0.08) !important;
     }
 
+    .vac-format-message-wrapper {
+      line-height: 1.2 !important;
+    }
+
+    .vac-format-message-wrapper p,
+    .vac-format-message-wrapper ul,
+    .vac-format-message-wrapper ol,
+    .vac-format-message-wrapper blockquote,
+    .vac-format-message-wrapper pre,
+    .vac-format-message-wrapper h1,
+    .vac-format-message-wrapper h2,
+    .vac-format-message-wrapper h3,
+    .vac-format-message-wrapper h4,
+    .vac-format-message-wrapper h5,
+    .vac-format-message-wrapper h6 {
+      margin-top: 0.3em !important;
+      margin-bottom: 0.2em !important;
+      line-height: 1.2 !important;
+    }
+
+    .vac-format-message-wrapper code {
+      white-space: nowrap !important;
+    }
+
+    .vac-format-message-wrapper table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+      border: 1px solid rgba(148, 163, 184, 0.45) !important;
+    }
+
+    .vac-format-message-wrapper th,
+    .vac-format-message-wrapper td {
+      padding: 0.35em 0.6em !important;
+      border: 1px solid rgba(148, 163, 184, 0.45) !important;
+      text-align: left !important;
+      vertical-align: top !important;
+    }
+
+    .vac-format-message-wrapper blockquote {
+      margin-left: 0 !important;
+      padding: 0.45em 0.75em !important;
+      border: 1px solid rgba(59, 130, 246, 0.28) !important;
+      border-left: 4px solid rgba(37, 99, 235, 0.7) !important;
+      border-radius: 0 8px 8px 0 !important;
+      background: rgba(59, 130, 246, 0.08) !important;
+    }
+
     @media only screen and (max-width: 768px) {
       .vac-message-wrapper .vac-offset-current {
         flex-basis: 88% !important;
@@ -669,6 +728,7 @@ async function loadJobDetail(id: string, options: { refreshArtifact?: boolean } 
     detailViewMode.value = 'chat'
     chatReady.value = false
     chatMessagesLoaded.value = false
+    chatContextExpanded.value = false
     detailRevisionKey = ''
     chatDraftMessages.value = []
     emit('source-diff-availability', false)
@@ -700,6 +760,7 @@ async function loadJobDetail(id: string, options: { refreshArtifact?: boolean } 
         detailRevisionKey = nextRevisionKey
         detailJob.value = payload.job
         detailBranch.value = branch
+        chatContextExpanded.value = false
         artifactUserComment.value = ''
         artifactEditContent.value = ''
         if (detailViewMode.value === 'chat') {
@@ -1202,7 +1263,17 @@ defineExpose({
             :styles="chatStylesJson"
             @fetch-messages="handleChatFetchMessages"
             @send-message="handleChatSendMessage"
-          />
+          >
+            <div v-for="message in chatContextMessages" :key="message._id" :slot="`message_${message._id}`">
+              <button class="chat-context-bubble" type="button" @click="chatContextExpanded = !chatContextExpanded">
+                <span class="chat-context-bubble__title">{{ chatContextLabel }}</span>
+                <span class="chat-context-bubble__hint">
+                  {{ chatContextExpanded ? 'Issue情報を閉じる' : 'Issue情報を表示' }}
+                </span>
+              </button>
+              <div v-if="chatContextExpanded" class="chat-context-bubble__details markdown-body" v-html="issueContextHtml"></div>
+            </div>
+          </vue-advanced-chat>
           <div v-else-if="isTestMode" class="detail-chat__fallback">
             <article
               v-for="message in chatMessages"

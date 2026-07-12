@@ -260,6 +260,7 @@ func buildJobs() []artifactJob {
 		newJob("pr-505", domain.JobKindPRFeedback, domain.StateReviewFixImplementationReady, 505, "review-fix-implementation-ready", 23, "", "", "", false),
 		newJob("pr-506", domain.JobKindPRFeedback, domain.StateReviewFixImplementationApproved, 506, "review-fix-implementation-approved", 24, "", "", "", false),
 		newJob("pr-507", domain.JobKindPRFeedback, domain.StateReviewFixed, 507, "review-fixed", 25, "", "", "", false),
+		newJob("issue-600", domain.JobKindIssueImplementation, domain.StateImplementationApproved, 600, "markdown-special-preview", 27, "", "", "", true),
 	}
 }
 
@@ -369,6 +370,8 @@ func writeArtifact(rootPath string, entry artifactJob) error {
 	switch entry.job.Number {
 	case 203:
 		content = implementationApprovedArtifactContent(entry)
+	case 600:
+		content = markdownSpecialArtifactContent(entry)
 	case 508:
 		content = awaitingUserArtifactContent(entry)
 	}
@@ -409,6 +412,7 @@ This is a %s artifact for UI testing at state: %s.
 - This artifact is generated as mock test data.
 - Use it to test approve, rerun, and request-changes UI actions.
 - It also verifies markdown rendering inside the chat view.
+- Inline code such as %c%s%c should stay on one line.
 
 ## Result
 | Item | Value |
@@ -433,7 +437,31 @@ This is a %s artifact for UI testing at state: %s.
 
 ## Remaining
 - Mock mode does not post to GitHub.
-`, entry.job.Title, entry.job.Kind, entry.job.State)
+`, entry.job.Title, entry.job.Kind, entry.job.State, '`', "npm run dev", '`')
+}
+
+func markdownSpecialArtifactContent(entry artifactJob) string {
+	return fmt.Sprintf(`# %s
+
+## Markdown 特殊記法の確認
+
+インラインコード %c%s%c は改行せずに表示されます。
+
+| 記法 | サンプル | 確認内容 |
+| --- | --- | --- |
+| シングルバッククォート | npm run dev | 1行で表示 |
+| 表形式 | Markdown table | 列と行を維持 |
+| 引用 | 確認用メッセージ | 余白を確認 |
+
+### 3連バッククォート
+
+%c%c%cbat
+echo markdown preview
+npm run dev
+%c%c%c
+
+> このレコードはMarkdown表示確認専用です。
+`, entry.job.Title, '`', "npm run dev", '`', '`', '`', '`', '`', '`', '`')
 }
 
 func awaitingUserArtifactContent(entry artifactJob) string {
