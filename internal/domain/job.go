@@ -11,6 +11,7 @@ const (
 	JobKindIssueDesign         JobKind = "issue_design"
 	JobKindIssueImplementation JobKind = "issue_implementation"
 	JobKindPRReview            JobKind = "pr_review"
+	JobKindPRAcceptance        JobKind = "pr_acceptance"
 	JobKindPRFeedback          JobKind = "pr_feedback"
 	JobKindPRConflict          JobKind = "pr_conflict"
 )
@@ -41,6 +42,9 @@ const (
 	StateReviewRunning                   JobState = "review_running"
 	StateReviewReady                     JobState = "review_ready"
 	StateReviewApproved                  JobState = "review_approved"
+	StateAcceptanceTesting               JobState = "acceptance_testing"
+	StateAcceptanceTestReady             JobState = "acceptance_test_ready"
+	StateAcceptanceTestApproved          JobState = "acceptance_test_approved"
 	StateCompleted                       JobState = "completed"
 	StateFailed                          JobState = "failed"
 )
@@ -69,6 +73,9 @@ var stateDisplayNames = map[JobState]string{
 	StateReviewRunning:                   "レビュー中",
 	StateReviewReady:                     "レビュー完了",
 	StateReviewApproved:                  "レビュー承認済み",
+	StateAcceptanceTesting:               "受入確認中",
+	StateAcceptanceTestReady:             "受入確認完了",
+	StateAcceptanceTestApproved:          "受入確認承認済み",
 	StateCompleted:                       "完了",
 	StateFailed:                          "失敗",
 }
@@ -97,6 +104,9 @@ var stateLabels = map[JobState]string{
 	StateReviewRunning:                   "state:review_running",
 	StateReviewReady:                     "state:review_ready",
 	StateReviewApproved:                  "state:review_approved",
+	StateAcceptanceTesting:               "state:acceptance_testing",
+	StateAcceptanceTestReady:             "state:acceptance_test_ready",
+	StateAcceptanceTestApproved:          "state:acceptance_test_approved",
 	StateCompleted:                       "state:completed",
 	StateFailed:                          "state:failed",
 }
@@ -196,7 +206,21 @@ var allowedTransitions = map[JobState]map[JobState]struct{}{
 		StateFailed:         {},
 	},
 	StateReviewApproved: {
-		StateFailed: {},
+		StateAcceptanceTesting: {},
+		StateFailed:            {},
+	},
+	StateAcceptanceTesting: {
+		StateAcceptanceTestReady: {},
+		StateFailed:              {},
+	},
+	StateAcceptanceTestReady: {
+		StateAcceptanceTestApproved: {},
+		StateCompleted:              {},
+		StateFailed:                 {},
+	},
+	StateAcceptanceTestApproved: {
+		StateCompleted: {},
+		StateFailed:    {},
 	},
 	StateFailed: {},
 }
@@ -268,6 +292,8 @@ func InitialStateForKind(kind JobKind) JobState {
 		return StateDesignApproved
 	case JobKindPRReview:
 		return StateReviewRunning
+	case JobKindPRAcceptance:
+		return StateReviewApproved
 	case JobKindPRFeedback:
 		return StatePRReviewComment
 	case JobKindPRConflict:
@@ -285,6 +311,8 @@ func RunningStateForKind(kind JobKind, state JobState) JobState {
 		return StateImplementationRunning
 	case JobKindPRReview:
 		return StateReviewRunning
+	case JobKindPRAcceptance:
+		return StateAcceptanceTesting
 	case JobKindPRFeedback:
 		switch state {
 		case StateReviewFixDesignApproved, StateReviewFixImplementationReady, StateReviewFixImplementationRunning, StateReviewFixImplementationApproved:
@@ -309,6 +337,8 @@ func ReadyStateForKind(kind JobKind, state JobState) JobState {
 		return StateImplementationReady
 	case JobKindPRReview:
 		return StateReviewReady
+	case JobKindPRAcceptance:
+		return StateAcceptanceTestReady
 	case JobKindPRFeedback:
 		switch state {
 		case StateReviewFixDesignApproved, StateReviewFixImplementationRunning, StateReviewFixImplementationReady, StateReviewFixImplementationApproved:
@@ -333,6 +363,8 @@ func RunningStateForReadyState(state JobState) JobState {
 		return StateImplementationRunning
 	case StateReviewReady:
 		return StateReviewRunning
+	case StateAcceptanceTestReady:
+		return StateAcceptanceTesting
 	case StateReviewFixDesignReady:
 		return StateReviewFixDesignRunning
 	case StateReviewFixImplementationReady:
@@ -352,6 +384,8 @@ func ApprovedStateForReadyState(state JobState) JobState {
 		return StateImplementationApproved
 	case StateReviewReady:
 		return StateReviewApproved
+	case StateAcceptanceTestReady:
+		return StateAcceptanceTestApproved
 	case StateReviewFixDesignReady:
 		return StateReviewFixDesignApproved
 	case StateReviewFixImplementationReady:
@@ -365,7 +399,7 @@ func ApprovedStateForReadyState(state JobState) JobState {
 
 func ResultCommentTarget(kind JobKind) string {
 	switch kind {
-	case JobKindPRReview, JobKindPRFeedback, JobKindPRConflict:
+	case JobKindPRReview, JobKindPRAcceptance, JobKindPRFeedback, JobKindPRConflict:
 		return "pr"
 	default:
 		return "issue"

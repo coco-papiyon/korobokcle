@@ -226,6 +226,10 @@ func classifyPullRequest(record ghPRRecord) (domain.JobKind, domain.JobState) {
 	switch {
 	case isConflictState(record.Mergeable, record.MergeStateStatus):
 		return domain.JobKindPRConflict, domain.StatePRConflict
+	case hasLabel(labels, "state:acceptance_test_approved"):
+		return domain.JobKindPRAcceptance, domain.StateCompleted
+	case hasLabel(labels, "state:review_approved"):
+		return domain.JobKindPRAcceptance, domain.StateReviewApproved
 	case hasLabel(labels, "state:review_fixed"):
 		return domain.JobKindPRReview, domain.StateReviewRunning
 	case hasLabel(labels, "state:review_fix_implementation_approved"):

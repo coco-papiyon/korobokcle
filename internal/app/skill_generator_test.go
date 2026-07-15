@@ -429,6 +429,16 @@ description: Review a pull request with an emphasis on defects and missing tests
 ## 必須出力形式
 指摘事項、確認事項、概要の順で出力する。
 `,
+		"acceptance-test": `---
+name: acceptance-test
+description: Issueの受入基準に基づく受入確認を行う。
+---
+<!-- generated-by: korobokcle -->
+<!-- korobokcle-purpose: pr_acceptance -->
+## 必須出力形式
+判定結果、確認内容、受入確認結果、残課題の順で出力する。
+動作確認が必要な場合はPlaywrightを使用し、動作確認が不要な場合は理由を記載する。
+`,
 		"design-review-fix": `---
 name: design-review-fix
 description: Rework a design based on review feedback.

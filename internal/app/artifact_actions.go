@@ -187,7 +187,21 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
 			return domain.Job{}, err
 		}
+		latestLabels := []string{domain.MustLabel(domain.StateReviewApproved)}
+		if err := s.updateTargetLabels(ctx, job, latestLabels, stateLabelsExcept(latestLabels...)); err != nil {
+			return domain.Job{}, err
+		}
+		job.Kind = domain.JobKindPRAcceptance
 		job = markJobState(job, domain.StateReviewApproved)
+	} else if job.Kind == domain.JobKindPRAcceptance {
+		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
+			return domain.Job{}, err
+		}
+		latestLabels := []string{domain.MustLabel(domain.StateAcceptanceTestApproved)}
+		if err := s.updateTargetLabels(ctx, job, latestLabels, stateLabelsExcept(latestLabels...)); err != nil {
+			return domain.Job{}, err
+		}
+		job = markJobState(job, domain.StateAcceptanceTestApproved)
 	} else {
 		if err := s.postTargetComment(ctx, job, artifact.Content, userComment); err != nil {
 			return domain.Job{}, err
@@ -206,7 +220,7 @@ func (s *ArtifactActionService) ApproveArtifact(ctx context.Context, id, userCom
 			return domain.Job{}, err
 		}
 	}
-	if job.Kind != domain.JobKindPRReview {
+	if job.State != domain.StateReviewApproved {
 		job = markJobState(job, domain.StateCompleted)
 	}
 	if err := s.completeApproval(ctx, job); err != nil {
@@ -223,7 +237,8 @@ func (s *ArtifactActionService) RequestChanges(ctx context.Context, id, userComm
 	if !ok {
 		return domain.Job{}, fmt.Errorf("job not found")
 	}
-	if job.Kind != domain.JobKindPRReview || job.State != domain.StateReviewReady {
+	if (job.Kind != domain.JobKindPRReview || job.State != domain.StateReviewReady) &&
+		(job.Kind != domain.JobKindPRAcceptance || job.State != domain.StateAcceptanceTestReady) {
 		return domain.Job{}, fmt.Errorf("job is not ready for review feedback")
 	}
 
@@ -765,6 +780,7 @@ func isReadyState(state domain.JobState) bool {
 	case domain.StateDesignReady,
 		domain.StateImplementationReady,
 		domain.StateReviewReady,
+		domain.StateAcceptanceTestReady,
 		domain.StateReviewFixDesignReady,
 		domain.StateReviewFixImplementationReady,
 		domain.StatePRConflictReady:
@@ -802,6 +818,8 @@ func resultTitle(job domain.Job) string {
 		return "実装結果"
 	case domain.JobKindPRReview:
 		return "レビュー結果"
+	case domain.JobKindPRAcceptance:
+		return "受入確認結果"
 	case domain.JobKindPRFeedback:
 		return "レビュー指摘修正結果"
 	case domain.JobKindPRConflict:

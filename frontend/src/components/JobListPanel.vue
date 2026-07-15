@@ -25,6 +25,7 @@ const kindFilterDefinitions = [
   { value: 'issue_design', label: 'Issue 設計' },
   { value: 'issue_implementation', label: 'Issue 実装' },
   { value: 'pr_review', label: 'PR レビュー' },
+  { value: 'pr_acceptance', label: 'PR 受入確認' },
   { value: 'pr_feedback', label: 'PR 指摘対応' },
   { value: 'pr_conflict', label: 'PR コンフリクト' },
 ] as const

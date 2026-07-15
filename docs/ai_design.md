@@ -89,6 +89,7 @@
 | 実装 | 実装者 | `implement-from-design` | 設計書をもとに、worktree 上でソース修正と実装確認を行う |
 | 実装検証 | 検証者 | `verifier-from-design` | 設計の受入基準とテスト計画に沿って、実装結果の OK / NG を判定する |
 | PR レビュー | レビューア | `review-pull-request` | PR 差分と設計・実装結果を照合し、指摘事項と確認事項を整理する |
+| 受入確認 | 検証者 | `acceptance-test` | Issueの受入基準から動作確認の要否を判断し、必要な場合はアプリを起動してPlaywrightで確認する |
 | レビュー指摘対応の実装 | 実装者 | `review-comment-fix` | レビューコメントを反映して再実装する |
 | PR コンフリクト解消 | 実装者 | `resolve-pr-conflicts` | head/base の競合を解消し、両方の意図を保つ |
 

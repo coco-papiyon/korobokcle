@@ -39,6 +39,8 @@ func TestClassifyPullRequest(t *testing.T) {
 		wantS            domain.JobState
 	}{
 		{name: "default", labels: nil, wantK: domain.JobKindPRReview, wantS: domain.StateReviewRunning},
+		{name: "review approved", labels: []string{"state:review_approved"}, wantK: domain.JobKindPRAcceptance, wantS: domain.StateReviewApproved},
+		{name: "acceptance approved", labels: []string{"state:acceptance_test_approved"}, wantK: domain.JobKindPRAcceptance, wantS: domain.StateCompleted},
 		{name: "review fixed", labels: []string{"state:review_fixed"}, wantK: domain.JobKindPRReview, wantS: domain.StateReviewRunning},
 		{name: "review comment", labels: []string{"state:pr_review_comment"}, wantK: domain.JobKindPRFeedback, wantS: domain.StatePRReviewComment},
 		{name: "review fix implementation running", labels: []string{"state:review_fix_implementation_running"}, wantK: domain.JobKindPRFeedback, wantS: domain.StateReviewFixImplementationRunning},

@@ -332,6 +332,26 @@ func (s *MockArtifactActionService) mockSourceDiff(ctx context.Context, job doma
 }
 
 func (s *MockArtifactActionService) ApproveArtifact(ctx context.Context, id, userComment string) (domain.Job, error) {
+	job, ok, err := s.store.Get(ctx, id)
+	if err != nil || !ok {
+		if err == nil {
+			err = fmt.Errorf("job not found")
+		}
+		return domain.Job{}, err
+	}
+	if job.Kind == domain.JobKindPRReview && job.State == domain.StateReviewReady {
+		job.Kind = domain.JobKindPRAcceptance
+		job = markJobState(job, domain.StateReviewApproved)
+		if err := s.store.Upsert(ctx, job); err != nil {
+			return domain.Job{}, err
+		}
+		if s.manager != nil {
+			if err := s.manager.Submit(job); err != nil {
+				return domain.Job{}, err
+			}
+		}
+		return job, nil
+	}
 	return s.completeReadyJob(ctx, id)
 }
 

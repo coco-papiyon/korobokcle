@@ -124,6 +124,8 @@ const inspectableStates = new Set([
   'pr_created',
   'review_ready',
   'review_approved',
+  'acceptance_test_ready',
+  'acceptance_test_approved',
   'review_fixed',
   'review_fix_implementation_ready',
   'review_fix_implementation_approved',
@@ -140,7 +142,9 @@ const detailTitle = computed(() => {
   return detailJob.value.title || `#${detailJob.value.number}`
 })
 
-const showIssueContext = computed(() => detailJob.value?.kind === 'issue_design' || detailJob.value?.kind === 'issue_implementation')
+const showIssueContext = computed(() =>
+  ['issue_design', 'issue_implementation', 'pr_acceptance'].includes(detailJob.value?.kind ?? ''),
+)
 
 const issueContext = computed(() => detailJob.value?.issueContext ?? '')
 const issueContextMarkdown = computed(() =>
@@ -153,6 +157,8 @@ const chatContextLabel = computed(() => {
       return '設計を実行'
     case 'issue_implementation':
       return '実装を実行'
+    case 'pr_acceptance':
+      return '受入確認を実行'
     default:
       return 'ジョブを実行'
   }
@@ -301,7 +307,7 @@ const relatedLink = computed(() => {
   let pathType: 'issues' | 'pull' | null = null
   if (job.kind === 'issue_design' || job.kind === 'issue_implementation') {
     pathType = 'issues'
-  } else if (job.kind === 'pr_review' || job.kind === 'pr_feedback' || job.kind === 'pr_conflict') {
+  } else if (job.kind === 'pr_review' || job.kind === 'pr_acceptance' || job.kind === 'pr_feedback' || job.kind === 'pr_conflict') {
     pathType = 'pull'
   }
 
@@ -349,6 +355,9 @@ function canOpenRuntime(job: Job | null) {
   if (job.kind === 'pr_review') {
     return ['review_ready', 'review_approved', 'completed'].includes(job.state)
   }
+  if (job.kind === 'pr_acceptance') {
+    return ['acceptance_test_ready', 'acceptance_test_approved', 'completed'].includes(job.state)
+  }
   if (job.kind === 'pr_feedback') {
     return ['review_fix_implementation_ready', 'review_fix_implementation_approved', 'review_fixed', 'completed'].includes(job.state)
   }
@@ -363,7 +372,10 @@ function jobStateClass(state: string) {
 }
 
 function canRequestChanges(job: Job | null) {
-  return job?.kind === 'pr_review' && job.state === 'review_ready'
+  return (
+    (job?.kind === 'pr_review' && job.state === 'review_ready') ||
+    (job?.kind === 'pr_acceptance' && job.state === 'acceptance_test_ready')
+  )
 }
 
 function artifactTitle(job: Job | null) {
@@ -378,6 +390,9 @@ function artifactTitle(job: Job | null) {
   }
   if (job.kind === 'pr_review') {
     return 'レビュー結果'
+  }
+  if (job.kind === 'pr_acceptance') {
+    return '受入確認結果'
   }
   if (job.kind === 'pr_feedback' && job.state === 'review_fix_implementation_ready') {
     return 'レビュー指摘修正結果'

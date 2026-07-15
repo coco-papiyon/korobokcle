@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -81,6 +82,9 @@ func generate(rootPath string) error {
 	if err := cleanupArtifacts(rootPath); err != nil {
 		return err
 	}
+	if err := copyRuntimeAssets(rootPath); err != nil {
+		return err
+	}
 
 	if err := writeJSON(filepath.Join(rootPath, "config", "settings.json"), newSettingsFixture()); err != nil {
 		return err
@@ -115,6 +119,62 @@ func generate(rootPath string) error {
 	return nil
 }
 
+func copyRuntimeAssets(rootPath string) error {
+	sourceDir := ""
+	for _, candidate := range []string{
+		filepath.Join(filepath.Dir(rootPath), "create-testdata"),
+		filepath.Join(".", "create-testdata"),
+	} {
+		if _, err := os.Stat(filepath.Join(candidate, "mock-app", "package.json")); err == nil {
+			sourceDir = candidate
+			break
+		}
+	}
+	if sourceDir == "" {
+		return fmt.Errorf("create-testdata runtime assets not found")
+	}
+	if err := copyDirectory(filepath.Join(sourceDir, "mock-app"), filepath.Join(rootPath, "mock-app")); err != nil {
+		return fmt.Errorf("copy mock-app: %w", err)
+	}
+	for _, name := range []string{"start_mock_app.bat", "start_mock_app.sh"} {
+		raw, err := os.ReadFile(filepath.Join(sourceDir, name))
+		if err != nil {
+			return fmt.Errorf("read runtime script %s: %w", name, err)
+		}
+		if err := writeBytes(filepath.Join(rootPath, name), raw); err != nil {
+			return fmt.Errorf("copy runtime script %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func copyDirectory(sourceDir, targetDir string) error {
+	return filepath.WalkDir(sourceDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		if rel == "node_modules" || strings.HasPrefix(rel, "node_modules"+string(filepath.Separator)) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		target := filepath.Join(targetDir, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return writeBytes(target, raw)
+	})
+}
+
 func ensureDirs(rootPath string) error {
 	dirs := []string{
 		"config",
@@ -128,6 +188,7 @@ func ensureDirs(rootPath string) error {
 		".workspace/design",
 		".workspace/implementation",
 		".workspace/review",
+		".workspace/acceptance_test",
 		".workspace/review_fix_design",
 		".workspace/review_fix_implementation",
 	}
@@ -173,6 +234,7 @@ func cleanupArtifacts(rootPath string) error {
 		".workspace/design",
 		".workspace/implementation",
 		".workspace/review",
+		".workspace/acceptance_test",
 		".workspace/review_fix_design",
 		".workspace/review_fix_implementation",
 		".workspace/pr_conflict",
@@ -251,6 +313,9 @@ func buildJobs() []artifactJob {
 		newJob("pr-301", domain.JobKindPRReview, domain.StateReviewRunning, 301, "review-running", 11, "", "", "", false),
 		newJob("pr-302", domain.JobKindPRReview, domain.StateReviewReady, 302, "review-ready", 12, "", "", "", false),
 		newJob("pr-303", domain.JobKindPRReview, domain.StateReviewApproved, 303, "review-approved", 13, "", "", "", false),
+		newJob("pr-601", domain.JobKindPRAcceptance, domain.StateAcceptanceTesting, 601, "acceptance-testing", 28, "", "", "", true),
+		newJob("pr-602", domain.JobKindPRAcceptance, domain.StateAcceptanceTestReady, 602, "acceptance-test-ready", 29, "", "", "", true),
+		newJob("pr-603", domain.JobKindPRAcceptance, domain.StateAcceptanceTestApproved, 603, "acceptance-test-approved", 30, "", "", "", true),
 		newJob("pr-304", domain.JobKindPRFeedback, domain.StatePRReviewComment, 304, "review-comment", 14, "", "", "", false),
 		newJob("pr-508", domain.JobKindPRReview, domain.StateReviewReady, 508, "review-awaiting-user-response", 26, "", "", "", false),
 		newJob("pr-401", domain.JobKindPRConflict, domain.StatePRConflict, 401, "conflict-detected", 15, "", "", "", false),
@@ -264,7 +329,7 @@ func buildJobs() []artifactJob {
 		newJob("pr-505", domain.JobKindPRFeedback, domain.StateReviewFixImplementationReady, 505, "review-fix-implementation-ready", 23, "", "", "", false),
 		newJob("pr-506", domain.JobKindPRFeedback, domain.StateReviewFixImplementationApproved, 506, "review-fix-implementation-approved", 24, "", "", "", false),
 		newJob("pr-507", domain.JobKindPRFeedback, domain.StateReviewFixed, 507, "review-fixed", 25, "", "", "", false),
-		newJob("issue-600", domain.JobKindIssueImplementation, domain.StateImplementationApproved, 600, "markdown-special-preview", 27, "", "", "", true),
+		newJob("issue-900", domain.JobKindIssueImplementation, domain.StateImplementationApproved, 900, "markdown-special-preview", 31, "", "", "", true),
 	}
 }
 
@@ -281,7 +346,12 @@ func newJob(id string, kind domain.JobKind, state domain.JobState, number int, t
 		UpdatedAt:  timeText(time.Date(2026, 7, 1, 3, 0, 5, 0, time.UTC), order*10),
 	}
 	if includeContext {
-		job.IssueContext = newIssueContext(number, title, state)
+		if kind == domain.JobKindPRAcceptance {
+			job.IssueContext = newAcceptanceIssueContext(number, title, state)
+			job.Branch = fmt.Sprintf("feature/issue_#%d", number)
+		} else {
+			job.IssueContext = newIssueContext(number, title, state)
+		}
 	}
 	if failedFromState != "" {
 		job.FailedFromState = failedFromState
@@ -310,6 +380,19 @@ func newIssueContext(number int, title string, state domain.JobState) string {
 	return fmt.Sprintf("#%d %s\n\nMock issue for testing state: %s\n", number, title, state)
 }
 
+func newAcceptanceIssueContext(number int, title string, state domain.JobState) string {
+	return fmt.Sprintf(`#%d %s
+
+Mock issue for testing state: %s
+
+## 受入基準
+
+- 設定画面に受入確認の状態が表示されること
+- 動作確認が必要な場合はPlaywrightの確認結果が記録されること
+- 動作確認が不要な場合は省略理由が記録されること
+`, number, title, state)
+}
+
 func artifactSubDirForKind(kind domain.JobKind) string {
 	switch kind {
 	case domain.JobKindIssueDesign:
@@ -318,6 +401,8 @@ func artifactSubDirForKind(kind domain.JobKind) string {
 		return "implementation"
 	case domain.JobKindPRReview:
 		return "review"
+	case domain.JobKindPRAcceptance:
+		return "acceptance_test"
 	case domain.JobKindPRConflict:
 		return "pr_conflict"
 	case domain.JobKindPRFeedback:
@@ -335,6 +420,8 @@ func logSubDirForJob(job domain.Job) string {
 		return "implementation"
 	case domain.JobKindPRReview:
 		return "review"
+	case domain.JobKindPRAcceptance:
+		return "acceptance_test"
 	case domain.JobKindPRConflict:
 		return "pr_conflict"
 	case domain.JobKindPRFeedback:
@@ -356,6 +443,8 @@ func shouldWriteArtifact(state domain.JobState) bool {
 		domain.StatePRCreated,
 		domain.StateReviewReady,
 		domain.StateReviewApproved,
+		domain.StateAcceptanceTestReady,
+		domain.StateAcceptanceTestApproved,
 		domain.StateReviewFixDesignApproved,
 		domain.StateReviewFixImplementationReady,
 		domain.StateReviewFixImplementationApproved,
@@ -374,13 +463,52 @@ func writeArtifact(rootPath string, entry artifactJob) error {
 	switch entry.job.Number {
 	case 203:
 		content = implementationApprovedArtifactContent(entry)
-	case 600:
+	case 900:
 		content = markdownSpecialArtifactContent(entry)
 	case 508:
 		content = awaitingUserArtifactContent(entry)
+	case 602, 603:
+		content = acceptanceArtifactContent(entry)
 	}
 	path := filepath.Join(rootPath, ".workspace", entry.artifactSubDir, fmt.Sprintf("%d_%s.md", entry.job.Number, entry.job.Title))
 	return writeText(path, content)
+}
+
+func acceptanceArtifactContent(entry artifactJob) string {
+	if entry.job.State == domain.StateAcceptanceTestApproved {
+		return fmt.Sprintf(`# %s
+
+## 判定結果
+承認
+
+## 確認内容
+- ドキュメントのみの変更であり、アプリケーション動作への影響がないことを確認した。
+
+## 受入確認結果
+- 動作確認は不要と判断した。
+- アプリケーションの起動およびPlaywright確認は省略した。
+
+## 残課題
+- なし
+`, entry.job.Title)
+	}
+	return fmt.Sprintf(`# %s
+
+## 判定結果
+問題なし
+
+## 確認内容
+- 設定された起動コマンドでアプリケーションを起動した。
+- Issueの受入基準に沿ってPlaywrightで画面を確認した。
+
+## 受入確認結果
+- Playwright: 成功
+- 受入確認状態が画面に表示されることを確認した。
+- 停止コマンドでアプリケーションを停止した。
+
+## 残課題
+- なし
+`, entry.job.Title)
 }
 
 func genericArtifactContent(entry artifactJob) string {
@@ -394,7 +522,7 @@ This is a %s artifact for UI testing at state: %s.
 - Use it to test approve, rerun, and request-changes UI actions.
 
 ## Test Results
-- go run ./tests/scripts/create-testdata: success
+- go run ./create-testdata: success
 - unchanged line 1
 - unchanged line 2
 - unchanged line 3
@@ -432,7 +560,7 @@ This is a %s artifact for UI testing at state: %s.
 <p>HTML preview enabled.</p>
 
 ## Test Results
-- go run ./tests/scripts/create-testdata: success
+- go run ./create-testdata: success
 - unchanged line 1
 - unchanged line 2
 - unchanged line 3
@@ -483,7 +611,7 @@ func awaitingUserArtifactContent(entry artifactJob) string {
 - 結果画面に頼らず、会話の流れで待機状態を把握できます。
 
 ## テスト結果
-- go run ./tests/scripts/create-testdata: success
+- go run ./create-testdata: success
 - unchanged line 1
 - unchanged line 2
 - unchanged line 3
@@ -698,7 +826,7 @@ func writeLogGroup(rootPath, subDir string, number int, role string, attempt int
 	}
 	jobPrefix := "issue"
 	switch subDir {
-	case "review", "review_fix_design", "review_fix_implementation", "pr_conflict":
+	case "review", "acceptance_test", "review_fix_design", "review_fix_implementation", "pr_conflict":
 		jobPrefix = "pr"
 	}
 	jobID := fmt.Sprintf("%s-%d", jobPrefix, number)

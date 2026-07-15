@@ -23,6 +23,9 @@ export const jobStateDefinitions = [
   { state: 'review_running', label: 'レビュー中' },
   { state: 'review_ready', label: 'レビュー完了' },
   { state: 'review_approved', label: 'レビュー承認済み' },
+  { state: 'acceptance_testing', label: '受入確認中' },
+  { state: 'acceptance_test_ready', label: '受入確認完了' },
+  { state: 'acceptance_test_approved', label: '受入確認承認済み' },
   { state: 'failed', label: '失敗' },
 ] as const
 
@@ -34,6 +37,7 @@ const runningStates = new Set([
   'design_running',
   'implementation_running',
   'review_running',
+  'acceptance_testing',
   'review_fix_design_running',
   'review_fix_implementation_running',
   'pr_conflict_running',
@@ -43,6 +47,7 @@ const waitingStates = new Set([
   'design_ready',
   'implementation_ready',
   'review_ready',
+  'acceptance_test_ready',
   'review_fix_design_ready',
   'review_fix_implementation_ready',
   'pr_conflict_ready',
@@ -52,6 +57,7 @@ const approvedStates = new Set([
   'design_approved',
   'implementation_approved',
   'review_approved',
+  'acceptance_test_approved',
   'review_fix_design_approved',
   'review_fix_implementation_approved',
   'pr_conflict_resolved',
@@ -74,7 +80,7 @@ export function jobStateChipClass(state: string) {
   if (state === 'failed') {
     return 'chip chip--failed'
   }
-  if (state === 'review_approved') {
+  if (approvedStates.has(state)) {
     return 'chip chip--approved'
   }
   return runningStates.has(state) ? 'chip chip--running' : 'chip'

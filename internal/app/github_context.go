@@ -21,11 +21,36 @@ func (l *GitHubJobContextLoader) Load(ctx context.Context, job domain.Job) (stri
 	switch job.Kind {
 	case domain.JobKindPRReview, domain.JobKindPRFeedback:
 		return loadPRContext(ctx, job)
+	case domain.JobKindPRAcceptance:
+		return loadPRAcceptanceContext(ctx, job)
 	case domain.JobKindPRConflict:
 		return loadPRConflictContext(ctx, job)
 	default:
 		return loadIssueContext(ctx, job)
 	}
+}
+
+func loadPRAcceptanceContext(ctx context.Context, job domain.Job) (string, error) {
+	prContext, err := loadPRContext(ctx, job)
+	if err != nil {
+		return "", err
+	}
+	branch := strings.TrimSpace(job.Branch)
+	if branch == "" {
+		branch, err = resolvePRBranch(ctx, job)
+		if err != nil {
+			return "", err
+		}
+	}
+	issueNumber := branchIssueNumber(branch)
+	if issueNumber == 0 {
+		return prContext + "\n\nLinked Issue:\n(not found from PR branch)", nil
+	}
+	issueContext, err := loadIssueContextByNumber(ctx, job.Repository, issueNumber)
+	if err != nil {
+		return "", err
+	}
+	return prContext + "\n\nLinked Issue:\n" + issueContext, nil
 }
 
 func loadIssueContext(ctx context.Context, job domain.Job) (string, error) {

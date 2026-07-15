@@ -12,6 +12,7 @@ const (
 	SkillPurposeIssueImplementation     SkillPurpose = "issue_implementation"
 	SkillPurposeIssueVerification       SkillPurpose = "issue_verification"
 	SkillPurposePRReview                SkillPurpose = "pr_review"
+	SkillPurposePRAcceptance            SkillPurpose = "pr_acceptance"
 	SkillPurposePRConflictResolution    SkillPurpose = "pr_conflict_resolution"
 	SkillPurposeReviewFeedbackDesign    SkillPurpose = "review_feedback_design"
 	SkillPurposeReviewFeedbackImplement SkillPurpose = "review_feedback_implementation"

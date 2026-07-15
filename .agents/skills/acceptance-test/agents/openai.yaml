@@ -1,0 +1,4 @@
+interface:
+  display_name: "受入確認"
+  short_description: "Issueの受入基準に沿ってPlaywrightによる動作確認の要否と結果を整理する"
+  default_prompt: "Use $acceptance-test to Issueの受入基準に基づく受入確認を日本語で実施してください。"

@@ -25,6 +25,7 @@ frontend/coverage
 /tests/state/
 /tests/static/
 /tests/workspace/
+/tests/.agents/
 
 *.exe
 /korobokcle

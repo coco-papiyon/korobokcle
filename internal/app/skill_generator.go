@@ -53,6 +53,7 @@ var issueDrivenSkillDefinitions = []skillDefinition{
 	{domain.SkillPurposeIssueImplementation, "implement-from-design", "設計結果をもとに実装", [][]string{{"design", "implement"}, {"設計", "実装"}}},
 	{domain.SkillPurposeIssueVerification, "verifier-from-design", "設計結果をもとに検証", [][]string{{"design", "verify"}, {"design", "verification"}, {"設計", "検証"}}},
 	{domain.SkillPurposePRReview, "review-pull-request", "PRのレビュー", [][]string{{"pull request", "review"}, {"pr", "レビュー"}}},
+	{domain.SkillPurposePRAcceptance, "acceptance-test", "受入基準に基づく動作確認", [][]string{{"acceptance", "playwright"}, {"受入確認", "playwright"}}},
 	{domain.SkillPurposeReviewFeedbackImplement, "review-comment-fix", "レビュー指摘の実装", [][]string{{"review", "feedback", "implement"}, {"レビュー", "指摘", "実装"}}},
 	{domain.SkillPurposePRConflictResolution, "resolve-pr-conflicts", "PRのコンフリクト解消", [][]string{{"pull request", "conflict", "resolve"}, {"pr", "コンフリクト", "解消"}}},
 }
@@ -584,6 +585,8 @@ func skillDefinitionIntent(purpose domain.SkillPurpose) string {
 		return "設計に基づく検証結果の必須出力形式を規定する: 概要、確認内容、検証結果、残課題。"
 	case domain.SkillPurposePRReview:
 		return "重要度とファイル・行番号を含む、指摘事項優先のPull Requestレビュー形式を規定する。"
+	case domain.SkillPurposePRAcceptance:
+		return "Issueの受入基準に基づき、必要な変更ではアプリケーションを起動してPlaywrightで動作確認し、不要な変更では理由を示して省略する。"
 	case domain.SkillPurposeReviewFeedbackDesign:
 		return "設計修正の必須出力形式を規定する: 概要、要件、設計、変更対象ファイル、テスト計画、リスク。"
 	case domain.SkillPurposeReviewFeedbackImplement:
@@ -642,6 +645,11 @@ func validateGeneratedSkill(dir string, definition skillDefinition, req domain.S
 		}
 		if !containsAllCommandsFold(content, req.TestCommand) {
 			return fmt.Errorf("generated verification skill %s is missing required output sections or test command", definition.name)
+		}
+	}
+	if definition.purpose == domain.SkillPurposePRAcceptance {
+		if !containsAllFold(content, "判定結果", "確認内容", "受入確認結果", "残課題", "Playwright", "動作確認が不要") {
+			return fmt.Errorf("generated acceptance test skill %s is missing required output sections or acceptance instructions", definition.name)
 		}
 	}
 	if definition.purpose == domain.SkillPurposePRConflictResolution {

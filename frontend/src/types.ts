@@ -1,4 +1,4 @@
-export type JobKind = 'issue_design' | 'issue_implementation' | 'pr_review' | 'pr_feedback' | 'pr_conflict'
+export type JobKind = 'issue_design' | 'issue_implementation' | 'pr_review' | 'pr_acceptance' | 'pr_feedback' | 'pr_conflict'
 
 export type Job = {
   id: string

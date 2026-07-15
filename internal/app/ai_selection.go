@@ -16,6 +16,8 @@ func resolveJobAISelectionForRole(settings domain.WatchSettings, job domain.Job,
 		return verifierAISelection(settings)
 	case job.Kind == domain.JobKindPRReview:
 		return reviewerAISelection(settings)
+	case job.Kind == domain.JobKindPRAcceptance:
+		return verifierAISelection(settings)
 	default:
 		return implementerAISelection(settings)
 	}

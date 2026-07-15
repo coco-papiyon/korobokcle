@@ -6,7 +6,7 @@
 
 - ドメイン定義: [`internal/domain/job.go`](../internal/domain/job.go)
 - UI 表示: [`frontend/src/utils/jobState.ts`](../frontend/src/utils/jobState.ts)
-- テストデータ: [`tests/scripts/create-testdata/main.go`](../tests/scripts/create-testdata/main.go)
+- テストデータ: [`create-testdata/main.go`](../create-testdata/main.go)
 - 画面説明: [`README.md`](../README.md), [`docs/design.md`](design.md)
 
 ## 結論
@@ -25,7 +25,7 @@
 | `completed` | 完了 | 終端 |
 | `failed` | 失敗 | 終端 |
 
-### 設計系
+### 設計
 
 | 内部状態 | 表示名 | 用途 |
 | --- | --- | --- |
@@ -33,37 +33,46 @@
 | `design_ready` | 設計完了 | 設計結果の確認待ち |
 | `design_approved` | 設計承認済み | 設計承認後、実装へ進む |
 
-### 実装系
+### 実装
 
 | 内部状態 | 表示名 | 用途 |
 | --- | --- | --- |
 | `implementation_running` | 実装中 | 実装実行中 |
 | `implementation_ready` | 実装完了 | 実装結果の確認待ち |
-| `implementation_approved` | 実装承認済み | 実装承認後、PR 作成へ進む |
+| `implementation_approved` | 実装承認済み | 実装承認後 |
+| `pr_created` | PR済み | PR 作成済み、設計・実装の終端 |
 
-### PR 系
+### PRレビュー
 
 | 内部状態 | 表示名 | 用途 |
 | --- | --- | --- |
-| `pr_created` | PR済み | PR 作成済み |
-| `pr_review_comment` | レビュー指摘あり | PR レビュー指摘を受けた状態 |
 | `review_running` | レビュー中 | PR レビュー実行中 |
-| `review_ready` | レビュー完了 | レビュー結果の確認待ち |
-| `review_approved` | レビュー承認済み | レビュー承認後の終端候補 |
+| `review_ready` | レビュー完了 | レビュー結果の確認待ち、レビュー承認済み もしくは レビュー指摘ありに分岐 |
+| `review_approved` | レビュー承認済み | レビュー承認後、受入確認 へ進む |
+| `pr_review_comment` | レビュー指摘あり | PR レビュー指摘を受けた状態、レビュー指摘検討中 へ進む |
+
+### 受入確認
+
+| 内部状態 | 表示名 | 用途 |
+| --- | --- | --- |
+| `acceptance_testing` | 受入確認中 | 受入確認中 |
+| `acceptance_test_ready` | 受入確認完了 | 受入確認の確認待ち、受入確認承認済み もしくは レビュー指摘ありに分岐 |
+| `acceptance_test_approved` | 受入確認承認済み | 受入確認承認後の終端候補 |
+| `pr_review_comment` | レビュー指摘あり | PR レビュー指摘を受けた状態、レビュー指摘検討中 へ進む |
 
 ### レビュー指摘対応
 
 | 内部状態 | 表示名 | 用途 |
 | --- | --- | --- |
-| `review_fixed` | レビュー指摘修正済み | レビュー指摘修正後の次工程起点 |
 | `review_fix_design_running` | レビュー指摘検討中 | 設計修正の実行中 |
 | `review_fix_design_ready` | レビュー指摘検討済み | 設計修正結果の確認待ち |
 | `review_fix_design_approved` | レビュー検討承認済み | 設計修正承認後、実装へ進む |
 | `review_fix_implementation_running` | レビュー指摘修正中 | 実装修正の実行中 |
 | `review_fix_implementation_ready` | レビュー指摘修正完了 | 実装修正結果の確認待ち |
 | `review_fix_implementation_approved` | レビュー指摘修正承認済み | 実装修正承認後の次工程候補 |
+| `review_fixed` | レビュー指摘修正済み | レビュー指摘修正後の次工程起点 |
 
-### コンフリクト系
+### コンフリクト対応
 
 | 内部状態 | 表示名 | 用途 |
 | --- | --- | --- |
@@ -80,9 +89,9 @@
 | --- | --- |
 | `すべて` | 全状態 |
 | `未完了` | `completed` 以外の全状態 |
-| `実行中` | `design_running`、`implementation_running`、`review_running`、`review_fix_design_running`、`review_fix_implementation_running`、`pr_conflict_running` |
-| `承認待ち` | `design_ready`、`implementation_ready`、`review_ready`、`review_fix_design_ready`、`review_fix_implementation_ready`、`pr_conflict_ready` |
-| `承認済み` | `design_approved`、`implementation_approved`、`review_approved`、`review_fix_design_approved`、`review_fix_implementation_approved`、`pr_conflict_resolved` |
+| `実行中` | `design_running`、`implementation_running`、`review_running`、`acceptance_testing`、`review_fix_design_running`、`review_fix_implementation_running`、`pr_conflict_running` |
+| `承認待ち` | `design_ready`、`implementation_ready`、`review_ready`、`acceptance_test_ready`、`review_fix_design_ready`、`review_fix_implementation_ready`、`pr_conflict_ready` |
+| `承認済み` | `design_approved`、`implementation_approved`、`review_approved`、`acceptance_test_approved`、`review_fix_design_approved`、`review_fix_implementation_approved`、`pr_conflict_resolved` |
 | `完了` | `completed` |
 | `失敗` | `failed` |
 | `その他` | 上記に含まれない状態 |
@@ -92,13 +101,14 @@
 - `issue_design` は `detected` から始まり、`design_running` -> `design_ready` -> `design_approved` と進む。
 - `issue_implementation` は `design_approved` から始まり、`implementation_running` -> `implementation_ready` -> `implementation_approved` と進む。
 - `pr_review` は `review_running` から始まり、`review_ready` -> `review_approved` と進む。
+- `pr_acceptance` は `review_approved` から始まり、`acceptance_testing` -> `acceptance_test_ready` -> `acceptance_test_approved` と進む。
 - `pr_feedback` は `pr_review_comment` または `review_fixed` を起点に、レビュー指摘対応の設計 / 実装へ進む。
 - `pr_conflict` は `pr_conflict` から始まり、`pr_conflict_running` -> `pr_conflict_ready` -> `pr_conflict_resolved` と進む。
 - `completed` は各フローの最終終端であり、どの `*_ready` でも到達するわけではない。
 
 ## テストデータでの使われ方
 
-`go run ./tests/scripts/create-testdata` では、状態が個別に分かれていることを確認できるようにしている。
+`go run ./create-testdata` では、状態が個別に分かれていることを確認できるようにしている。
 
 - `issue-101` は `completed`
 - `issue-102` は `completed`

@@ -46,12 +46,12 @@ type Poller struct {
 
 func NewPoller(cfg config.Config, source JobSource, store JobStore, settings PollSettingsStore, manager *WorkerManager) *Poller {
 	return &Poller{
-		cfg:      cfg,
-		source:   source,
-		store:    store,
-		settings: settings,
-		manager:  manager,
-		last:     make(map[string]string),
+		cfg:        cfg,
+		source:     source,
+		store:      store,
+		settings:   settings,
+		manager:    manager,
+		last:       make(map[string]string),
 		autoSubmit: true,
 	}
 }
@@ -149,6 +149,9 @@ func (p *Poller) poll(ctx context.Context) error {
 				return fmt.Errorf("persist job %s: %w", job.ID, err)
 			}
 		}
+		if job.State == domain.StateCompleted {
+			continue
+		}
 		if p.shouldAutoSubmit() {
 			if p.manager == nil {
 				return fmt.Errorf("worker manager not configured")
@@ -172,7 +175,12 @@ func (p *Poller) shouldAutoSubmit() bool {
 }
 
 func shouldKeepApprovedPR(existing domain.Job, source domain.Job) bool {
-	return existing.Kind == domain.JobKindPRReview && existing.State == domain.StateReviewApproved && source.Kind == domain.JobKindPRReview
+	if existing.Kind == domain.JobKindPRReview && existing.State == domain.StateReviewApproved && source.Kind == domain.JobKindPRReview {
+		return true
+	}
+	return existing.Kind == domain.JobKindPRAcceptance &&
+		source.Kind == domain.JobKindPRAcceptance &&
+		existing.State != domain.StateReviewApproved
 }
 
 func (p *Poller) completeMissingPRJobs(ctx context.Context, sourceIDs map[string]struct{}) error {
@@ -203,7 +211,7 @@ func (p *Poller) completeMissingPRJobs(ctx context.Context, sourceIDs map[string
 
 func isTrackedPRJob(job domain.Job) bool {
 	switch job.Kind {
-	case domain.JobKindPRReview, domain.JobKindPRFeedback, domain.JobKindPRConflict:
+	case domain.JobKindPRReview, domain.JobKindPRAcceptance, domain.JobKindPRFeedback, domain.JobKindPRConflict:
 		return true
 	default:
 		return false

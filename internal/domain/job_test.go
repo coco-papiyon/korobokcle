@@ -15,6 +15,7 @@ func TestJobStateDisplayNameAndLabel(t *testing.T) {
 		{StateReviewFixDesignRunning, "レビュー指摘検討中", "state:review_fix_design_running"},
 		{StatePRConflict, "コンフリクト検知済み", "state:pr_conflict"},
 		{StatePRConflictReady, "コンフリクト解消完了", "state:pr_conflict_ready"},
+		{StateAcceptanceTestReady, "受入確認完了", "state:acceptance_test_ready"},
 	}
 
 	for _, tt := range tests {
@@ -64,6 +65,9 @@ func TestJobStateTransitions(t *testing.T) {
 	if !StatePRConflict.CanTransitionTo(StatePRConflictRunning) || !StatePRConflictRunning.CanTransitionTo(StatePRConflictReady) {
 		t.Fatal("expected PR conflict workflow transitions to be allowed")
 	}
+	if !StateReviewApproved.CanTransitionTo(StateAcceptanceTesting) || !StateAcceptanceTesting.CanTransitionTo(StateAcceptanceTestReady) {
+		t.Fatal("expected acceptance workflow transitions to be allowed")
+	}
 }
 
 func TestInitialStateForKind(t *testing.T) {
@@ -74,6 +78,7 @@ func TestInitialStateForKind(t *testing.T) {
 		{JobKindIssueDesign, StateDetected},
 		{JobKindIssueImplementation, StateDesignApproved},
 		{JobKindPRReview, StateReviewRunning},
+		{JobKindPRAcceptance, StateReviewApproved},
 		{JobKindPRFeedback, StatePRReviewComment},
 		{JobKindPRConflict, StatePRConflict},
 	}

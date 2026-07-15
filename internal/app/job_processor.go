@@ -528,6 +528,17 @@ func (p *WorkflowProcessor) buildPrompt(job domain.Job, settings domain.WatchSet
 			"Run appropriate tests or checks after editing.",
 			"Return only a Markdown summary in Japanese. Do not return JSON or a git diff.",
 		)
+	} else if job.Kind == domain.JobKindPRAcceptance {
+		lines = append(lines,
+			"",
+			"Determine from the linked Issue, acceptance criteria, and PR changes whether browser-based behavior verification is required.",
+			"If it is required, start the application and use Playwright to verify each applicable acceptance criterion.",
+			"If it is not required, do not start the application and do not run Playwright; clearly record why behavior verification is unnecessary.",
+			fmt.Sprintf("Configured startup command: %s", strings.TrimSpace(settings.StartupCommand)),
+			fmt.Sprintf("Configured stop command: %s", strings.TrimSpace(settings.StopCommand)),
+			fmt.Sprintf("Configured startup mode: %s", settings.StartupMode),
+			"Return only Markdown in Japanese.",
+		)
 	} else {
 		lines = append(lines,
 			"",
@@ -549,6 +560,8 @@ func skillNameForJob(job domain.Job) string {
 		return "implement-from-design"
 	case domain.JobKindPRReview:
 		return "review-pull-request"
+	case domain.JobKindPRAcceptance:
+		return "acceptance-test"
 	case domain.JobKindPRFeedback:
 		return "review-comment-fix"
 	case domain.JobKindPRConflict:
@@ -606,6 +619,13 @@ func implementationJob(job domain.Job) bool {
 }
 
 func (p *WorkflowProcessor) workDirForJob(ctx context.Context, job domain.Job, settings domain.WatchSettings) (string, string, error) {
+	if job.Kind == domain.JobKindPRAcceptance {
+		headBranch, _, err := pullRequestBranches(ctx, job)
+		if err != nil {
+			return "", "", err
+		}
+		return ensureJobWorktree(ctx, p.baseDir, p.toolDir, p.logger, job, headBranch, "", false)
+	}
 	if !implementationJob(job) {
 		return p.baseDir, "", nil
 	}
@@ -854,6 +874,8 @@ func artifactSubdir(job domain.Job) string {
 		return "pr_conflict"
 	case domain.JobKindPRReview:
 		return "review"
+	case domain.JobKindPRAcceptance:
+		return "acceptance_test"
 	case domain.JobKindPRFeedback:
 		return "review_fix_implementation"
 	default:

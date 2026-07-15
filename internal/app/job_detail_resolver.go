@@ -22,7 +22,7 @@ func (r *JobDetailResolver) ResolveJobBranch(ctx context.Context, job domain.Job
 		return branch, nil
 	}
 	switch job.Kind {
-	case domain.JobKindPRReview, domain.JobKindPRFeedback, domain.JobKindPRConflict:
+	case domain.JobKindPRReview, domain.JobKindPRAcceptance, domain.JobKindPRFeedback, domain.JobKindPRConflict:
 		return resolvePRBranch(ctx, job)
 	default:
 		return resolveIssueBranch(ctx, r.settings, job)

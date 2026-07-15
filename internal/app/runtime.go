@@ -409,7 +409,7 @@ func (r *RuntimeController) runtimeWorkDirForJob(ctx context.Context, job domain
 		}
 		workDir, _, err := ensureJobWorktree(ctx, r.baseDir, r.toolDir, r.logger, job, branch, baseBranch, prepareMerge)
 		return workDir, err
-	case job.Kind == domain.JobKindPRReview:
+	case job.Kind == domain.JobKindPRReview || job.Kind == domain.JobKindPRAcceptance:
 		headBranch, _, err := pullRequestBranches(ctx, job)
 		if err != nil {
 			return "", err
@@ -431,6 +431,11 @@ func supportsRuntimeJob(job domain.Job) bool {
 	case domain.JobKindPRReview:
 		switch job.State {
 		case domain.StateReviewReady, domain.StateReviewApproved, domain.StateCompleted:
+			return true
+		}
+	case domain.JobKindPRAcceptance:
+		switch job.State {
+		case domain.StateAcceptanceTestReady, domain.StateAcceptanceTestApproved, domain.StateCompleted:
 			return true
 		}
 	case domain.JobKindPRFeedback:

@@ -1,6 +1,6 @@
 # テストデータ一覧
 
-`go run ./tests/scripts/create-testdata` で作成されるテストデータを、実際の出力先ごとに整理する。
+`go run ./create-testdata` で作成されるテストデータを、実際の出力先ごとに整理する。
 
 ## 生成先
 
@@ -12,6 +12,7 @@
   - `.workspace/...` の Markdown 成果物
   - `workspace/<repo-id>/<job-id>/logs/...` のジョブログ
   - `prompt/`, `workspace/`, `state/`, `logs/` のディレクトリ
+  - `mock-app/`, `start_mock_app.bat`, `start_mock_app.sh`
 
 ## 設定ファイル
 
@@ -21,6 +22,9 @@
 | --- | --- |
 | `repository` | `mock-owner/mock-repo` |
 | `aiProvider` | `codex` |
+| `startupCommand` | OSに応じたモックアプリ起動スクリプト |
+| `stopCommand` | `echo stop mock app` |
+| `startupMode` | `resident` |
 | `pollIntervalSeconds` | `3600` |
 | `baseBranch` | `main` |
 | `branchNamePattern` | `issue_#<issueNumber>` |
@@ -51,6 +55,10 @@
   - `review_running`
   - `review_ready`
   - `review_approved`
+- `pr_acceptance`
+  - `acceptance_testing`
+  - `acceptance_test_ready`
+  - `acceptance_test_approved`
 - `pr_feedback`
   - `pr_review_comment`
   - `review_fix_design_running`
@@ -71,6 +79,8 @@
 - `issue_*` のジョブには `issueContext` を含める
 - `issue-201` は `subStatus: 検証(2回目)` を持つ
 - `issue-203` はチャット画面の見本として、Markdown の表・引用・コードブロック・HTML を含む成果物を持つ
+- `pr-602` はアプリケーションを起動し、Playwrightで確認した受入確認結果を持つ
+- `pr-603` は動作確認不要と判断し、アプリケーション起動とPlaywright確認を省略した受入確認結果を持つ
 - `failed` 状態のジョブには `failedFromState` と `errorMessage` を含める
 
 ### `db/mock_jobs.json`
@@ -96,6 +106,8 @@
 - `pr_created`
 - `review_ready`
 - `review_approved`
+- `acceptance_test_ready`
+- `acceptance_test_approved`
 - `review_fix_design_approved`
 - `review_fix_implementation_ready`
 - `review_fix_implementation_approved`
@@ -109,6 +121,7 @@
 - `tests/.workspace/design/...`
 - `tests/.workspace/implementation/...`
 - `tests/.workspace/review/...`
+- `tests/.workspace/acceptance_test/...`
 - `tests/.workspace/review_fix_implementation/...`
 - `tests/.workspace/pr_conflict/...`
 
@@ -123,6 +136,6 @@
 
 ## 補足
 
-- `go run ./tests/scripts/create-testdata` は、画面確認用に各状態を固定表示できるデータセットを作る
+- `go run ./create-testdata` は、画面確認用に各状態を固定表示できるデータセットを作る
 - モックモードでは GitHub への投稿と AI 実行は行わない
 - `tests/` 配下は画面テスト用の固定データとして使う

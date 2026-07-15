@@ -62,7 +62,7 @@ echo "Running korobokcle from tests directory..."
   cd "$ROOT/tests" || exit 1
 
   echo "Creating test data..."
-  go run ./scripts/create-testdata -root "." || exit 1
+  go run ../create-testdata -root "." || exit 1
 
   echo "Starting korobokcle in mock mode..."
   ./korobokcle --addr ":$BACKEND_PORT" --mock-mode "${FORWARD_ARGS[@]}"
