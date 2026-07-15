@@ -28,7 +28,8 @@ describe('RuntimePanel', () => {
       jsonResponse({
         running: false,
         command: 'npm run dev',
-        residentMode: true,
+        startupMode: 'background',
+        hasStopCommand: true,
         workingDir: 'workspace/owner_repo/issue-impl/worktree',
         logPath: 'workspace/owner_repo/issue-impl/logs/startup.log',
       }),
@@ -45,7 +46,8 @@ describe('RuntimePanel', () => {
         running: true,
         pid: 1234,
         command: 'npm run dev',
-        residentMode: true,
+        startupMode: 'background',
+        hasStopCommand: true,
         workingDir: 'workspace/owner_repo/issue-impl/worktree',
         startedAt: '2026-07-11T00:00:01Z',
         logPath: 'workspace/owner_repo/issue-impl/logs/startup.log',
@@ -56,7 +58,8 @@ describe('RuntimePanel', () => {
         running: true,
         pid: 1234,
         command: 'npm run dev',
-        residentMode: true,
+        startupMode: 'background',
+        hasStopCommand: true,
         workingDir: 'workspace/owner_repo/issue-impl/worktree',
         startedAt: '2026-07-11T00:00:01Z',
         logPath: 'workspace/owner_repo/issue-impl/logs/startup.log',
@@ -81,6 +84,7 @@ describe('RuntimePanel', () => {
 
     expect(wrapper.text()).toContain('停止中')
     expect(wrapper.text()).toContain('npm run dev')
+    expect(wrapper.text()).toContain('バックグラウンド起動')
     expect(wrapper.text()).toContain('startup ready')
 
     await wrapper.get('button').trigger('click')

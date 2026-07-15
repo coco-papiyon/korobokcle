@@ -65,6 +65,8 @@ export type SearchCondition = {
 
 export type AIProvider = 'codex' | 'github_copilot'
 
+export type StartupMode = 'resident' | 'background' | 'one_shot'
+
 export type ModelSelection = {
   mode: 'default' | 'custom'
   value: string
@@ -79,6 +81,8 @@ export type WatchSettings = {
   repository: string
   aiProvider: AIProvider
   startupCommand?: string
+  stopCommand?: string
+  startupMode?: StartupMode
   residentMode?: boolean
   pollIntervalSeconds: number
   jobConcurrency: number
@@ -100,7 +104,9 @@ export type RuntimeStatus = {
   running: boolean
   pid?: number
   command?: string
+  startupMode?: StartupMode
   residentMode?: boolean
+  hasStopCommand?: boolean
   workingDir?: string
   startedAt?: string
   stoppedAt?: string

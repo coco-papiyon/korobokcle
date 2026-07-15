@@ -79,7 +79,9 @@ func (r *RuntimeController) Status(ctx context.Context, jobID string) (domain.Ru
 		if strings.TrimSpace(status.LogPath) == "" {
 			status.LogPath = baseStatus.LogPath
 		}
-		status.ResidentMode = settings.ResidentMode
+		status.StartupMode = baseStatus.StartupMode
+		status.ResidentMode = baseStatus.ResidentMode
+		status.HasStopCommand = baseStatus.HasStopCommand
 		r.mu.Unlock()
 		return status, nil
 	}
@@ -95,6 +97,10 @@ func (r *RuntimeController) Start(ctx context.Context, jobID string) (domain.Run
 	command := strings.TrimSpace(settings.StartupCommand)
 	if command == "" {
 		return domain.RuntimeStatus{}, fmt.Errorf("startup command is required")
+	}
+	startupMode := settings.StartupMode
+	if !startupMode.IsValid() {
+		startupMode = domain.StartupModeOneShot
 	}
 
 	workDir, err := r.runtimeWorkDirForJob(ctx, job, settings)
@@ -136,13 +142,15 @@ func (r *RuntimeController) Start(ctx context.Context, jobID string) (domain.Run
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	status := domain.RuntimeStatus{
-		Running:      true,
-		PID:          cmd.Process.Pid,
-		Command:      command,
-		ResidentMode: settings.ResidentMode,
-		WorkingDir:   runtimeWorkingDirDisplayPath(job),
-		StartedAt:    now,
-		LogPath:      displayLogPath,
+		Running:        true,
+		PID:            cmd.Process.Pid,
+		Command:        command,
+		StartupMode:    startupMode,
+		ResidentMode:   startupMode == domain.StartupModeResident,
+		HasStopCommand: strings.TrimSpace(settings.StopCommand) != "",
+		WorkingDir:     runtimeWorkingDirDisplayPath(job),
+		StartedAt:      now,
+		LogPath:        displayLogPath,
 	}
 
 	r.mu.Lock()
@@ -155,7 +163,7 @@ func (r *RuntimeController) Start(ctx context.Context, jobID string) (domain.Run
 	}
 	r.mu.Unlock()
 
-	go r.waitForExit(job.ID, cmd)
+	go r.waitForExit(job.ID, cmd, startupMode)
 	return status, nil
 }
 
@@ -164,30 +172,80 @@ func (r *RuntimeController) Stop(ctx context.Context, jobID string) (domain.Runt
 	if err != nil {
 		return domain.RuntimeStatus{}, err
 	}
+	workDir, err := r.runtimeWorkDirForJob(ctx, job, settings)
+	if err != nil {
+		return domain.RuntimeStatus{}, err
+	}
+	startupMode := settings.StartupMode
+	if !startupMode.IsValid() {
+		startupMode = domain.StartupModeOneShot
+	}
+	stopCommand := strings.TrimSpace(settings.StopCommand)
 
 	r.mu.Lock()
 	process, ok := r.processes[job.ID]
-	if !ok || !process.status.Running || process.cmd == nil || process.cmd.Process == nil {
-		status := r.baseStatus(job, settings)
-		if ok {
-			status = process.status
-			status.ResidentMode = settings.ResidentMode
-			if strings.TrimSpace(status.Command) == "" {
-				status.Command = strings.TrimSpace(settings.StartupCommand)
-			}
-			if strings.TrimSpace(status.LogPath) == "" {
-				status.LogPath = runtimeLogDisplayPath(job)
-			}
+	status := r.baseStatus(job, settings)
+	if ok {
+		status = process.status
+		if strings.TrimSpace(status.Command) == "" {
+			status.Command = strings.TrimSpace(settings.StartupCommand)
 		}
-		r.mu.Unlock()
-		return status, fmt.Errorf("runtime process is not running")
+		if strings.TrimSpace(status.LogPath) == "" {
+			status.LogPath = runtimeLogDisplayPath(job)
+		}
+		status.StartupMode = startupMode
+		status.ResidentMode = startupMode == domain.StartupModeResident
+		status.HasStopCommand = stopCommand != ""
 	}
-	cmd := process.cmd
-	waitDone := process.waitDone
-	process.stopping = true
+	if ok && process != nil && process.cmd != nil && process.cmd.Process != nil {
+		process.stopping = true
+	}
 	r.mu.Unlock()
 
-	if err := terminateProcessTree(cmd.Process.Pid); err != nil {
+	if stopCommand != "" {
+		if err := executeRuntimeCommand(stopCommand, workDir, runtimeLogPath(r.toolDir, job)); err != nil {
+			return status, err
+		}
+		r.mu.Lock()
+		process = r.processes[job.ID]
+		if process != nil {
+			if process.cmd != nil && process.cmd.Process != nil {
+				waitDone := process.waitDone
+				r.mu.Unlock()
+				if waitDone != nil {
+					select {
+					case <-waitDone:
+					case <-time.After(5 * time.Second):
+					case <-ctx.Done():
+					}
+				}
+			} else {
+				delete(r.processes, job.ID)
+				r.mu.Unlock()
+			}
+		} else {
+			r.mu.Unlock()
+		}
+		return r.Status(ctx, jobID)
+	}
+
+	if startupMode != domain.StartupModeResident {
+		r.mu.Lock()
+		if current := r.processes[job.ID]; current != nil {
+			status = current.status
+			status.StartupMode = startupMode
+			status.ResidentMode = false
+			status.HasStopCommand = false
+		}
+		r.mu.Unlock()
+		return status, fmt.Errorf("stop command is required for %s startup mode", startupMode)
+	}
+
+	if !ok || process == nil || process.cmd == nil || process.cmd.Process == nil {
+		return status, fmt.Errorf("runtime process is not running")
+	}
+
+	if err := terminateProcessTree(process.cmd.Process.Pid); err != nil {
 		r.mu.Lock()
 		if current := r.processes[job.ID]; current != nil {
 			current.status.Error = err.Error()
@@ -195,9 +253,9 @@ func (r *RuntimeController) Stop(ctx context.Context, jobID string) (domain.Runt
 		r.mu.Unlock()
 	}
 
-	if waitDone != nil {
+	if process.waitDone != nil {
 		select {
-		case <-waitDone:
+		case <-process.waitDone:
 		case <-time.After(5 * time.Second):
 		case <-ctx.Done():
 		}
@@ -230,7 +288,7 @@ func (r *RuntimeController) Logs(ctx context.Context, jobID string) (domain.Runt
 	}, nil
 }
 
-func (r *RuntimeController) waitForExit(jobID string, cmd *exec.Cmd) {
+func (r *RuntimeController) waitForExit(jobID string, cmd *exec.Cmd, startupMode domain.StartupMode) {
 	err := cmd.Wait()
 	exitCode := exitCodeFromError(err)
 
@@ -243,10 +301,36 @@ func (r *RuntimeController) waitForExit(jobID string, cmd *exec.Cmd) {
 	if process.logFile != nil {
 		_ = process.logFile.Sync()
 	}
+	process.status.ExitCode = exitCode
+	keepRunning := startupMode == domain.StartupModeBackground && err == nil && exitCode != nil && *exitCode == 0 && !process.stopping
+	if keepRunning {
+		process.status.Running = true
+		process.status.PID = 0
+		process.status.StoppedAt = ""
+		if process.stopping {
+			process.status.Error = ""
+		} else if err != nil && !isStopError(err) {
+			process.status.Error = err.Error()
+		}
+		waitDone := process.waitDone
+		process.waitDone = nil
+		process.stopping = false
+		process.cmd = nil
+		if process.logFile != nil {
+			_ = process.logFile.Close()
+			process.logFile = nil
+		}
+		r.mu.Unlock()
+
+		if waitDone != nil {
+			close(waitDone)
+		}
+		return
+	}
+
 	process.status.Running = false
 	process.status.PID = 0
 	process.status.StoppedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	process.status.ExitCode = exitCode
 	if process.stopping {
 		process.status.Error = ""
 	}
@@ -261,6 +345,7 @@ func (r *RuntimeController) waitForExit(jobID string, cmd *exec.Cmd) {
 		_ = process.logFile.Close()
 		process.logFile = nil
 	}
+	delete(r.processes, jobID)
 	r.mu.Unlock()
 
 	if waitDone != nil {
@@ -293,11 +378,17 @@ func (r *RuntimeController) loadRuntimeContext(ctx context.Context, jobID string
 }
 
 func (r *RuntimeController) baseStatus(job domain.Job, settings domain.WatchSettings) domain.RuntimeStatus {
+	startupMode := settings.StartupMode
+	if !startupMode.IsValid() {
+		startupMode = domain.StartupModeOneShot
+	}
 	status := domain.RuntimeStatus{
-		Command:      normalizeRuntimeCommand(settings.StartupCommand),
-		ResidentMode: settings.ResidentMode,
-		WorkingDir:   runtimeWorkingDirDisplayPath(job),
-		LogPath:      runtimeLogDisplayPath(job),
+		Command:        normalizeRuntimeCommand(settings.StartupCommand),
+		StartupMode:    startupMode,
+		ResidentMode:   startupMode == domain.StartupModeResident,
+		HasStopCommand: strings.TrimSpace(settings.StopCommand) != "",
+		WorkingDir:     runtimeWorkingDirDisplayPath(job),
+		LogPath:        runtimeLogDisplayPath(job),
 	}
 	return status
 }
@@ -441,6 +532,32 @@ func buildRuntimeCommand(command string, workDir string) (*exec.Cmd, error) {
 	}
 	escapedDir := strings.ReplaceAll(workDir, `'`, `'\''`)
 	return exec.Command("sh", "-lc", fmt.Sprintf("cd '%s' && %s", escapedDir, command)), nil
+}
+
+func executeRuntimeCommand(command string, workDir string, logPath string) error {
+	if strings.TrimSpace(command) == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return fmt.Errorf("create runtime log dir: %w", err)
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return fmt.Errorf("open runtime log: %w", err)
+	}
+	defer func() {
+		_ = logFile.Close()
+	}()
+	cmd, err := buildRuntimeCommand(command, workDir)
+	if err != nil {
+		return err
+	}
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run runtime command: %w", err)
+	}
+	return nil
 }
 
 func normalizeRuntimeCommand(command string) string {

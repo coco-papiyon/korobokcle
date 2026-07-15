@@ -73,6 +73,7 @@ func Run(ctx context.Context, opts Options) error {
 		BaseBranch:             "main",
 		BranchNamePattern:      "issue_#<issue番号>",
 		BuiltinAllowedCommands: domain.DefaultAllowedCommands(),
+		StartupMode:            domain.StartupModeOneShot,
 		Models: domain.AIModels{
 			Codex:         domain.ModelSelection{Mode: domain.ModelModeDefault},
 			GitHubCopilot: domain.ModelSelection{Mode: domain.ModelModeDefault},

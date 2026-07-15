@@ -241,10 +241,11 @@ func TestRuntimeAPI(t *testing.T) {
 	}
 	actions := &testRuntimeActions{
 		status: domain.RuntimeStatus{
-			Running:      false,
-			Command:      "npm run dev",
-			ResidentMode: true,
-			LogPath:      "workspace/owner_repo/issue-impl/logs/startup.log",
+			Running:        false,
+			Command:        "npm run dev",
+			StartupMode:    domain.StartupModeBackground,
+			HasStopCommand: true,
+			LogPath:        "workspace/owner_repo/issue-impl/logs/startup.log",
 		},
 		logs: domain.RuntimeLogResponse{
 			Content:   "startup ready",
@@ -267,6 +268,12 @@ func TestRuntimeAPI(t *testing.T) {
 	}
 	if status.Command != "npm run dev" {
 		t.Fatalf("command = %q, want npm run dev", status.Command)
+	}
+	if status.StartupMode != domain.StartupModeBackground {
+		t.Fatalf("startup mode = %q, want background", status.StartupMode)
+	}
+	if !status.HasStopCommand {
+		t.Fatal("hasStopCommand = false, want true")
 	}
 
 	startReq := httptest.NewRequest(http.MethodPost, "/api/jobs/issue-impl/runtime", bytes.NewBufferString(`{"action":"start"}`))
@@ -545,6 +552,8 @@ func TestSettingsAPI(t *testing.T) {
 		Repository:             "owner/repo",
 		BaseBranch:             "develop",
 		AIProvider:             domain.AIProviderGitHubCopilot,
+		StartupMode:            domain.StartupModeResident,
+		StopCommand:            "echo stop",
 		VerificationAIProvider: domain.AIProviderCodex,
 		VerificationAIModel:    domain.ModelSelection{Mode: domain.ModelModeCustom, Value: "gpt-5.4-mini"},
 		ReviewerAIProvider:     domain.AIProviderGitHubCopilot,
@@ -593,6 +602,12 @@ func TestSettingsAPI(t *testing.T) {
 	if settings.AIProvider != domain.AIProviderGitHubCopilot {
 		t.Fatalf("ai provider = %q, want %q", settings.AIProvider, domain.AIProviderGitHubCopilot)
 	}
+	if settings.StartupMode != domain.StartupModeResident {
+		t.Fatalf("startup mode = %q, want resident", settings.StartupMode)
+	}
+	if settings.StopCommand != "echo stop" {
+		t.Fatalf("stop command = %q, want echo stop", settings.StopCommand)
+	}
 	if settings.Models.GitHubCopilot.Mode != domain.ModelModeCustom || settings.Models.GitHubCopilot.Value != "gpt-4.1" {
 		t.Fatalf("github copilot model = %+v, want custom gpt-4.1", settings.Models.GitHubCopilot)
 	}
@@ -612,6 +627,8 @@ func TestSettingsAPI(t *testing.T) {
 	updateBody, err := json.Marshal(domain.WatchSettings{
 		Repository:             "owner/updated",
 		AIProvider:             domain.AIProviderCodex,
+		StartupMode:            domain.StartupModeBackground,
+		StopCommand:            "echo stop updated",
 		PollIntervalSeconds:    240,
 		JobConcurrency:         6,
 		BaseBranch:             "release",
@@ -648,6 +665,12 @@ func TestSettingsAPI(t *testing.T) {
 	}
 	if updated.AIProvider != domain.AIProviderCodex {
 		t.Fatalf("updated ai provider = %q, want %q", updated.AIProvider, domain.AIProviderCodex)
+	}
+	if updated.StartupMode != domain.StartupModeBackground {
+		t.Fatalf("updated startup mode = %q, want background", updated.StartupMode)
+	}
+	if updated.StopCommand != "echo stop updated" {
+		t.Fatalf("updated stop command = %q, want echo stop updated", updated.StopCommand)
 	}
 	if updated.PollIntervalSeconds != 240 {
 		t.Fatalf("updated poll interval = %d, want 240", updated.PollIntervalSeconds)

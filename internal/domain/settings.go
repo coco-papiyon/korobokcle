@@ -60,6 +60,14 @@ const (
 	ModelModeCustom  ModelMode = "custom"
 )
 
+type StartupMode string
+
+const (
+	StartupModeResident   StartupMode = "resident"
+	StartupModeBackground StartupMode = "background"
+	StartupModeOneShot    StartupMode = "one_shot"
+)
+
 type SearchCondition struct {
 	Enabled       *bool    `json:"enabled,omitempty"`
 	LabelIncludes []string `json:"labelIncludes,omitempty"`
@@ -73,6 +81,8 @@ type WatchSettings struct {
 	Repository              string          `json:"repository"`
 	AIProvider              AIProvider      `json:"aiProvider,omitempty"`
 	StartupCommand          string          `json:"startupCommand,omitempty"`
+	StopCommand             string          `json:"stopCommand,omitempty"`
+	StartupMode             StartupMode     `json:"startupMode,omitempty"`
 	ResidentMode            bool            `json:"residentMode,omitempty"`
 	PollIntervalSeconds     int             `json:"pollIntervalSeconds,omitempty"`
 	JobConcurrency          int             `json:"jobConcurrency,omitempty"`
@@ -108,6 +118,18 @@ func NormalizeWatchSettings(settings WatchSettings) WatchSettings {
 	settings.StartupCommand = strings.TrimSpace(settings.StartupCommand)
 	settings.StartupCommand = strings.ReplaceAll(settings.StartupCommand, "\r\n", "\n")
 	settings.StartupCommand = strings.ReplaceAll(settings.StartupCommand, "\r", "\n")
+	settings.StopCommand = strings.TrimSpace(settings.StopCommand)
+	settings.StopCommand = strings.ReplaceAll(settings.StopCommand, "\r\n", "\n")
+	settings.StopCommand = strings.ReplaceAll(settings.StopCommand, "\r", "\n")
+	if !settings.StartupMode.IsValid() {
+		switch {
+		case settings.ResidentMode:
+			settings.StartupMode = StartupModeResident
+		default:
+			settings.StartupMode = StartupModeOneShot
+		}
+	}
+	settings.ResidentMode = settings.StartupMode == StartupModeResident
 	if settings.PollIntervalSeconds <= 0 {
 		settings.PollIntervalSeconds = 120
 	}
@@ -232,6 +254,28 @@ func (m ModelMode) IsValid() bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func (m StartupMode) IsValid() bool {
+	switch m {
+	case StartupModeResident, StartupModeBackground, StartupModeOneShot:
+		return true
+	default:
+		return false
+	}
+}
+
+func (m StartupMode) DisplayName() string {
+	switch m {
+	case StartupModeResident:
+		return "常駐"
+	case StartupModeBackground:
+		return "バックグラウンド起動"
+	case StartupModeOneShot:
+		return "単発起動（実行して終了）"
+	default:
+		return string(m)
 	}
 }
 

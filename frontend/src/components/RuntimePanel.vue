@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { RuntimeLogResponse, RuntimeStatus } from '../types'
 
 const props = defineProps<{
@@ -13,6 +13,28 @@ const loading = ref(false)
 const actionLoading = ref(false)
 const error = ref('')
 let refreshTimer: number | undefined
+
+const isManagedBackground = computed(
+  () => runtimeStatus.value?.startupMode === 'background' && Boolean(runtimeStatus.value?.startedAt),
+)
+
+const canStopRuntime = computed(() => {
+  const status = runtimeStatus.value
+  if (!status) {
+    return false
+  }
+  if (status.startupMode === 'background') {
+    return Boolean(status.hasStopCommand) && Boolean(status.startedAt)
+  }
+  return status.running
+})
+
+const canStartRuntime = computed(() => {
+  if (!runtimeStatus.value) {
+    return false
+  }
+  return !runtimeStatus.value.running && !isManagedBackground.value
+})
 
 async function loadRuntime() {
   const showLoading = runtimeStatus.value === null && runtimeLogs.value === null
@@ -167,8 +189,16 @@ defineExpose({
             <span class="runtime-panel__meta-value">{{ runtimeStatus?.pid ?? '-' }}</span>
           </div>
           <div class="runtime-panel__meta-item">
-            <span class="runtime-panel__meta-label">常駐モード</span>
-            <span class="runtime-panel__meta-value">{{ runtimeStatus?.residentMode ? '有効' : '無効' }}</span>
+            <span class="runtime-panel__meta-label">起動モード</span>
+            <span class="runtime-panel__meta-value">
+              {{
+                runtimeStatus?.startupMode === 'resident'
+                  ? '常駐'
+                  : runtimeStatus?.startupMode === 'background'
+                    ? 'バックグラウンド起動'
+                    : '単発起動（1回だけ実行して終了）'
+              }}
+            </span>
           </div>
           <div class="runtime-panel__meta-item">
             <span class="runtime-panel__meta-label">起動時刻</span>
@@ -189,7 +219,7 @@ defineExpose({
         <div class="modal__actions">
           <div class="modal__actions-group">
             <button
-              v-if="runtimeStatus?.running"
+              v-if="canStopRuntime"
               class="button button--danger"
               type="button"
               :disabled="actionLoading"
@@ -198,7 +228,7 @@ defineExpose({
               {{ actionLoading ? '停止中' : '停止' }}
             </button>
             <button
-              v-else
+              v-else-if="canStartRuntime"
               class="button"
               type="button"
               :disabled="actionLoading"

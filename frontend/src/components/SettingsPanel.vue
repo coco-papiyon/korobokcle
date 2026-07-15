@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import type { AIProvider, WatchSettings } from '../types'
+import type { AIProvider, StartupMode, WatchSettings } from '../types'
 
 const settingsLoading = ref(false)
 const settingsSaving = ref(false)
@@ -11,6 +11,8 @@ const settingsForm = ref({
   repository: '',
   aiProvider: 'codex' as AIProvider,
   startupCommand: '',
+  stopCommand: '',
+  startupMode: 'one_shot' as StartupMode,
   residentMode: false,
   pollIntervalSeconds: 120,
   jobConcurrency: 4,
@@ -80,6 +82,24 @@ const activeModelSelection = computed({
   },
 })
 
+const startupModeOptions: Array<{ value: StartupMode; label: string; note: string }> = [
+  {
+    value: 'resident',
+    label: '常駐',
+    note: '起動コマンドがそのまま動き続けるモード。',
+  },
+  {
+    value: 'background',
+    label: 'バックグラウンド起動',
+    note: '起動コマンドは終了してもアプリは継続するモード。',
+  },
+  {
+    value: 'one_shot',
+    label: '単発起動（1回だけ実行して終了）',
+    note: '起動コマンドを1回だけ実行して終えるモード。',
+  },
+]
+
 const verificationEffectiveProvider = computed(
   () => settingsForm.value.verificationAiProviderSelection || settingsForm.value.aiProvider,
 )
@@ -137,10 +157,13 @@ function joinLines(values: string[]) {
 function settingsToForm(settings: WatchSettings) {
   const codexModel = settings.models?.codex
   const githubCopilotModel = settings.models?.githubCopilot
+  const startupMode = (settings.startupMode ?? (settings.residentMode ? 'resident' : 'one_shot')) as StartupMode
   settingsForm.value.repository = settings.repository ?? ''
   settingsForm.value.aiProvider = settings.aiProvider ?? 'codex'
   settingsForm.value.startupCommand = settings.startupCommand?.trim() ?? ''
-  settingsForm.value.residentMode = settings.residentMode ?? false
+  settingsForm.value.stopCommand = settings.stopCommand?.trim() ?? ''
+  settingsForm.value.startupMode = startupMode
+  settingsForm.value.residentMode = startupMode === 'resident'
   settingsForm.value.pollIntervalSeconds = settings.pollIntervalSeconds ?? 120
   settingsForm.value.jobConcurrency = settings.jobConcurrency ?? 4
   settingsForm.value.implementationLoopCount = settings.implementationLoopCount ?? 3
@@ -183,7 +206,9 @@ function formToSettings(): WatchSettings {
     repository: settingsForm.value.repository.trim(),
     aiProvider: settingsForm.value.aiProvider,
     startupCommand: settingsForm.value.startupCommand.trim(),
-    residentMode: settingsForm.value.residentMode,
+    stopCommand: settingsForm.value.stopCommand.trim(),
+    startupMode: settingsForm.value.startupMode,
+    residentMode: settingsForm.value.startupMode === 'resident',
     pollIntervalSeconds:
       Number.isFinite(settingsForm.value.pollIntervalSeconds) && settingsForm.value.pollIntervalSeconds > 0
         ? Math.floor(settingsForm.value.pollIntervalSeconds)
@@ -399,14 +424,26 @@ defineExpose({
       <span class="field-note">起動ボタンで実行するコマンド。複数行で指定でき、`base_dir` で実行される。</span>
     </label>
 
-    <div class="field field--full settings-section__toggle-row">
-      <span>常駐モード</span>
-      <label class="settings-section__toggle">
-        <input v-model="settingsForm.residentMode" type="checkbox" />
-        <span>有効にする</span>
-      </label>
-      <span class="field-note">ON の場合は起動中プロセスを常駐対象として扱い、停止ボタンで終了できます。</span>
-    </div>
+    <label class="field field--full">
+      <span>起動モード</span>
+      <select v-model="settingsForm.startupMode" class="control">
+        <option v-for="option in startupModeOptions" :key="option.value" :value="option.value">
+          {{ option.label }}
+        </option>
+      </select>
+      <span class="field-note">{{ startupModeOptions.find((option) => option.value === settingsForm.startupMode)?.note }}</span>
+    </label>
+
+    <label class="field field--full">
+      <span>停止コマンド</span>
+      <textarea
+        v-model="settingsForm.stopCommand"
+        class="control"
+        rows="4"
+        placeholder='cd /d ".\tests\mock-app"\nnode stop.js'
+      ></textarea>
+      <span class="field-note">停止ボタンで実行するコマンド。バックグラウンド起動ではこちらを設定すると安全に停止できます。</span>
+    </label>
 
     <label class="field field--full">
       <span>ジョブ多重度</span>

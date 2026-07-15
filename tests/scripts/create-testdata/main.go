@@ -21,6 +21,8 @@ type watchSettingsFixture struct {
 	Repository          string                  `json:"repository"`
 	AIProvider          string                  `json:"aiProvider"`
 	StartupCommand      string                  `json:"startupCommand"`
+	StopCommand         string                  `json:"stopCommand"`
+	StartupMode         string                  `json:"startupMode"`
 	ResidentMode        bool                    `json:"residentMode"`
 	PollIntervalSeconds int                     `json:"pollIntervalSeconds"`
 	BaseBranch          string                  `json:"baseBranch"`
@@ -205,6 +207,8 @@ func newSettingsFixture() watchSettingsFixture {
 		Repository:          repositoryName,
 		AIProvider:          "codex",
 		StartupCommand:      startupCommand,
+		StopCommand:         "echo stop mock app",
+		StartupMode:         "resident",
 		ResidentMode:        true,
 		PollIntervalSeconds: 3600,
 		BaseBranch:          "main",
