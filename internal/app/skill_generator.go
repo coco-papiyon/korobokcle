@@ -623,7 +623,10 @@ func validateGeneratedSkill(dir string, definition skillDefinition, req domain.S
 	if !strings.Contains(content, "korobokcle-purpose: "+string(definition.purpose)) {
 		return fmt.Errorf("generated skill %s is missing purpose marker", definition.name)
 	}
-	if !strings.Contains(content, "必須出力形式") {
+	if !strings.Contains(content, "## 処理内容") {
+		return fmt.Errorf("generated skill %s is missing processing instructions", definition.name)
+	}
+	if !strings.Contains(content, "## 必須出力形式") {
 		return fmt.Errorf("generated skill %s is missing required output format", definition.name)
 	}
 	if definition.purpose == domain.SkillPurposeIssueDesign || definition.purpose == domain.SkillPurposeReviewFeedbackDesign {
